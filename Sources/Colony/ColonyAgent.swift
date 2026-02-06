@@ -715,12 +715,11 @@ public enum ColonyAgent {
                 )
 
                 let prompt = """
-                Conversation history was offloaded to: \(historyPath.rawValue)
-
-                Update the Scratchbook at: \(scratchbookPath.rawValue)
-                - Add or update a concise summary note that references the offloaded history path.
-                - Add at least one concrete next action as a todo/task item.
-                - Keep updates compact and on-device friendly.
+                History offloaded to \(historyPath.rawValue).
+                Update Scratchbook at \(scratchbookPath.rawValue):
+                - Summary note referencing the history path.
+                - At least one concrete next-action todo.
+                - Keep compact.
                 """
 
                 _ = try await subagents.run(
@@ -737,7 +736,7 @@ public enum ColonyAgent {
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
-            content: "Note: conversation has been summarized. Full prior history is available at \(historyPath.rawValue)."
+            content: "Conversation summarized. Prior history: \(historyPath.rawValue)"
         )
 
         return [summaryMessage] + tail
@@ -948,9 +947,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Tool result too large (tool_call_id: \(toolCall.id)).
-Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
-
+Result too large (\(toolCall.id)). Full output: \(path.rawValue) (use read_file offset/limit).
 Preview:
 \(preview)
 """
