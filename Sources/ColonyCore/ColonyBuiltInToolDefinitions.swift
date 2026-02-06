@@ -75,6 +75,54 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
+    public static let scratchRead = HiveToolDefinition(
+        name: "scratch_read",
+        description: "Read the Scratchbook (compact view).",
+        parametersJSONSchema: """
+        {"type":"object","properties":{}}
+        """
+    )
+
+    public static let scratchAdd = HiveToolDefinition(
+        name: "scratch_add",
+        description: "Add a Scratchbook item (note/todo/task).",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"kind":{"type":"string","enum":["note","todo","task"],"description":"Item kind."},"title":{"type":"string","description":"Short title."},"body":{"type":"string","description":"Optional body text."},"tags":{"type":"array","items":{"type":"string"},"description":"Optional tags."},"phase":{"type":"string","description":"Optional task phase (task kind only)."},"progress":{"type":"number","description":"Optional task progress 0..1 (task kind only)."}},"required":["kind","title"]}
+        """
+    )
+
+    public static let scratchUpdate = HiveToolDefinition(
+        name: "scratch_update",
+        description: "Update fields on an existing Scratchbook item by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."},"title":{"type":"string","description":"New title."},"body":{"type":"string","description":"New body."},"tags":{"type":"array","items":{"type":"string"},"description":"New tags."},"status":{"type":"string","enum":["open","in_progress","blocked","done","archived"],"description":"New status."},"phase":{"type":"string","description":"Optional task phase."},"progress":{"type":"number","description":"Optional task progress 0..1."}},"required":["id"]}
+        """
+    )
+
+    public static let scratchComplete = HiveToolDefinition(
+        name: "scratch_complete",
+        description: "Mark a Scratchbook item done by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."}},"required":["id"]}
+        """
+    )
+
+    public static let scratchPin = HiveToolDefinition(
+        name: "scratch_pin",
+        description: "Pin a Scratchbook item by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."}},"required":["id"]}
+        """
+    )
+
+    public static let scratchUnpin = HiveToolDefinition(
+        name: "scratch_unpin",
+        description: "Unpin a Scratchbook item by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."}},"required":["id"]}
+        """
+    )
+
     public static func task(availableSubagents: [ColonySubagentDescriptor]) -> HiveToolDefinition {
         let available: String
         if availableSubagents.isEmpty {

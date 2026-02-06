@@ -70,7 +70,7 @@ func scratchbookCore_renderView_prioritizationAndDeterminism() throws {
         createdAtNanoseconds: 20,
         updatedAtNanoseconds: 60,
         phase: "build",
-        progress: "50%"
+        progress: 0.5
     )
 
     let openTask = ColonyScratchItem(
@@ -257,11 +257,15 @@ func scratchbookCore_renderView_viewTokenLimit() throws {
 func scratchbookStorage_persistsPerThread_withSortedKeysEncoding() async throws {
     let filesystem = ColonyInMemoryFileSystemBackend()
     let prefix = try ColonyVirtualPath("/scratchbook")
-    let store = ColonyScratchbookStore(filesystem: filesystem, scratchbookPathPrefix: prefix)
+    let policy = ColonyScratchbookPolicy(
+        pathPrefix: prefix,
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
 
     let threadID = HiveThreadID("thread/with\\slashes")
-    let sanitized = sanitizeThreadIDForPathComponent(threadID.rawValue)
-    let expectedPath = try ColonyVirtualPath(prefix.rawValue + "/" + sanitized + ".json")
+    let expectedPath = try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
 
     let scratchbook = ColonyScratchbook(
         items: [
@@ -275,13 +279,18 @@ func scratchbookStorage_persistsPerThread_withSortedKeysEncoding() async throws 
                 createdAtNanoseconds: 1,
                 updatedAtNanoseconds: 2,
                 phase: "phase",
-                progress: "progress"
+                progress: 0.3
             )
         ],
         pinnedItemIDs: ["item-1"]
     )
 
-    try await store.save(scratchbook, threadID: threadID)
+    try await ColonyScratchbookStore.save(
+        scratchbook,
+        filesystem: filesystem,
+        threadID: threadID.rawValue,
+        policy: policy
+    )
 
     let persistedJSON = try await filesystem.read(at: expectedPath)
     let expectedJSON = try encodeSortedJSON(scratchbook)
@@ -291,9 +300,17 @@ func scratchbookStorage_persistsPerThread_withSortedKeysEncoding() async throws 
 @Test("Scratchbook store load returns empty scratchbook when the per-thread file is missing")
 func scratchbookStorage_loadMissing_returnsEmptyScratchbook() async throws {
     let filesystem = ColonyInMemoryFileSystemBackend()
-    let store = ColonyScratchbookStore(filesystem: filesystem, scratchbookPathPrefix: try ColonyVirtualPath("/scratchbook"))
+    let policy = ColonyScratchbookPolicy(
+        pathPrefix: try ColonyVirtualPath("/scratchbook"),
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
 
-    let scratchbook = try await store.load(threadID: HiveThreadID("missing-thread"))
+    let scratchbook = try await ColonyScratchbookStore.load(
+        filesystem: filesystem,
+        threadID: HiveThreadID("missing-thread").rawValue,
+        policy: policy
+    )
     #expect(scratchbook.items.isEmpty == true)
 }
-

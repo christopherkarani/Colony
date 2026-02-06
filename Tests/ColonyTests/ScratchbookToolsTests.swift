@@ -194,7 +194,7 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment(
+    let environment = HiveEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
@@ -243,7 +243,7 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment(
+    let environment = HiveEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
@@ -295,7 +295,7 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
     let model = ToolCallSequenceModel(toolCalls: [call], finalContent: "ok")
 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment(
+    let environment = HiveEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
@@ -335,13 +335,21 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
             return false
         }
     } == false)
+
+    #expect(ops.allSatisfy { op in
+        switch op {
+        case .read(let path):
+            return path == scratchbookPath
+        case .write, .edit, .list, .glob, .grep:
+            return false
+        }
+    })
 }
 
 @Test("Scratchbook tools persist mutations and are scoped to the thread scratchbook file")
 func scratchbookTools_persistAndAreThreadScoped() async throws {
     let graph = try ColonyAgent.compile()
     let baseFS = ColonyInMemoryFileSystemBackend()
-    let fs = RecordingFileSystemBackend(base: baseFS)
 
     let prefix = try ColonyVirtualPath("/scratchbook")
     let threadID = HiveThreadID("thread-scratchbook-crud")
@@ -366,9 +374,10 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
         name: "scratch_add",
         argumentsJSON: #"{"kind":"note","title":"Alpha","body":"hello","tags":["t1"],"path":"/evil.json"}"#
     )
+    let fs1 = RecordingFileSystemBackend(base: baseFS)
     let model1 = ToolCallSequenceModel(toolCalls: [add], finalContent: "ok")
-    let context1 = ColonyContext(configuration: configuration, filesystem: fs)
-    let env1 = HiveEnvironment(
+    let context1 = ColonyContext(configuration: configuration, filesystem: fs1)
+    let env1 = HiveEnvironment<ColonySchema>(
         context: context1,
         clock: NoopClock(),
         logger: NoopLogger(),
@@ -386,29 +395,52 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let id = firstScratchItemID(from: scratchbookJSON)
     #expect(id != nil)
 
-    // 2) Mutate the item: pin → update → complete → unpin → read.
+    // 2) Pin the item.
     let pin = HiveToolCall(id: "scratch-pin", name: "scratch_pin", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let update = HiveToolCall(id: "scratch-update", name: "scratch_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
-    let complete = HiveToolCall(id: "scratch-complete", name: "scratch_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let unpin = HiveToolCall(id: "scratch-unpin", name: "scratch_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let read = HiveToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
-
-    let model2 = ToolCallSequenceModel(toolCalls: [pin, update, complete, unpin, read], finalContent: "done")
-    let context2 = ColonyContext(configuration: configuration, filesystem: fs)
-    let env2 = HiveEnvironment(
+    let fs2 = RecordingFileSystemBackend(base: baseFS)
+    let model2 = ToolCallSequenceModel(toolCalls: [pin], finalContent: "ok")
+    let context2 = ColonyContext(configuration: configuration, filesystem: fs2)
+    let env2 = HiveEnvironment<ColonySchema>(
         context: context2,
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model2)
     )
     let runtime2 = HiveRuntime(graph: graph, environment: env2)
-    let handle2 = await runtime2.run(
+    _ = try await (await runtime2.run(
         threadID: threadID,
-        input: "continue",
+        input: "pin",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )).outcome.value
+
+    let pinnedText = try await baseFS.read(at: scratchbookPath)
+    let pinnedJSON = try decodeScratchbookJSON(pinnedText)
+    let pinnedIDs = pinnedJSON["pinnedItemIDs"] as? [String] ?? []
+    #expect(pinnedIDs.contains(id!))
+
+    // 3) Mutate: update → complete → unpin → read.
+    let update = HiveToolCall(id: "scratch-update", name: "scratch_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
+    let complete = HiveToolCall(id: "scratch-complete", name: "scratch_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let unpin = HiveToolCall(id: "scratch-unpin", name: "scratch_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let read = HiveToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
+
+    let fs3 = RecordingFileSystemBackend(base: baseFS)
+    let model3 = ToolCallSequenceModel(toolCalls: [update, complete, unpin, read], finalContent: "done")
+    let context3 = ColonyContext(configuration: configuration, filesystem: fs3)
+    let env3 = HiveEnvironment<ColonySchema>(
+        context: context3,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(model3)
+    )
+    let runtime3 = HiveRuntime(graph: graph, environment: env3)
+    let handle3 = await runtime3.run(
+        threadID: threadID,
+        input: "mutate",
         options: HiveRunOptions(checkpointPolicy: .disabled)
     )
-    let outcome2 = try await handle2.outcome.value
-    guard case let .finished(output2, _) = outcome2, case let .fullStore(store2) = output2 else {
+    let outcome3 = try await handle3.outcome.value
+    guard case let .finished(output3, _) = outcome3, case let .fullStore(store3) = output3 else {
         #expect(Bool(false))
         return
     }
@@ -425,23 +457,27 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     #expect(pinned.contains(id!) == false)
 
     // `scratch_read` should return a compact view that includes the updated title.
-    let messages2 = try store2.get(ColonySchema.Channels.messages)
-    let scratchReadTool = messages2.last { $0.role == .tool && $0.name == "scratch_read" }
+    let messages3 = try store3.get(ColonySchema.Channels.messages)
+    let scratchReadTool = messages3.last { $0.role == HiveChatRole.tool && $0.name == "scratch_read" }
     #expect(scratchReadTool != nil)
     #expect(scratchReadTool?.content.contains("Alpha (updated)") == true)
 
     // Strict scoping: only the thread scratchbook file may be touched.
-    let ops = await fs.recordedOperations()
-    #expect(ops.allSatisfy { op in
-        switch op {
-        case .read(let path),
-             .write(let path, _),
-             .edit(let path, _, _, _):
-            return path == scratchbookPath
-        case .list, .glob, .grep:
-            return false
-        }
-    })
+    let ops1 = await fs1.recordedOperations()
+    let ops2 = await fs2.recordedOperations()
+    let ops3 = await fs3.recordedOperations()
+    for ops in [ops1, ops2, ops3] {
+        #expect(ops.allSatisfy { op in
+            switch op {
+            case .read(let path),
+                 .write(let path, _),
+                 .edit(let path, _, _, _):
+                return path == scratchbookPath
+            case .list, .glob, .grep:
+                return false
+            }
+        })
+    }
 }
 
 @Test("On-device profile tool approval allowlist includes scratchbook tool names")

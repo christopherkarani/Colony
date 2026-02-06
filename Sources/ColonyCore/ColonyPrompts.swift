@@ -20,6 +20,7 @@ Follow these rules:
             additional: additional,
             memory: nil,
             skills: nil,
+            scratchbook: nil,
             availableTools: availableTools
         )
     }
@@ -28,6 +29,22 @@ Follow these rules:
         additional: String?,
         memory: String?,
         skills: String?,
+        availableTools: [HiveToolDefinition]
+    ) -> String {
+        systemPrompt(
+            additional: additional,
+            memory: memory,
+            skills: skills,
+            scratchbook: nil,
+            availableTools: availableTools
+        )
+    }
+
+    public static func systemPrompt(
+        additional: String?,
+        memory: String?,
+        skills: String?,
+        scratchbook: String?,
         availableTools: [HiveToolDefinition]
     ) -> String {
         var sections: [String] = [baseSystemPrompt]
@@ -41,6 +58,10 @@ Follow these rules:
 
         if let skills, skills.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             sections.append("Skills:\n" + skills)
+        }
+
+        if let scratchbook, scratchbook.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            sections.append("Scratchbook:\n" + scratchbook)
         }
 
         if availableTools.isEmpty == false {

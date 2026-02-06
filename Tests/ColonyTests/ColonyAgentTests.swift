@@ -211,6 +211,49 @@ private final class TaskToolModel: HiveModelClient, @unchecked Sendable {
     }
 }
 
+private final class TaskToolStructuredContextModel: HiveModelClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var callCount: Int = 0
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        try await streamFinal(request)
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                let response = self.respond()
+                continuation.yield(.final(response))
+                continuation.finish()
+            }
+        }
+    }
+
+    private func respond() -> HiveChatResponse {
+        let currentCall: Int = {
+            lock.lock()
+            defer { lock.unlock() }
+            callCount += 1
+            return callCount
+        }()
+
+        if currentCall == 1 {
+            let call = HiveToolCall(
+                id: "task-structured-1",
+                name: ColonyBuiltInToolDefinitions.taskName,
+                argumentsJSON: #"{"prompt":"Draft migration approach.","subagent_type":"research","context":{"objective":"Plan migration safely.","constraints":["Use only local code context.","Do not change public API semantics."],"acceptance_criteria":["Return exactly three migration checkpoints."],"notes":["Prioritize correctness before performance."]},"file_references":[{"path":"/Sources/Feature.swift","offset":4,"limit":20},{"path":"/README.md"}]}"#
+            )
+            return HiveChatResponse(
+                message: HiveChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
+            )
+        }
+
+        return HiveChatResponse(
+            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        )
+    }
+}
+
 private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [HiveChatRequest] = []
@@ -513,6 +556,61 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
     let messages = try store.get(ColonySchema.Channels.messages)
     let toolMessage = messages.first { $0.role == HiveChatRole.tool }
     #expect(toolMessage?.content == "subagent[research] completed")
+}
+
+@Test("Colony task tool passes structured context and file references to subagent registry")
+func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
+    let graph = try ColonyAgent.compile()
+    let subagents = RecordingSubagentRegistry()
+
+    let configuration = ColonyConfiguration(
+        capabilities: [.subagents],
+        modelName: "test-model",
+        toolApprovalPolicy: .never
+    )
+    let context = ColonyContext(
+        configuration: configuration,
+        filesystem: nil,
+        subagents: subagents
+    )
+
+    let environment = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(TaskToolStructuredContextModel())
+    )
+
+    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let handle = await runtime.run(
+        threadID: HiveThreadID("thread-task-structured-context"),
+        input: "delegate task",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+
+    let outcome = try await handle.outcome.value
+    guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
+        #expect(Bool(false))
+        return
+    }
+
+    #expect((try store.get(ColonySchema.Channels.finalAnswer)) == "done")
+
+    let requests = await subagents.recordedRequests()
+    #expect(requests.count == 1)
+
+    let expectedFileReferences = [
+        ColonySubagentFileReference(path: try ColonyVirtualPath("/Sources/Feature.swift"), offset: 4, limit: 20),
+        ColonySubagentFileReference(path: try ColonyVirtualPath("/README.md")),
+    ]
+
+    #expect(requests.first?.subagentType == "research")
+    #expect(requests.first?.prompt == "Draft migration approach.")
+    #expect(requests.first?.context?.objective == "Plan migration safely.")
+    #expect(requests.first?.context?.constraints == ["Use only local code context.", "Do not change public API semantics."])
+    #expect(requests.first?.context?.acceptanceCriteria == ["Return exactly three migration checkpoints."])
+    #expect(requests.first?.context?.notes == ["Prioritize correctness before performance."])
+    #expect(requests.first?.fileReferences == expectedFileReferences)
 }
 
 @Test("System prompt injects AGENTS memory when configured")

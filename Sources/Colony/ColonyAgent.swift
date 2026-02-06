@@ -176,6 +176,10 @@ public enum ColonyAgent {
             if let summarized = try await maybeSummarize(
                 messages: updatedMessages,
                 policy: policy,
+                scratchbookEnabled: input.context.configuration.capabilities.contains(.scratchbook),
+                scratchbookPolicy: input.context.configuration.scratchbookPolicy,
+                subagentsAllowed: input.context.configuration.capabilities.contains(.subagents),
+                subagents: input.context.subagents,
                 tokenizer: input.context.tokenizer,
                 filesystem: filesystem,
                 threadID: input.run.threadID
@@ -213,6 +217,7 @@ public enum ColonyAgent {
 
         let memory: String?
         let skills: String?
+        let scratchbook: String?
         if let filesystem = input.context.filesystem {
             memory = try await loadAgentsMemory(
                 sources: input.context.configuration.memorySources,
@@ -224,16 +229,29 @@ public enum ColonyAgent {
                 tokenLimit: input.context.configuration.systemPromptSkillsTokenLimit,
                 filesystem: filesystem
             )
+
+            if input.context.configuration.capabilities.contains(.scratchbook) {
+                scratchbook = try await loadScratchbookView(
+                    policy: input.context.configuration.scratchbookPolicy,
+                    filesystem: filesystem,
+                    threadID: input.run.threadID
+                )
+            } else {
+                scratchbook = nil
+            }
         } else {
             memory = nil
             skills = nil
+            scratchbook = nil
         }
 
+        let toolsForPrompt = input.context.configuration.includeToolListInSystemPrompt ? tools : []
         let systemPrompt = ColonyPrompts.systemPrompt(
             additional: input.context.configuration.additionalSystemPrompt,
             memory: memory,
             skills: skills,
-            availableTools: tools
+            scratchbook: scratchbook,
+            availableTools: toolsForPrompt
         )
         let systemMessage = HiveChatMessage(
             id: "system:colony",
@@ -253,7 +271,10 @@ public enum ColonyAgent {
                     toolCount: tools.count
                 )
             }
-            messageTokenLimit = hardLimit - toolTokenCount
+            // Our tokenizer is an approximation (chars/4) over the *combined* request payload. When we subtract
+            // tool-definition tokens and then bound messages independently, integer division rounding can carry
+            // and exceed the hard cap by ~1 token. Subtract an additional 1 token as conservative padding.
+            messageTokenLimit = max(1, hardLimit - toolTokenCount - 1)
         } else {
             messageTokenLimit = nil
         }
@@ -549,6 +570,17 @@ public enum ColonyAgent {
             tools.append(ColonyBuiltInToolDefinitions.execute)
         }
 
+        if context.configuration.capabilities.contains(.scratchbook), context.filesystem != nil {
+            tools.append(contentsOf: [
+                ColonyBuiltInToolDefinitions.scratchRead,
+                ColonyBuiltInToolDefinitions.scratchAdd,
+                ColonyBuiltInToolDefinitions.scratchUpdate,
+                ColonyBuiltInToolDefinitions.scratchComplete,
+                ColonyBuiltInToolDefinitions.scratchPin,
+                ColonyBuiltInToolDefinitions.scratchUnpin,
+            ])
+        }
+
         if context.configuration.capabilities.contains(.subagents), let subagents = context.subagents {
             tools.append(
                 ColonyBuiltInToolDefinitions.task(availableSubagents: subagents.listSubagents())
@@ -635,6 +667,10 @@ public enum ColonyAgent {
     private static func maybeSummarize(
         messages: [HiveChatMessage],
         policy: ColonySummarizationPolicy,
+        scratchbookEnabled: Bool,
+        scratchbookPolicy: ColonyScratchbookPolicy,
+        subagentsAllowed: Bool,
+        subagents: (any ColonySubagentRegistry)?,
         tokenizer: any ColonyTokenizer,
         filesystem: any ColonyFileSystemBackend,
         threadID: HiveThreadID
@@ -654,6 +690,50 @@ public enum ColonyAgent {
         let historyMarkdown = renderConversationHistoryMarkdown(offloaded)
         try await appendFile(filesystem: filesystem, path: historyPath, content: historyMarkdown)
 
+        if scratchbookEnabled {
+            do {
+                try await updateScratchbookForHistoryOffload(
+                    filesystem: filesystem,
+                    threadID: threadID,
+                    policy: scratchbookPolicy,
+                    historyPath: historyPath
+                )
+            } catch {
+                // Best-effort; never fail the agent run due to Scratchbook persistence.
+            }
+        }
+
+        if scratchbookEnabled,
+           subagentsAllowed,
+           let subagents,
+           subagents.listSubagents().contains(where: { $0.name == "compactor" })
+        {
+            do {
+                let scratchbookPath = try ColonyScratchbookStore.path(
+                    threadID: threadID.rawValue,
+                    policy: scratchbookPolicy
+                )
+
+                let prompt = """
+                Conversation history was offloaded to: \(historyPath.rawValue)
+
+                Update the Scratchbook at: \(scratchbookPath.rawValue)
+                - Add or update a concise summary note that references the offloaded history path.
+                - Add at least one concrete next action as a todo/task item.
+                - Keep updates compact and on-device friendly.
+                """
+
+                _ = try await subagents.run(
+                    ColonySubagentRequest(
+                        prompt: prompt,
+                        subagentType: "compactor"
+                    )
+                )
+            } catch {
+                // Best-effort; do not fail summarization if the compactor cannot run.
+            }
+        }
+
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
@@ -661,6 +741,64 @@ public enum ColonyAgent {
         )
 
         return [summaryMessage] + tail
+    }
+
+    private static let historyOffloadSummaryItemID: String = "history_offload:summary"
+    private static let historyOffloadNextActionsItemID: String = "history_offload:next_actions"
+
+    private static func updateScratchbookForHistoryOffload(
+        filesystem: any ColonyFileSystemBackend,
+        threadID: HiveThreadID,
+        policy: ColonyScratchbookPolicy,
+        historyPath: ColonyVirtualPath
+    ) async throws {
+        let scratchbook = try await ColonyScratchbookStore.load(
+            filesystem: filesystem,
+            threadID: threadID.rawValue,
+            policy: policy
+        )
+
+        let retained = scratchbook.items.filter { item in
+            item.id != historyOffloadSummaryItemID && item.id != historyOffloadNextActionsItemID
+        }
+
+        let summary = ColonyScratchItem(
+            id: historyOffloadSummaryItemID,
+            kind: .note,
+            status: .open,
+            title: "History offloaded: \(historyPath.rawValue)",
+            body: "Conversation history was offloaded to \(historyPath.rawValue).",
+            tags: ["history_offload"],
+            createdAtNanoseconds: 0,
+            updatedAtNanoseconds: 0
+        )
+
+        let nextActions = ColonyScratchItem(
+            id: historyOffloadNextActionsItemID,
+            kind: .todo,
+            status: .open,
+            title: "Next actions (see \(historyPath.rawValue))",
+            body: """
+            Next actions:
+            - Next action: Review \(historyPath.rawValue)
+            - Next action: Update Scratchbook tasks/todos for the current objective
+            """,
+            tags: ["next_action"],
+            createdAtNanoseconds: 0,
+            updatedAtNanoseconds: 0
+        )
+
+        let updated = ColonyScratchbook(
+            items: retained + [summary, nextActions],
+            pinnedItemIDs: scratchbook.pinnedItemIDs
+        )
+
+        try await ColonyScratchbookStore.save(
+            updated,
+            filesystem: filesystem,
+            threadID: threadID.rawValue,
+            policy: policy
+        )
     }
 
     private static func loadAgentsMemory(
@@ -731,6 +869,22 @@ public enum ColonyAgent {
         )
     }
 
+    private static func loadScratchbookView(
+        policy: ColonyScratchbookPolicy,
+        filesystem: any ColonyFileSystemBackend,
+        threadID: HiveThreadID
+    ) async throws -> String? {
+        let scratchbook = try await ColonyScratchbookStore.load(
+            filesystem: filesystem,
+            threadID: threadID.rawValue,
+            policy: policy
+        )
+        let view = scratchbook.renderView(policy: policy)
+
+        let trimmed = view.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private static func parseSkillFrontmatter(_ content: String) -> (name: String?, description: String?) {
         var name: String?
         var description: String?
@@ -792,7 +946,7 @@ public enum ColonyAgent {
             return content
         }
 
-        let preview = createContentPreview(content)
+        let preview = createContentPreview(content, maxChars: threshold)
         return """
 Tool result too large (tool_call_id: \(toolCall.id)).
 Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
@@ -802,13 +956,32 @@ Preview:
 """
     }
 
-    private static func createContentPreview(_ content: String) -> String {
-        let maxSample = 2_000
-        if content.count <= maxSample * 2 { return content }
+    private static func createContentPreview(
+        _ content: String,
+        maxChars: Int
+    ) -> String {
+        guard maxChars > 0 else { return "" }
+        guard content.count > maxChars else { return content }
 
-        let head = String(content.prefix(maxSample))
-        let tail = String(content.suffix(maxSample))
-        return head + "\n...\n" + tail
+        let ellipsis = "\n...\n"
+        if maxChars <= ellipsis.count + 32 {
+            return String(content.prefix(maxChars))
+        }
+
+        let sampleBudget = max(0, maxChars - ellipsis.count)
+        let headBudget = sampleBudget / 2
+        let tailBudget = sampleBudget - headBudget
+
+        if headBudget == 0 || tailBudget == 0 {
+            return String(content.prefix(maxChars))
+        }
+
+        let head = String(content.prefix(headBudget))
+        let tail = String(content.suffix(tailBudget))
+        let preview = head + ellipsis + tail
+
+        if preview.count <= maxChars { return preview }
+        return String(preview.prefix(maxChars))
     }
 
     private static func sanitizeToolCallID(_ id: String) -> String {
@@ -1094,6 +1267,210 @@ enum ColonyTools {
             let todos = try input.store.get(ColonySchema.Channels.todos)
             return ColonyToolOutcome(success: true, content: renderTodos(todos), writes: [])
 
+        case ColonyBuiltInToolDefinitions.scratchRead.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            let view = renderScratchbookToolView(scratchbook, policy: policy)
+            return ColonyToolOutcome(success: true, content: view, writes: [])
+
+        case ColonyBuiltInToolDefinitions.scratchAdd.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchAddArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            let existingIDs = Set(scratchbook.items.map(\.id))
+            let itemID = newScratchItemID(toolCallID: call.id, existing: existingIDs)
+
+            let now = input.environment.clock.nowNanoseconds()
+            let item = ColonyScratchItem(
+                id: itemID,
+                kind: args.kind,
+                status: .open,
+                title: args.title,
+                body: args.body ?? "",
+                tags: args.tags ?? [],
+                createdAtNanoseconds: now,
+                updatedAtNanoseconds: now,
+                phase: args.phase,
+                progress: args.progress
+            )
+            let updatedScratchbook = ColonyScratchbook(
+                items: scratchbook.items + [item],
+                pinnedItemIDs: scratchbook.pinnedItemIDs
+            )
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: added \(itemID)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.scratchUpdate.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchUpdateArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            guard let existing = scratchbook.items.first(where: { $0.id == args.id }) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook item not found: \(args.id)", writes: [])
+            }
+
+            let now = input.environment.clock.nowNanoseconds()
+            let updatedItem = ColonyScratchItem(
+                id: existing.id,
+                kind: existing.kind,
+                status: args.status ?? existing.status,
+                title: args.title ?? existing.title,
+                body: args.body ?? existing.body,
+                tags: args.tags ?? existing.tags,
+                createdAtNanoseconds: existing.createdAtNanoseconds,
+                updatedAtNanoseconds: now,
+                phase: args.phase ?? existing.phase,
+                progress: args.progress ?? existing.progress
+            )
+
+            let updatedItems = scratchbook.items.map { item in
+                (item.id == args.id) ? updatedItem : item
+            }
+            let updatedScratchbook = ColonyScratchbook(items: updatedItems, pinnedItemIDs: scratchbook.pinnedItemIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: updated \(args.id)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.scratchComplete.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            guard let existing = scratchbook.items.first(where: { $0.id == args.id }) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook item not found: \(args.id)", writes: [])
+            }
+
+            let now = input.environment.clock.nowNanoseconds()
+            let completed = ColonyScratchItem(
+                id: existing.id,
+                kind: existing.kind,
+                status: .done,
+                title: existing.title,
+                body: existing.body,
+                tags: existing.tags,
+                createdAtNanoseconds: existing.createdAtNanoseconds,
+                updatedAtNanoseconds: now,
+                phase: existing.phase,
+                progress: existing.progress
+            )
+            let updatedItems = scratchbook.items.map { item in
+                (item.id == args.id) ? completed : item
+            }
+            let updatedScratchbook = ColonyScratchbook(items: updatedItems, pinnedItemIDs: scratchbook.pinnedItemIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: completed \(args.id)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.scratchPin.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            guard scratchbook.items.contains(where: { $0.id == args.id }) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook item not found: \(args.id)", writes: [])
+            }
+            let pinnedIDs = scratchbook.pinnedItemIDs.contains(args.id)
+                ? scratchbook.pinnedItemIDs
+                : (scratchbook.pinnedItemIDs + [args.id])
+            let updatedScratchbook = ColonyScratchbook(items: scratchbook.items, pinnedItemIDs: pinnedIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: pinned \(args.id)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.scratchUnpin.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            let pinnedIDs = scratchbook.pinnedItemIDs.filter { $0 != args.id }
+            let updatedScratchbook = ColonyScratchbook(items: scratchbook.items, pinnedItemIDs: pinnedIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: unpinned \(args.id)", writes: [])
+
         case ColonyBuiltInToolDefinitions.ls.name:
             guard let fs = input.context.filesystem else {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
@@ -1220,6 +1597,166 @@ enum ColonyTools {
         }.joined(separator: "\n")
     }
 
+    private static let scratchbookViewCharsPerToken: Int = 4
+
+    private static func renderScratchbookToolView(
+        _ scratchbook: ColonyScratchbook,
+        policy: ColonyScratchbookPolicy
+    ) -> String {
+        guard policy.viewTokenLimit > 0, policy.maxRenderedItems > 0 else {
+            return "(Scratchbook view disabled)"
+        }
+
+        guard scratchbook.items.isEmpty == false else { return "(Scratchbook empty)" }
+
+        var itemsByID: [ColonyScratchItem.ID: ColonyScratchItem] = [:]
+        itemsByID.reserveCapacity(scratchbook.items.count)
+        for item in scratchbook.items where itemsByID[item.id] == nil {
+            itemsByID[item.id] = item
+        }
+
+        var pinnedIDs: Set<ColonyScratchItem.ID> = []
+        pinnedIDs.reserveCapacity(scratchbook.pinnedItemIDs.count)
+
+        var ordered: [ColonyScratchItem] = []
+        ordered.reserveCapacity(min(policy.maxRenderedItems, scratchbook.items.count))
+
+        for id in scratchbook.pinnedItemIDs where pinnedIDs.contains(id) == false {
+            pinnedIDs.insert(id)
+            if let item = itemsByID[id] {
+                ordered.append(item)
+                if ordered.count >= policy.maxRenderedItems { break }
+            }
+        }
+
+        if ordered.count < policy.maxRenderedItems {
+            let remaining = scratchbook.items
+                .filter { pinnedIDs.contains($0.id) == false }
+                .sorted { lhs, rhs in
+                    if lhs.updatedAtNanoseconds != rhs.updatedAtNanoseconds {
+                        return lhs.updatedAtNanoseconds > rhs.updatedAtNanoseconds
+                    }
+                    if lhs.createdAtNanoseconds != rhs.createdAtNanoseconds {
+                        return lhs.createdAtNanoseconds > rhs.createdAtNanoseconds
+                    }
+                    return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
+                }
+
+            for item in remaining {
+                ordered.append(item)
+                if ordered.count >= policy.maxRenderedItems { break }
+            }
+        }
+
+        let lines = ordered.map { item in
+            renderScratchbookToolLine(item, isPinned: pinnedIDs.contains(item.id))
+        }
+
+        let charBudget = policy.viewTokenLimit * scratchbookViewCharsPerToken
+        return trimLinesToCharacterLimit(lines, characterLimit: charBudget)
+    }
+
+    private static func renderScratchbookToolLine(
+        _ item: ColonyScratchItem,
+        isPinned: Bool
+    ) -> String {
+        let prefix = isPinned ? "PINNED " : ""
+        let title = normalizeScratchbookSingleLine(item.title)
+        var line = "\(prefix)[\(item.kind.rawValue)/\(item.status.rawValue)] \(item.id): \(title)"
+
+        let body = normalizeScratchbookSingleLine(item.body)
+        if body.isEmpty == false {
+            line += " — " + truncateScratchbookLine(body, maxCharacters: 160)
+        }
+
+        if item.tags.isEmpty == false {
+            let tags = item.tags
+                .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+                .map { "#\($0)" }
+                .joined(separator: " ")
+            if tags.isEmpty == false {
+                line += " " + tags
+            }
+        }
+
+        return line
+    }
+
+    private static func normalizeScratchbookSingleLine(_ input: String) -> String {
+        let trimmed = input.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return "" }
+
+        var result: String = ""
+        result.reserveCapacity(trimmed.count)
+
+        var previousWasWhitespace = false
+        for scalar in trimmed.unicodeScalars {
+            if scalar.properties.isWhitespace {
+                if previousWasWhitespace { continue }
+                result.append(" ")
+                previousWasWhitespace = true
+                continue
+            }
+            previousWasWhitespace = false
+            result.append(Character(scalar))
+        }
+
+        if result.hasSuffix(" ") { result.removeLast() }
+        return result
+    }
+
+    private static func truncateScratchbookLine(_ input: String, maxCharacters: Int) -> String {
+        guard maxCharacters > 0 else { return "" }
+        guard input.count > maxCharacters else { return input }
+        guard maxCharacters > 1 else { return "…" }
+        return String(input.prefix(maxCharacters - 1)) + "…"
+    }
+
+    private static func trimLinesToCharacterLimit(
+        _ lines: [String],
+        characterLimit: Int
+    ) -> String {
+        guard characterLimit > 0 else { return "(Scratchbook view disabled)" }
+        guard lines.isEmpty == false else { return "(Scratchbook empty)" }
+
+        var rendered: [String] = []
+        rendered.reserveCapacity(lines.count)
+
+        var used = 0
+        for line in lines {
+            let addition = (rendered.isEmpty ? line.count : (1 + line.count))
+            if used + addition > characterLimit {
+                if rendered.isEmpty {
+                    rendered.append(String(line.prefix(characterLimit)))
+                }
+                break
+            }
+            rendered.append(line)
+            used += addition
+        }
+
+        return rendered.joined(separator: "\n")
+    }
+
+    private static func newScratchItemID(
+        toolCallID: String,
+        existing: Set<String>
+    ) -> String {
+        let base: String = {
+            let trimmed = toolCallID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "scratch-item" : trimmed
+        }()
+
+        if existing.contains(base) == false { return base }
+
+        var counter = 2
+        while true {
+            let candidate = base + "-" + String(counter)
+            if existing.contains(candidate) == false { return candidate }
+            counter += 1
+        }
+    }
+
     private static func formatWithLineNumbers(text: String, offset: Int, limit: Int) -> String {
         let allLines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         let slice = allLines.dropFirst(offset).prefix(limit)
@@ -1332,4 +1869,46 @@ private struct TaskArgs: Decodable, Sendable {
         case context
         case fileReferences = "file_references"
     }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case subagentType = "subagentType"
+        case fileReferences = "fileReferences"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+
+        self.prompt = try container.decode(String.self, forKey: .prompt)
+        self.context = try container.decodeIfPresent(ColonySubagentContext.self, forKey: .context)
+        self.subagentType =
+            try container.decodeIfPresent(String.self, forKey: .subagentType)
+            ?? legacyContainer.decodeIfPresent(String.self, forKey: .subagentType)
+        self.fileReferences =
+            try container.decodeIfPresent([ColonySubagentFileReference].self, forKey: .fileReferences)
+            ?? legacyContainer.decodeIfPresent([ColonySubagentFileReference].self, forKey: .fileReferences)
+    }
+}
+
+private struct ScratchAddArgs: Decodable, Sendable {
+    let kind: ColonyScratchItem.Kind
+    let title: String
+    let body: String?
+    let tags: [String]?
+    let phase: String?
+    let progress: Double?
+}
+
+private struct ScratchUpdateArgs: Decodable, Sendable {
+    let id: String
+    let title: String?
+    let body: String?
+    let tags: [String]?
+    let status: ColonyScratchItem.Status?
+    let phase: String?
+    let progress: Double?
+}
+
+private struct ScratchIDArgs: Decodable, Sendable {
+    let id: String
 }

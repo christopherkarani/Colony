@@ -184,3 +184,58 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
     #expect(preview.count <= previewCharBudget)
     #expect(preview.contains(head) == true)
 }
+
+@Test("Colony tool eviction preview trimming is deterministic under the same budget")
+func colonyToolEvictionPreviewTrimming_isDeterministic() async throws {
+    let head = "HEAD-START:"
+    let largeOutput = head + String(repeating: "a", count: 20_000)
+    let evictionTokenLimit = 700
+
+    func runOnce(threadID: String) async throws -> String {
+        let graph = try ColonyAgent.compile()
+        let fs = ColonyInMemoryFileSystemBackend()
+
+        let configuration = ColonyConfiguration(
+            capabilities: [.filesystem],
+            modelName: "test-model",
+            toolApprovalPolicy: .never,
+            toolResultEvictionTokenLimit: evictionTokenLimit
+        )
+        let context = ColonyContext(configuration: configuration, filesystem: fs)
+
+        let environment = HiveEnvironment<ColonySchema>(
+            context: context,
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(BigToolModel()),
+            tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
+        )
+
+        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let handle = await runtime.run(
+            threadID: HiveThreadID(threadID),
+            input: "trigger",
+            options: HiveRunOptions(checkpointPolicy: .disabled)
+        )
+
+        let outcome = try await handle.outcome.value
+        guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
+            throw ColonyFileSystemError.ioError("Missing full store output.")
+        }
+
+        let messages = try store.get(ColonySchema.Channels.messages)
+        guard let toolMessage = messages.first(where: { $0.role == .tool && $0.toolCallID == "evict-1" }) else {
+            throw ColonyFileSystemError.ioError("Missing evicted tool message.")
+        }
+
+        guard let preview = extractEvictionPreview(from: toolMessage.content) else {
+            throw ColonyFileSystemError.ioError("Missing Preview: section.")
+        }
+
+        return preview
+    }
+
+    let preview1 = try await runOnce(threadID: "thread-evict-preview-deterministic-1")
+    let preview2 = try await runOnce(threadID: "thread-evict-preview-deterministic-2")
+    #expect(preview1 == preview2)
+}

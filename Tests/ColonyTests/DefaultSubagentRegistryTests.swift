@@ -210,6 +210,34 @@ private final class SubagentLargeToolResultModel: HiveModelClient, @unchecked Se
     }
 }
 
+private final class SubagentPromptCaptureModel: HiveModelClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: HiveChatRequest?
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        try await streamFinal(request)
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        lock.lock()
+        self.request = request
+        lock.unlock()
+
+        return AsyncThrowingStream { continuation in
+            continuation.yield(
+                .final(HiveChatResponse(message: HiveChatMessage(id: "assistant", role: .assistant, content: "captured")))
+            )
+            continuation.finish()
+        }
+    }
+
+    func recordedRequest() -> HiveChatRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        return request
+    }
+}
+
 @Test("Default subagent registry runs general-purpose in an isolated runtime (single tool result + shared FS side-effects only)")
 func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly() async throws {
     let graph = try ColonyAgent.compile()
@@ -356,6 +384,62 @@ func defaultSubagentRegistry_inheritsOnDeviceBudgetPosture() async throws {
     let messagesTokenCount = ColonyApproximateTokenizer().countTokens(postToolRequest.messages)
     let toolsTokenCount = approximateToolTokens(postToolRequest.tools)
     #expect((messagesTokenCount + toolsTokenCount) <= 4_000)
+}
+
+@Test("Default subagent registry includes structured + file-backed context snippets in delegated prompt")
+func defaultSubagentRegistry_includesStructuredAndFileBackedContextSnippets() async throws {
+    let fileContent = (1...10).map { "line-\($0)" }.joined(separator: "\n")
+    let fs = ColonyInMemoryFileSystemBackend(
+        files: [try ColonyVirtualPath("/ctx/source.txt"): fileContent]
+    )
+
+    let model = SubagentPromptCaptureModel()
+    let registry = ColonyDefaultSubagentRegistry(
+        profile: .onDevice4k,
+        modelName: "test-subagent-model",
+        model: AnyHiveModelClient(model),
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        filesystem: fs
+    )
+
+    _ = try await registry.run(
+        ColonySubagentRequest(
+            prompt: "Draft rollout plan.",
+            subagentType: "general-purpose",
+            context: ColonySubagentContext(
+                objective: "Roll out safely.",
+                constraints: ["No network access.", "Preserve existing behavior."],
+                acceptanceCriteria: ["Return three rollout checkpoints."],
+                notes: ["Prioritize correctness."]
+            ),
+            fileReferences: [
+                ColonySubagentFileReference(
+                    path: try ColonyVirtualPath("/ctx/source.txt"),
+                    offset: 2,
+                    limit: 3
+                )
+            ]
+        )
+    )
+
+    let request = model.recordedRequest()
+    let delegatedPrompt = request?.messages.first(where: { $0.role == .user })?.content ?? ""
+
+    #expect(delegatedPrompt.contains("Draft rollout plan.") == true)
+    #expect(delegatedPrompt.contains("Structured context:") == true)
+    #expect(delegatedPrompt.contains("objective: Roll out safely.") == true)
+    #expect(delegatedPrompt.contains("constraints:") == true)
+    #expect(delegatedPrompt.contains("acceptance_criteria:") == true)
+    #expect(delegatedPrompt.contains("notes:") == true)
+
+    #expect(delegatedPrompt.contains("File context snippets:") == true)
+    #expect(delegatedPrompt.contains("path: /ctx/source.txt") == true)
+    #expect(delegatedPrompt.contains("requested_offset: 2") == true)
+    #expect(delegatedPrompt.contains("requested_limit: 3") == true)
+    #expect(delegatedPrompt.contains("line-3") == true)
+    #expect(delegatedPrompt.contains("line-5") == true)
+    #expect(delegatedPrompt.contains("line-6") == false)
 }
 
 @Test("Default subagent registry advertises a compactor subagent type")

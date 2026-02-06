@@ -58,9 +58,22 @@ public struct ColonyAgentFactory: Sendable {
         switch profile {
         case .onDevice4k:
             var config = ColonyConfiguration(
-                capabilities: [.planning, .filesystem, .subagents],
+                capabilities: [.planning, .filesystem, .subagents, .scratchbook],
                 modelName: modelName,
-                toolApprovalPolicy: .allowList(["ls", "read_file", "glob", "grep", "read_todos", "write_todos"]),
+                toolApprovalPolicy: .allowList([
+                    "ls",
+                    "read_file",
+                    "glob",
+                    "grep",
+                    "read_todos",
+                    "write_todos",
+                    "scratch_read",
+                    "scratch_add",
+                    "scratch_update",
+                    "scratch_complete",
+                    "scratch_pin",
+                    "scratch_unpin",
+                ]),
                 compactionPolicy: .maxTokens(2_600),
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 3_200,
@@ -73,10 +86,17 @@ public struct ColonyAgentFactory: Sendable {
                 systemPromptSkillsTokenLimit: 256
             )
             config.additionalSystemPrompt = "On-device runtime: keep context tight (~4k). Prefer writing large outputs to files and referencing them."
+            config.scratchbookPolicy = ColonyScratchbookPolicy(
+                pathPrefix: try! ColonyVirtualPath("/scratchbook"),
+                viewTokenLimit: 700,
+                maxRenderedItems: 20,
+                autoCompact: true
+            )
+            config.includeToolListInSystemPrompt = false
             return config
 
         case .cloud:
-            return ColonyConfiguration(
+            var config = ColonyConfiguration(
                 capabilities: [.planning, .filesystem, .subagents],
                 modelName: modelName,
                 toolApprovalPolicy: .never,
@@ -91,6 +111,8 @@ public struct ColonyAgentFactory: Sendable {
                 systemPromptMemoryTokenLimit: nil,
                 systemPromptSkillsTokenLimit: nil
             )
+            config.includeToolListInSystemPrompt = true
+            return config
         }
     }
 

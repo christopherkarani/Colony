@@ -3,6 +3,8 @@ public struct ColonyConfiguration: Sendable {
     public var modelName: String
     public var toolApprovalPolicy: ColonyToolApprovalPolicy
     public var compactionPolicy: ColonyCompactionPolicy
+    public var scratchbookPolicy: ColonyScratchbookPolicy
+    public var includeToolListInSystemPrompt: Bool
     public var memorySources: [ColonyVirtualPath]
     public var skillSources: [ColonyVirtualPath]
     public var summarizationPolicy: ColonySummarizationPolicy?
@@ -17,6 +19,8 @@ public struct ColonyConfiguration: Sendable {
         modelName: String,
         toolApprovalPolicy: ColonyToolApprovalPolicy = .allowList(["ls", "read_file", "glob", "grep", "read_todos", "write_todos"]),
         compactionPolicy: ColonyCompactionPolicy = .maxTokens(12_000),
+        scratchbookPolicy: ColonyScratchbookPolicy = ColonyScratchbookPolicy(),
+        includeToolListInSystemPrompt: Bool = true,
         additionalSystemPrompt: String? = nil,
         memorySources: [ColonyVirtualPath] = [],
         skillSources: [ColonyVirtualPath] = [],
@@ -30,6 +34,8 @@ public struct ColonyConfiguration: Sendable {
         self.modelName = modelName
         self.toolApprovalPolicy = toolApprovalPolicy
         self.compactionPolicy = compactionPolicy
+        self.scratchbookPolicy = scratchbookPolicy
+        self.includeToolListInSystemPrompt = includeToolListInSystemPrompt
         self.additionalSystemPrompt = additionalSystemPrompt
         self.memorySources = memorySources
         self.skillSources = skillSources

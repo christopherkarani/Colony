@@ -28,10 +28,10 @@ private final class ConstantModel: HiveModelClient, @unchecked Sendable {
     }
 }
 
-private final class RecordingSubagentRegistry: ColonySubagentRegistry, @unchecked Sendable {
-    private let lock = NSLock()
-    private let subagents: [ColonySubagentDescriptor]
-    private let runImpl: @Sendable (ColonySubagentRequest) async throws -> ColonySubagentResult
+private actor RecordingSubagentRegistry: ColonySubagentRegistry {
+    nonisolated let subagents: [ColonySubagentDescriptor]
+    nonisolated let runImpl: @Sendable (ColonySubagentRequest) async throws -> ColonySubagentResult
+
     private var requests: [ColonySubagentRequest] = []
 
     init(
@@ -42,19 +42,15 @@ private final class RecordingSubagentRegistry: ColonySubagentRegistry, @unchecke
         self.runImpl = runImpl
     }
 
-    func listSubagents() -> [ColonySubagentDescriptor] { subagents }
+    nonisolated func listSubagents() -> [ColonySubagentDescriptor] { subagents }
 
     func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
-        lock.lock()
         requests.append(request)
-        lock.unlock()
         return try await runImpl(request)
     }
 
     func recordedRequests() -> [ColonySubagentRequest] {
-        lock.lock()
-        defer { lock.unlock() }
-        return requests
+        requests
     }
 }
 
@@ -198,7 +194,7 @@ func offload_prefersCompactorSubagentForScratchbookUpdate_whenAvailable() async 
         subagents: registry
     )
 
-    let requests = registry.recordedRequests()
+    let requests = await registry.recordedRequests()
     #expect(requests.contains(where: { $0.subagentType == "compactor" }) == true)
     #expect(requests.contains(where: { $0.prompt.contains(historyPath.rawValue) }) == true)
 
@@ -207,4 +203,3 @@ func offload_prefersCompactorSubagentForScratchbookUpdate_whenAvailable() async 
     #expect(scratchbookContainsHistoryReference(scratchbook, historyPath: historyPath) == true)
     #expect(scratchbookContainsNextActions(scratchbook) == true)
 }
-

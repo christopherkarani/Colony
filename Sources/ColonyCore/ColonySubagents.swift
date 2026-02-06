@@ -32,6 +32,23 @@ public struct ColonySubagentContext: Sendable, Codable, Equatable {
         case acceptanceCriteria = "acceptance_criteria"
         case notes
     }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case acceptanceCriteria = "acceptanceCriteria"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+
+        self.objective = try container.decodeIfPresent(String.self, forKey: .objective)
+        self.constraints = try container.decodeIfPresent([String].self, forKey: .constraints) ?? []
+        self.acceptanceCriteria =
+            try container.decodeIfPresent([String].self, forKey: .acceptanceCriteria)
+            ?? legacyContainer.decodeIfPresent([String].self, forKey: .acceptanceCriteria)
+            ?? []
+        self.notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
+    }
 }
 
 public struct ColonySubagentFileReference: Sendable, Codable, Equatable {

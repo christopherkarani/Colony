@@ -7,6 +7,28 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
         self.rawValue = try Self.normalize(rawValue)
     }
 
+    public init(from decoder: any Decoder) throws {
+        if let single = try? decoder.singleValueContainer(),
+           let raw = try? single.decode(String.self)
+        {
+            self.rawValue = try Self.normalize(raw)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try container.decode(String.self, forKey: .rawValue)
+        self.rawValue = try Self.normalize(raw)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rawValue
+    }
+
     public static var root: ColonyVirtualPath {
         // swiftlint:disable:next force_try
         try! ColonyVirtualPath("/")
