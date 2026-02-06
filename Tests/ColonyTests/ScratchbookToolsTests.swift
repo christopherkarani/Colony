@@ -151,9 +151,8 @@ private func scratchbookFilePath(
     prefix: ColonyVirtualPath,
     threadID: HiveThreadID
 ) throws -> ColonyVirtualPath {
-    // Spec: `{scratchbookPathPrefix}/{sanitizedThreadID}.json` (plan A2).
-    // Choose test thread IDs that do not require sanitization.
-    try ColonyVirtualPath(prefix.rawValue + "/" + threadID.rawValue + ".json")
+    let policy = ColonyScratchbookPolicy(pathPrefix: prefix)
+    return try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
 }
 
 private func decodeScratchbookJSON(_ text: String) throws -> [String: Any] {
@@ -456,11 +455,12 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let pinned = mutatedJSON["pinnedItemIDs"] as? [String] ?? []
     #expect(pinned.contains(id!) == false)
 
-    // `scratch_read` should return a compact view that includes the updated title.
+    // `scratch_read` uses the shared renderView logic; completed/archived items are omitted.
     let messages3 = try store3.get(ColonySchema.Channels.messages)
     let scratchReadTool = messages3.last { $0.role == HiveChatRole.tool && $0.name == "scratch_read" }
     #expect(scratchReadTool != nil)
-    #expect(scratchReadTool?.content.contains("Alpha (updated)") == true)
+    #expect(scratchReadTool?.content == "(Scratchbook empty)")
+    #expect(scratchReadTool?.content.contains("Alpha (updated)") == false)
 
     // Strict scoping: only the thread scratchbook file may be touched.
     let ops1 = await fs1.recordedOperations()
@@ -478,6 +478,108 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
             }
         })
     }
+}
+
+@Test("Scratchbook read uses the shared renderView ordering and active-status filtering")
+func scratchbookTools_readUsesSharedRenderView() async throws {
+    let graph = try ColonyAgent.compile()
+    let baseFS = ColonyInMemoryFileSystemBackend()
+
+    let prefix = try ColonyVirtualPath("/scratchbook")
+    let threadID = HiveThreadID("thread-scratchbook-read-render")
+    let policy = ColonyScratchbookPolicy(
+        pathPrefix: prefix,
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
+
+    let scratchbook = ColonyScratchbook(
+        items: [
+            ColonyScratchItem(
+                id: "pinned-note",
+                kind: .note,
+                status: .open,
+                title: "Pinned",
+                body: "Pinned body",
+                tags: [],
+                createdAtNanoseconds: 1,
+                updatedAtNanoseconds: 1
+            ),
+            ColonyScratchItem(
+                id: "todo-open",
+                kind: .todo,
+                status: .open,
+                title: "Todo item",
+                body: "",
+                tags: [],
+                createdAtNanoseconds: 2,
+                updatedAtNanoseconds: 10
+            ),
+            ColonyScratchItem(
+                id: "note-open",
+                kind: .note,
+                status: .open,
+                title: "Note item",
+                body: "",
+                tags: [],
+                createdAtNanoseconds: 3,
+                updatedAtNanoseconds: 20
+            ),
+            ColonyScratchItem(
+                id: "task-done",
+                kind: .task,
+                status: .done,
+                title: "Done task",
+                body: "",
+                tags: [],
+                createdAtNanoseconds: 4,
+                updatedAtNanoseconds: 30
+            ),
+        ],
+        pinnedItemIDs: ["pinned-note"]
+    )
+
+    try await ColonyScratchbookStore.save(
+        scratchbook,
+        filesystem: baseFS,
+        threadID: threadID.rawValue,
+        policy: policy
+    )
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.filesystem, .scratchbook],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        compactionPolicy: .maxTokens(0)
+    )
+    configuration.scratchbookPolicy = policy
+
+    let read = HiveToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
+    let model = ToolCallSequenceModel(toolCalls: [read], finalContent: "done")
+    let context = ColonyContext(configuration: configuration, filesystem: baseFS)
+    let env = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(model)
+    )
+    let runtime = HiveRuntime(graph: graph, environment: env)
+    let handle = await runtime.run(
+        threadID: threadID,
+        input: "read scratchbook",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+    let outcome = try await handle.outcome.value
+    guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
+        #expect(Bool(false))
+        return
+    }
+
+    let messages = try store.get(ColonySchema.Channels.messages)
+    let readMessage = messages.last { $0.role == .tool && $0.name == "scratch_read" }
+    #expect(readMessage != nil)
+    #expect(readMessage?.content == scratchbook.renderView(policy: policy))
 }
 
 @Test("On-device profile tool approval allowlist includes scratchbook tool names")

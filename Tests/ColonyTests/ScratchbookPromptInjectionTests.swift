@@ -56,8 +56,8 @@ private func extractSection(named header: String, from systemPrompt: String) -> 
 }
 
 private func scratchbookFilePath(prefix: ColonyVirtualPath, threadID: HiveThreadID) throws -> ColonyVirtualPath {
-    // Spec: `{scratchbookPathPrefix}/{sanitizedThreadID}.json` (plan A2).
-    try ColonyVirtualPath(prefix.rawValue + "/" + threadID.rawValue + ".json")
+    let policy = ColonyScratchbookPolicy(pathPrefix: prefix)
+    return try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
 }
 
 private func makeScratchbookFileJSON(items: [[String: Any]], pinnedItemIDs: [String] = []) throws -> String {
@@ -130,6 +130,73 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
     let scratchbookView = extractSection(named: "Scratchbook:", from: systemPrompt)
     #expect(scratchbookView != nil)
     #expect(scratchbookView?.contains("Alpha") == true)
+}
+
+@Test("System prompt scratchbook injection resolves canonical sanitized scratchbook path")
+func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
+    let graph = try ColonyAgent.compile()
+    let fs = ColonyInMemoryFileSystemBackend()
+
+    let threadID = HiveThreadID("thread/scratch\\path:injection")
+    let prefix = try ColonyVirtualPath("/scratchbook")
+    let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
+
+    try await fs.write(
+        at: scratchbookPath,
+        content: try makeScratchbookFileJSON(items: [[
+            "id": "item-1",
+            "kind": "note",
+            "status": "open",
+            "title": "Sanitized Path Item",
+            "body": "",
+            "tags": [],
+            "createdAtNanoseconds": 1,
+            "updatedAtNanoseconds": 1,
+        ]])
+    )
+
+    let unsanitizedPath = try ColonyVirtualPath(prefix.rawValue + "/" + threadID.rawValue + ".json")
+    await #expect(throws: ColonyFileSystemError.notFound(unsanitizedPath)) {
+        _ = try await fs.read(at: unsanitizedPath)
+    }
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.filesystem, .scratchbook],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        compactionPolicy: .maxTokens(0)
+    )
+    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+        pathPrefix: prefix,
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
+    configuration.includeToolListInSystemPrompt = true
+
+    let recordingModel = RecordingRequestModel()
+    let context = ColonyContext(configuration: configuration, filesystem: fs)
+    let environment = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(recordingModel)
+    )
+    let runtime = HiveRuntime(graph: graph, environment: environment)
+    _ = try await (await runtime.run(
+        threadID: threadID,
+        input: "hi",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )).outcome.value
+
+    guard let request = recordingModel.recordedRequests().last,
+          let systemPrompt = systemPromptString(from: request) else {
+        #expect(Bool(false))
+        return
+    }
+
+    let scratchbookView = extractSection(named: "Scratchbook:", from: systemPrompt)
+    #expect(scratchbookView?.contains("Sanitized Path Item") == true)
 }
 
 @Test("System prompt does not inject Scratchbook view when filesystem backend is missing")

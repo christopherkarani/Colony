@@ -331,20 +331,24 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
         characterLimit: Int
     ) -> String {
         guard characterLimit > 0 else { return "" }
+        guard lines.isEmpty == false else { return "" }
 
-        var kept = lines
-        var rendered = kept.joined(separator: "\n")
+        var kept: [String] = []
+        kept.reserveCapacity(lines.count)
 
-        while kept.isEmpty == false, rendered.count > characterLimit {
-            kept.removeLast()
-            rendered = kept.joined(separator: "\n")
+        var used = 0
+        for line in lines {
+            let addition = kept.isEmpty ? line.count : (1 + line.count)
+            if used + addition > characterLimit {
+                if kept.isEmpty {
+                    return truncate(line, maxCharacters: characterLimit)
+                }
+                break
+            }
+            kept.append(line)
+            used += addition
         }
 
-        if rendered.count <= characterLimit {
-            return rendered
-        }
-
-        guard characterLimit > 1 else { return String(rendered.prefix(characterLimit)) }
-        return String(rendered.prefix(characterLimit - 1)) + "…"
+        return kept.joined(separator: "\n")
     }
 }

@@ -11,6 +11,7 @@ let package = Package(
     products: [
         .library(name: "Colony", targets: ["Colony"]),
         .library(name: "ColonyCore", targets: ["ColonyCore"]),
+        .executable(name: "ColonyResearchAssistantExample", targets: ["ColonyResearchAssistantExample"]),
     ],
     dependencies: [
         .package(path: "../hive"),
@@ -29,10 +30,17 @@ let package = Package(
                 .product(name: "HiveCore", package: "Hive"),
             ]
         ),
+        .executableTarget(
+            name: "ColonyResearchAssistantExample",
+            dependencies: ["Colony"]
+        ),
         .testTarget(
             name: "ColonyTests",
             dependencies: ["Colony"]
         ),
+        .testTarget(
+            name: "ColonyResearchAssistantExampleTests",
+            dependencies: ["ColonyResearchAssistantExample"]
+        ),
     ]
 )
-

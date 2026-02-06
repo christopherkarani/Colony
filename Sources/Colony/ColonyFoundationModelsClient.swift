@@ -25,15 +25,23 @@ public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConv
 
 public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
     public struct Configuration: Sendable {
+        public enum ToolInstructionVerbosity: Sendable {
+            case compact
+            case verbose
+        }
+
         public var additionalInstructions: String?
         public var prewarmSession: Bool
+        public var toolInstructionVerbosity: ToolInstructionVerbosity
 
         public init(
             additionalInstructions: String? = nil,
-            prewarmSession: Bool = false
+            prewarmSession: Bool = false,
+            toolInstructionVerbosity: ToolInstructionVerbosity = .compact
         ) {
             self.additionalInstructions = additionalInstructions
             self.prewarmSession = prewarmSession
+            self.toolInstructionVerbosity = toolInstructionVerbosity
         }
     }
 
@@ -169,29 +177,80 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         return (instructions: instructions, prompt: prompt, toolsAllowed: toolsAllowed)
     }
 
-    private func makeToolInstructions(tools: [HiveToolDefinition]) -> String? {
+    func makeToolInstructions(tools: [HiveToolDefinition]) -> String? {
         guard tools.isEmpty == false else { return nil }
 
-        let toolList = tools
-            .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-            .map { tool in
-                """
-                - \(tool.name): \(tool.description)
-                  parameters_json_schema: \(tool.parametersJSONSchema)
-                """
-            }
-            .joined(separator: "\n")
+        switch configuration.toolInstructionVerbosity {
+        case .compact:
+            let toolList = tools
+                .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+                .map { tool in
+                    let argsSummary = compactArgumentSummary(from: tool.parametersJSONSchema)
+                    if argsSummary.isEmpty {
+                        return "- \(tool.name)"
+                    }
+                    return "- \(tool.name)\n  args: \(argsSummary)"
+                }
+                .joined(separator: "\n")
 
-        return """
-        Tool calling:
-        - If you need to call a tool, emit one or more tool call blocks.
-        - A tool call block MUST be valid JSON wrapped with tags, with no surrounding text:
-          \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
-        - If you emit any tool call blocks, do NOT include other assistant text outside tool calls.
+            return """
+            Tool calling:
+            - Emit tool calls as JSON wrapped in tags:
+              \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
+            - Emit one block per call.
+            - If you emit tool calls, do not emit other assistant text.
 
-        Available tools:
-        \(toolList)
-        """
+            Available tools:
+            \(toolList)
+            """
+        case .verbose:
+            let toolList = tools
+                .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+                .map { tool in
+                    """
+                    - \(tool.name): \(tool.description)
+                      parameters_json_schema: \(tool.parametersJSONSchema)
+                    """
+                }
+                .joined(separator: "\n")
+
+            return """
+            Tool calling:
+            - If you need to call a tool, emit one or more tool call blocks.
+            - A tool call block MUST be valid JSON wrapped with tags, with no surrounding text:
+              \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
+            - If you emit any tool call blocks, do NOT include other assistant text outside tool calls.
+
+            Available tools:
+            \(toolList)
+            """
+        }
+    }
+
+    private func compactArgumentSummary(from schemaJSON: String) -> String {
+        guard let data = schemaJSON.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return ""
+        }
+
+        let properties = (object["properties"] as? [String: Any])?
+            .keys
+            .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) } ?? []
+        let requiredKeys = Set((object["required"] as? [String] ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+
+        guard properties.isEmpty == false else { return "(none)" }
+
+        let maxKeys = 8
+        let visibleKeys = properties.prefix(maxKeys).map { key in
+            requiredKeys.contains(key) ? "\(key)*" : key
+        }
+
+        var summary = visibleKeys.joined(separator: ", ")
+        if properties.count > maxKeys {
+            summary += ", +\(properties.count - maxKeys) more"
+        }
+        return summary
     }
 
     private func renderToolCallMarkup(from call: HiveToolCall) -> String {

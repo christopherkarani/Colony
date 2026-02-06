@@ -253,6 +253,26 @@ func scratchbookCore_renderView_viewTokenLimit() throws {
     #expect(view.contains("pinned") == true)
 }
 
+@Test("Scratchbook renderView returns a truncated first line for tiny positive budgets")
+func scratchbookCore_renderView_tinyBudgetReturnsNonEmptyTruncation() throws {
+    let item = ColonyScratchItem(
+        id: "item-1",
+        kind: .note,
+        status: .open,
+        title: "Very Long Title",
+        body: String(repeating: "x", count: 200),
+        tags: [],
+        createdAtNanoseconds: 1,
+        updatedAtNanoseconds: 1
+    )
+
+    let scratchbook = ColonyScratchbook(items: [item], pinnedItemIDs: [])
+    let view = scratchbook.renderView(viewTokenLimit: 1, maxRenderedItems: 20)
+
+    #expect(view.isEmpty == false)
+    #expect(view.count <= 4)
+}
+
 @Test("Scratchbook store persists per-thread JSON at {prefix}/{sanitizedThreadID}.json using sortedKeys encoding")
 func scratchbookStorage_persistsPerThread_withSortedKeysEncoding() async throws {
     let filesystem = ColonyInMemoryFileSystemBackend()

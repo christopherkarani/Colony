@@ -93,6 +93,9 @@ Preview:
 \(preview)
 ```
 
+History offload file serialization template:
+- `### \(String(describing: message.role))` (`:1055`)
+
 Tool execution control messages:
 - `Tool execution rejected by user.` (`:499`)
 - `Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.` (`:506`)
@@ -118,6 +121,7 @@ Prompt-visible tool response strings:
 - `OK: wrote \(path.rawValue)` (`:1508`)
 - `OK: edited \(path.rawValue) (\(occurrences) replacement(s))` (`:1524`)
 - Execute output rendering uses:
+- `%6d\t%@` line-number format (`:1767`)
 - `exit_code: \(result.exitCode)` (`:1773`)
 - `stdout:\n\(result.stdout)` (`:1775`)
 - `stderr:\n\(result.stderr)` (`:1778`)
@@ -167,6 +171,7 @@ Delegated prompt augmentation templates:
 - `requested_limit: \(ref.limit ?? 100)` (`:205`)
 - `excerpt: (filesystem not configured)` (`:209`)
 - `excerpt:\n` + line-numbered excerpt (`:216`)
+- `%6d\t%@` line-number format used for excerpt rendering (`:234`)
 - `excerpt_error: \(error)` (`:218`)
 
 ### 4) Foundation Models Prompt/Instruction Templates
@@ -192,6 +197,9 @@ Tool calling:
 Available tools:
 \(toolList)
 ```
+
+Per-tool schema detail line in tool list rendering:
+- `parameters_json_schema: \(tool.parametersJSONSchema)` (`:180`)
 
 Rendered call markup format (`:198`):
 ```text
@@ -232,6 +240,7 @@ These descriptions are injected when `Tools:` is enabled and are also used in mo
 - `scratch_pin` (`:111`): `Pin a Scratchbook item by id.`
 - `scratch_unpin` (`:119`): `Unpin a Scratchbook item by id.`
 - `task` (`:138`): `Launch an isolated subagent task. Available subagents: \(available)`
+- `task` empty-subagent fallback (`:129`): `(none configured)`
 
 JSON parameter schemas for each tool are prompt-relevant and defined adjacent to each description at:
 - `ls` (`:9`)
