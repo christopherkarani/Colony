@@ -35,6 +35,8 @@ func mockResearchModelCompletesTaskLoop() async throws {
     let finalAnswer = try store.get(ColonySchema.Channels.finalAnswer) ?? ""
     #expect(finalAnswer.isEmpty == false)
     #expect(finalAnswer.contains("MOCK_RESEARCH_SUMMARY"))
+    #expect(finalAnswer.contains("MOCK_SUBAGENT_FINDINGS"))
+    #expect(finalAnswer.contains("Subagent registry not configured.") == false)
 
     let messages = try store.get(ColonySchema.Channels.messages)
     guard let assistantTaskMessage = messages.first(where: { message in
