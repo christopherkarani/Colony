@@ -2,14 +2,14 @@ import HiveCore
 
 public enum ColonyPrompts {
     public static let baseSystemPrompt: String = """
-In order to complete the objective that the user asks of you, you have access to a number of standard tools.
+You have tools to help complete the user's objective.
 
-Follow these rules:
-- Be concise and direct unless the user asks for detail.
-- Prefer using tools over guessing.
-- When operating on files, read before editing, and avoid unnecessary changes.
-- Skills are metadata-only; read the referenced SKILL.md file when needed.
-- If memory files are provided, update them via edit_file only when asked (never store secrets).
+Rules:
+- Be concise unless asked for detail.
+- Use tools instead of guessing.
+- Read files before editing; avoid unnecessary changes.
+- Skills are metadata-only; read the SKILL.md when needed.
+- Update memory files only when asked. Never store secrets.
 """
 
     public static func systemPrompt(
@@ -52,16 +52,19 @@ Follow these rules:
             sections.append(additional)
         }
 
+        // Scratchbook is placed before Memory/Skills so that under hard token
+        // limits (where the system message is truncated from the end) the active
+        // agent state survives while reference material is shed first.
+        if let scratchbook, scratchbook.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            sections.append("Scratchbook:\n" + scratchbook)
+        }
+
         if let memory, memory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             sections.append("Memory:\n" + memory)
         }
 
         if let skills, skills.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             sections.append("Skills:\n" + skills)
-        }
-
-        if let scratchbook, scratchbook.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            sections.append("Scratchbook:\n" + scratchbook)
         }
 
         if availableTools.isEmpty == false {

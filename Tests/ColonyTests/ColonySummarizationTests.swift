@@ -84,7 +84,7 @@ func colonySummarizationOffloadsHistory() async throws {
 
     // In-context messages contain a summary marker and file reference.
     let messages = try store.get(ColonySchema.Channels.messages)
-    let summaryMessage = messages.first { $0.content.contains("conversation has been summarized") }
+    let summaryMessage = messages.first { $0.content.contains("Conversation summarized") }
     #expect(summaryMessage != nil)
     #expect(summaryMessage?.content.contains("/conversation_history/thread-summarize.md") == true)
 }
