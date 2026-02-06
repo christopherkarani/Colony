@@ -947,7 +947,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Result too large (\(toolCall.id)). Full output: \(path.rawValue) (use read_file offset/limit).
+Result too large (\(toolCall.id)). Full output: \(path.rawValue). Use read_file with offset/limit to access it.
 Preview:
 \(preview)
 """
