@@ -85,7 +85,15 @@ public struct ColonyAgentFactory: Sendable {
                 systemPromptMemoryTokenLimit: 256,
                 systemPromptSkillsTokenLimit: 256
             )
-            config.additionalSystemPrompt = "On-device runtime: keep context tight (~4k). Prefer writing large outputs to files and referencing them."
+            config.additionalSystemPrompt = """
+            On-device runtime (~4k context window).
+            - Keep responses short. Write large outputs to files and reference them.
+            - Use the Scratchbook to persist state: track progress, key findings, and next actions.
+            - Plan before acting: outline steps with write_todos, then execute one at a time.
+            - After completing a step, update the Scratchbook before proceeding.
+            - When context is compacted, consult the Scratchbook to recover state.
+            - Prefer single focused tool calls over batching unrelated operations.
+            """
             config.scratchbookPolicy = ColonyScratchbookPolicy(
                 pathPrefix: try! ColonyVirtualPath("/scratchbook"),
                 viewTokenLimit: 700,

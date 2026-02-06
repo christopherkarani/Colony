@@ -124,7 +124,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     let toolMessage = messages.first { $0.role == HiveChatRole.tool && $0.toolCallID == "evict-1" }
     #expect(toolMessage != nil)
     #expect(toolMessage?.content.contains("/large_tool_results/evict-1") == true)
-    #expect(toolMessage?.content.contains("Tool result too large") == true)
+    #expect(toolMessage?.content.contains("Result too large") == true)
 }
 
 @Test("Colony caps tool eviction preview by toolResultEvictionTokenLimit budget")
