@@ -9,7 +9,7 @@ Rules:
 - Use tools instead of guessing.
 - Read files before editing; avoid unnecessary changes.
 - Skills are metadata-only; read the SKILL.md when needed.
-- Update memory files only when asked. Never store secrets.
+- Update memory files only when asked; never store secrets.
 """
 
     public static func systemPrompt(

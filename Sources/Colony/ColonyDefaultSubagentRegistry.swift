@@ -92,7 +92,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
                 base: configuration.additionalSystemPrompt,
                 extra: """
                 Compactor mode:
-                - Write compact summary + next actions to Scratchbook.
+                - Prefer Scratchbook for summary + next actions.
                 - Offloaded history file is the source of truth.
                 - No `task` tool; recursive subagents disabled.
                 """
