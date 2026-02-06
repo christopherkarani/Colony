@@ -195,10 +195,8 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
             return """
             Tool calling:
-            - Emit tool calls as JSON wrapped in tags:
-              \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
-            - Emit one block per call.
-            - If you emit tool calls, do not emit other assistant text.
+            - Emit JSON in tags: \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
+            - One block per call; no other text when calling tools.
 
             Available tools:
             \(toolList)
