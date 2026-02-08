@@ -430,6 +430,13 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
                     }
 
                     let (instructions, prompt, toolsAllowed) = makePrompt(from: request)
+
+                    // DEBUG: Log what's being sent to Foundation Models
+                    print("[FM-DEBUG] Instructions length: \(instructions?.count ?? 0) chars")
+                    print("[FM-DEBUG] Prompt length: \(prompt.count) chars")
+                    print("[FM-DEBUG] Prompt: \(prompt.prefix(300))")
+                    print("[FM-DEBUG] Tools allowed: \(toolsAllowed)")
+
                     let session = makeSession(instructions: instructions)
                     if configuration.prewarmSession {
                         session.prewarm(promptPrefix: nil)
@@ -462,10 +469,17 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
                         }
                     }
 
+                    // DEBUG: Log raw model output and parsed response
+                    print("[FM-DEBUG] Raw model output (\(lastRaw.count) chars): \(lastRaw.prefix(500))")
+
                     let response = try makeResponse(
                         rawModelText: lastRaw,
                         toolsAllowed: toolsAllowed
                     )
+
+                    print("[FM-DEBUG] Parsed response content: \(response.message.content.prefix(200))")
+                    print("[FM-DEBUG] Parsed tool calls: \(response.message.toolCalls.map(\.name))")
+
                     continuation.yield(.final(response))
                     continuation.finish()
                 } catch let error as ColonyFoundationModelsClientError {

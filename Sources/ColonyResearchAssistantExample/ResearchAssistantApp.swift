@@ -80,9 +80,16 @@ struct ResearchAssistantApp: Sendable {
                 break
             }
 
-            let handle = await runtime.sendUserMessage(input)
-            let answer = try await resolveOutcomeLoop(handle: handle, runtime: runtime)
-            print(answer)
+            do {
+                let handle = await runtime.sendUserMessage(input)
+                let answer = try await resolveOutcomeLoop(handle: handle, runtime: runtime)
+                print(answer)
+            } catch let error as ColonyFoundationModelsClientError {
+                print("Model error: \(error)")
+                print("Hint: try running with --model-mode mock to use the built-in mock model.")
+            } catch {
+                print("Error: \(error)")
+            }
         }
     }
 
