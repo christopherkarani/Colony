@@ -59,14 +59,14 @@ Both profiles are customizable via the `configure:` closure on `makeRuntime()`.
 ### Key Types
 
 - `ColonyAgentFactory` — Entry point. Call `makeRuntime()` to get a configured `ColonyRuntime`.
-- `ColonyRuntime` — Thin wrapper around `HiveRuntime<ColonySchema>`. Provides `sendUserMessage(_:)` and `resumeToolApproval(interruptID:decision:)`.
+- `ColonyRuntime` — Thin wrapper around `HiveRuntime<ColonySchema>`. Exposes `runControl.start(_:)` / `runControl.resume(_:)`.
 - `ColonyConfiguration` — All agent settings (capabilities, approval policy, compaction, summarization, token limits, memory/skill sources).
 - `ColonyContext` — Runtime context holding configuration + backend references. Passed as `HiveEnvironment.context`.
 - `ColonyAgent` — The compiled `HiveGraph`. The graph definition is in `ColonyAgent.swift`.
 
 ### Human-in-the-Loop
 
-Tool approval is controlled by `ColonyToolApprovalPolicy` (`.never`, `.always`, `.allowList(Set<String>)`). When approval is required, the runtime emits an `.interrupted` outcome with `.toolApprovalRequired` payload. Resume with `resumeToolApproval(interruptID:decision:)`.
+Tool approval is controlled by `ColonyToolApprovalPolicy` (`.never`, `.always`, `.allowList(Set<String>)`). When approval is required, the runtime emits an `.interrupted` outcome with `.toolApprovalRequired` payload. Resume with `runControl.resume(.init(interruptID:decision:))`.
 
 ## Testing Conventions
 

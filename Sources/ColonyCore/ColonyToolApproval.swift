@@ -1,6 +1,7 @@
 public enum ColonyToolApprovalDecision: String, Codable, Sendable {
     case approved
     case rejected
+    case cancelled
 }
 
 public enum ColonyToolApprovalPolicy: Sendable {
@@ -23,4 +24,3 @@ public enum ColonyToolApprovalPolicy: Sendable {
         }
     }
 }
-

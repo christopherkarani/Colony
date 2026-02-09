@@ -5,6 +5,15 @@
 - Migration mode: **breaking major release**
 - Target architecture: **Colony built on top of Swarm**, with **Hive as the only execution core**
 
+## Baseline Addendum (Frozen Checkpoint)
+- Date frozen: **February 8, 2026**
+- Immutable checkpoint:
+  1. `Colony` baseline suite was green (`66` tests).
+  2. `Swarm` Hive integration was blocked by `HiveAgents.swift` accessing `runtime.environment` while `HiveRuntime.environment` was `private`.
+- Verification commands locked for migration:
+  1. `cd /Users/chriskarani/CodingProjects/Colony && swift test`
+  2. `cd /Users/chriskarani/CodingProjects/Swarm && SWARM_USE_LOCAL_HIVE=1 SWARM_INCLUDE_HIVE=1 SWARM_HIVE_RUNTIME=1 swift test --filter HiveSwarmTests`
+
 ## Non-Negotiable Architecture
 - `SwiftAgents` (Swarm) is the orchestration surface.
 - `Hive` remains the only runtime/execution engine.
@@ -23,7 +32,7 @@
 - No implementation phase is complete without green phase-gate tests.
 
 ## Explicit Non-Goals
-- Maintaining old `ColonyRuntime.sendUserMessage` / `resumeToolApproval` API compatibility in the final release.
+- Maintaining legacy method-pair runtime entrypoints in the final release.
 - Supporting non-Hive execution backends in Colony.
 - Preserving legacy internal orchestration code after parity is proven.
 

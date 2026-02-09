@@ -457,6 +457,8 @@ public enum ColonyAgent {
                     return try approvedToolPath(input: input, calls: calls)
                 case .rejected:
                     return try rejectedToolPath(input: input, calls: calls, taskID: input.run.taskID)
+                case .cancelled:
+                    return try cancelledToolPath(input: input, calls: calls, taskID: input.run.taskID)
                 }
             }
 
@@ -503,7 +505,37 @@ public enum ColonyAgent {
             HiveChatMessage(
                 id: "tool:" + call.id,
                 role: .tool,
-                content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.",
+                content: "Tool call \(call.name) with id \(call.id) was rejected - tool execution was denied by the user.",
+                name: call.name,
+                toolCallID: call.id
+            )
+        }
+        return HiveNodeOutput(
+            writes: [
+                AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, []),
+                AnyHiveWrite(ColonySchema.Channels.messages, [system] + cancellations),
+            ],
+            next: .nodes([nodePreModel])
+        )
+    }
+
+    private static func cancelledToolPath(
+        input: HiveNodeInput<ColonySchema>,
+        calls: [HiveToolCall],
+        taskID: HiveTaskID
+    ) throws -> HiveNodeOutput<ColonySchema> {
+        let messageID = ColonyMessageID.systemMessageID(taskID: taskID)
+        let system = HiveChatMessage(
+            id: messageID,
+            role: .system,
+            content: "Tool execution cancelled by user."
+        )
+
+        let cancellations = calls.map { call in
+            HiveChatMessage(
+                id: "tool:" + call.id,
+                role: .tool,
+                content: "Tool call \(call.name) with id \(call.id) was cancelled by user.",
                 name: call.name,
                 toolCallID: call.id
             )

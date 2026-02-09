@@ -81,7 +81,7 @@ struct ResearchAssistantApp: Sendable {
             }
 
             do {
-                let handle = await runtime.sendUserMessage(input)
+                let handle = await runtime.runControl.start(.init(input: input))
                 let answer = try await resolveOutcomeLoop(handle: handle, runtime: runtime)
                 print(answer)
             } catch let error as ColonyFoundationModelsClientError {
@@ -117,9 +117,8 @@ struct ResearchAssistantApp: Sendable {
                 switch interruption.interrupt.payload {
                 case .toolApprovalRequired(let toolCalls):
                     let decision = promptForApproval(toolCalls: toolCalls)
-                    currentHandle = await runtime.resumeToolApproval(
-                        interruptID: interruption.interrupt.id,
-                        decision: decision
+                    currentHandle = await runtime.runControl.resume(
+                        .init(interruptID: interruption.interrupt.id, decision: decision)
                     )
                 }
             }
@@ -138,11 +137,14 @@ struct ResearchAssistantApp: Sendable {
     private func promptForApproval(toolCalls: [HiveToolCall]) -> ColonyToolApprovalDecision {
         let names = toolCalls.map(\.name).joined(separator: ", ")
         print("Tool approval required for: \(names)")
-        print("Approve? [y/N]: ", terminator: "")
+        print("Approve? [y/N/c(ancel)]: ", terminator: "")
         fflush(stdout)
         let response = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         if response == "y" || response == "yes" {
             return .approved
+        }
+        if response == "c" || response == "cancel" || response == "cancelled" {
+            return .cancelled
         }
         return .rejected
     }
