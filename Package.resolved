@@ -1,13 +1,13 @@
 {
-  "originHash" : "d3bd3e8b7443c017004b826a4ab2643708d790d206e8d5ce6a2c5a73e4fcd428",
+  "originHash" : "a9aed9c2ca306cd030d24aca15ab2a4feacffbce8953bbb23a9e6ff227049e0f",
   "pins" : [
     {
       "identity" : "conduit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Conduit",
       "state" : {
-        "revision" : "bce7ce9e2f56e28a837a07ddaed9719d158ebab0",
-        "version" : "0.3.1"
+        "revision" : "d91a2b6c4bdc947dd10459e36e7959035b2be691",
+        "version" : "0.3.3"
       }
     },
     {
@@ -69,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Wax.git",
       "state" : {
-        "revision" : "1a728f2047057e5e1508925a40bb41421f6a9435",
-        "version" : "0.1.3"
+        "revision" : "39066b6447f8aaa468db317ccffe7ed46d44ed2c",
+        "version" : "0.1.4"
       }
     }
   ],

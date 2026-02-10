@@ -1,7 +1,7 @@
 ## Prompt for Coding Agent
 
 ```text
-You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCore architecture, the runtime loop (preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel), and how to run it on iOS/macOS 26+ with a local ../hive dependency. Include proof-backed behavior for tool approval interrupts/resume, on-device 4k budgeting, summarization with /conversation_history offload, large tool result eviction to /large_tool_results, scratchbook workflows, and isolated subagents. End with a minimal runnable Swift snippet using ColonyAgentFactory + ColonyRuntime.sendUserMessage and a human-in-the-loop resume example.
+You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCore architecture, the runtime loop (preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel), and how to run it on iOS/macOS 26+ with a pinned Hive checkout policy. Include proof-backed behavior for tool approval interrupts/resume, on-device 4k budgeting, summarization with /conversation_history offload, large tool result eviction to /large_tool_results, scratchbook workflows, and isolated subagents. End with a minimal runnable Swift snippet using ColonyAgentFactory + ColonyRuntime.sendUserMessage and a human-in-the-loop resume example.
 ```
 
 # Colony
@@ -40,17 +40,19 @@ Built-in tool families (all capability-gated, backend-gated):
 
 - Swift 6.2 (`swift-tools-version: 6.2`)
 - iOS 26+ or macOS 26+
-- A local Hive checkout at `../hive` (current `Package.swift` uses `.package(path: "../hive")`)
+- A pinned remote Hive dependency declared in `HIVE_DEPENDENCY.lock` and `Package.swift`
+- Optional offline/local fallback: bootstrap `.deps/Hive` and set `COLONY_USE_LOCAL_HIVE_PATH=1`
 
 ## Quickstart
 
-1. Ensure a sibling Hive checkout exists at `../hive` (local SwiftPM dependency path used by `Package.swift`).
+1. Validate pinned Hive dependency metadata.
 2. Build and run tests.
 3. Create a runtime and send a message.
 
 ```bash
 cd /path/to/Colony
-test -f ../hive/Package.swift || echo "Missing ../hive (required local dependency)"
+scripts/ci/bootstrap-hive.sh
+export COLONY_USE_LOCAL_HIVE_PATH=1
 swift package resolve
 swift test
 ```
@@ -111,13 +113,19 @@ if case let .interrupted(interruption) = outcome,
 
 ## Troubleshooting
 
-- `swift package resolve` fails: verify `../hive` exists and is a valid Hive package checkout.
+- `swift package resolve` fails: run `scripts/ci/bootstrap-hive.sh` and verify `HIVE_DEPENDENCY.lock` matches the pinned remote Hive dependency.
 - `foundationModelsUnavailable`: on-device Foundation Models are not available on this device/configuration. Inject another `HiveModelClient` or use a router.
 - Missing tools in prompts: check both capabilities and backend wiring (for example, `shell` needs `ColonyShellBackend`; `subagents` needs `ColonySubagentRegistry`).
 - SDK/platform errors: this package targets Swift 6.2 with iOS/macOS 26+.
 
 ## Current Limitations
 
-- Dependency is local-path only today: `.package(path: "../hive")`.
+- Hive is consumed as a pinned remote dependency; update `HIVE_DEPENDENCY.lock` and `Package.swift` together when upgrading Hive.
 - Platform availability is currently iOS 26+ and macOS 26+.
 - On-device profile is intentionally strict (~4k posture): older context and large outputs are compacted/offloaded by design.
+
+## Release and Upgrade Docs
+
+- Release policy: `docs/release/release-policy.md`
+- Upgrade flow: `docs/release/upgrade-flow.md`
+- Changelog: `CHANGELOG.md`

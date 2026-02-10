@@ -116,6 +116,14 @@ public struct ColonyContext: Sendable {
     public let configuration: ColonyConfiguration
     public let filesystem: (any ColonyFileSystemBackend)?
     public let shell: (any ColonyShellBackend)?
+    public let git: (any ColonyGitBackend)?
+    public let lsp: (any ColonyLSPBackend)?
+    public let applyPatch: (any ColonyApplyPatchBackend)?
+    public let webSearch: (any ColonyWebSearchBackend)?
+    public let codeSearch: (any ColonyCodeSearchBackend)?
+    public let mcp: (any ColonyMCPBackend)?
+    public let memory: (any ColonyMemoryBackend)?
+    public let plugins: (any ColonyPluginToolRegistry)?
     public let subagents: (any ColonySubagentRegistry)?
     public let tokenizer: any ColonyTokenizer
 
@@ -123,12 +131,28 @@ public struct ColonyContext: Sendable {
         configuration: ColonyConfiguration,
         filesystem: (any ColonyFileSystemBackend)?,
         shell: (any ColonyShellBackend)? = nil,
+        git: (any ColonyGitBackend)? = nil,
+        lsp: (any ColonyLSPBackend)? = nil,
+        applyPatch: (any ColonyApplyPatchBackend)? = nil,
+        webSearch: (any ColonyWebSearchBackend)? = nil,
+        codeSearch: (any ColonyCodeSearchBackend)? = nil,
+        mcp: (any ColonyMCPBackend)? = nil,
+        memory: (any ColonyMemoryBackend)? = nil,
+        plugins: (any ColonyPluginToolRegistry)? = nil,
         subagents: (any ColonySubagentRegistry)? = nil,
         tokenizer: any ColonyTokenizer = ColonyApproximateTokenizer()
     ) {
         self.configuration = configuration
         self.filesystem = filesystem
         self.shell = shell
+        self.git = git
+        self.lsp = lsp
+        self.applyPatch = applyPatch
+        self.webSearch = webSearch
+        self.codeSearch = codeSearch
+        self.mcp = mcp
+        self.memory = memory
+        self.plugins = plugins
         self.subagents = subagents
         self.tokenizer = tokenizer
     }
@@ -449,72 +473,240 @@ public enum ColonyAgent {
             return lhs.name.utf8.lexicographicallyPrecedes(rhs.name.utf8)
         }
 
-        let requiresApproval = input.context.configuration.toolApprovalPolicy.requiresApproval(for: calls.map(\.name))
-        if requiresApproval {
-            if let resume = input.run.resume, case let .toolApproval(decision) = resume.payload {
-                switch decision {
-                case .approved:
-                    return try approvedToolPath(input: input, calls: calls)
-                case .rejected:
-                    return try rejectedToolPath(input: input, calls: calls, taskID: input.run.taskID)
+        let safety = ColonyToolSafetyPolicyEngine(
+            approvalPolicy: input.context.configuration.toolApprovalPolicy,
+            riskLevelOverrides: input.context.configuration.toolRiskLevelOverrides,
+            mandatoryApprovalRiskLevels: input.context.configuration.mandatoryApprovalRiskLevels,
+            defaultRiskLevel: input.context.configuration.defaultToolRiskLevel
+        )
+        let assessments = safety.assess(toolCalls: calls)
+        let assessmentsByCallID = Dictionary(uniqueKeysWithValues: assessments.map { ($0.toolCallID, $0) })
+        let persistedRuleDecisions = try await resolvePersistedRuleDecisions(
+            calls: calls,
+            assessmentsByCallID: assessmentsByCallID,
+            store: input.context.configuration.toolApprovalRuleStore
+        )
+
+        var preApprovedIDs: Set<String> = []
+        var preDeniedIDs: Set<String> = []
+        preApprovedIDs.reserveCapacity(calls.count)
+        preDeniedIDs.reserveCapacity(calls.count)
+
+        for call in calls {
+            if let persisted = persistedRuleDecisions[call.id] {
+                switch persisted {
+                case .allowOnce, .allowAlways:
+                    preApprovedIDs.insert(call.id)
+                case .rejectAlways:
+                    preDeniedIDs.insert(call.id)
                 }
+                continue
             }
+
+            let requiresApproval = assessmentsByCallID[call.id]?.requiresApproval == true
+            if requiresApproval == false {
+                preApprovedIDs.insert(call.id)
+            }
+        }
+
+        let approvalRequiredCalls = calls.filter {
+            assessmentsByCallID[$0.id]?.requiresApproval == true
+                && preApprovedIDs.contains($0.id) == false
+                && preDeniedIDs.contains($0.id) == false
+        }
+        let approvalRequiredIDs = Set(approvalRequiredCalls.map(\.id))
+
+        if approvalRequiredCalls.isEmpty == false {
+            if let resume = input.run.resume, case let .toolApproval(decision) = resume.payload {
+                var approvedIDs = preApprovedIDs
+                var deniedIDs = preDeniedIDs
+                approvedIDs.reserveCapacity(calls.count)
+                deniedIDs.reserveCapacity(calls.count)
+
+                for call in approvalRequiredCalls {
+                    if decision.decision(forToolCallID: call.id) == .approved {
+                        approvedIDs.insert(call.id)
+                    } else {
+                        deniedIDs.insert(call.id)
+                    }
+                }
+
+                let approvedCalls = calls.filter { approvedIDs.contains($0.id) }
+                let deniedCalls = calls.filter { deniedIDs.contains($0.id) }
+
+                try await recordToolAuditEvents(
+                    calls: calls.filter { approvedIDs.contains($0.id) && approvalRequiredIDs.contains($0.id) == false },
+                    decision: .autoApproved,
+                    assessmentsByCallID: assessmentsByCallID,
+                    input: input
+                )
+                try await recordToolAuditEvents(
+                    calls: approvalRequiredCalls.filter { approvedIDs.contains($0.id) },
+                    decision: .userApproved,
+                    assessmentsByCallID: assessmentsByCallID,
+                    input: input
+                )
+                try await recordToolAuditEvents(
+                    calls: deniedCalls,
+                    decision: .userDenied,
+                    assessmentsByCallID: assessmentsByCallID,
+                    input: input
+                )
+
+                return try toolDispatchPath(
+                    input: input,
+                    approvedCalls: approvedCalls,
+                    deniedCalls: deniedCalls,
+                    taskID: input.run.taskID
+                )
+            }
+
+            try await recordToolAuditEvents(
+                calls: calls.filter { preApprovedIDs.contains($0.id) },
+                decision: .autoApproved,
+                assessmentsByCallID: assessmentsByCallID,
+                input: input
+            )
+            try await recordToolAuditEvents(
+                calls: calls.filter { preDeniedIDs.contains($0.id) },
+                decision: .userDenied,
+                assessmentsByCallID: assessmentsByCallID,
+                input: input
+            )
+
+            try await recordToolAuditEvents(
+                calls: approvalRequiredCalls,
+                decision: .approvalRequired,
+                assessmentsByCallID: assessmentsByCallID,
+                input: input
+            )
 
             return HiveNodeOutput(
                 next: .nodes([nodeTools]),
-                interrupt: HiveInterruptRequest(payload: .toolApprovalRequired(toolCalls: calls))
+                interrupt: HiveInterruptRequest(payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls))
             )
         }
 
-        return try approvedToolPath(input: input, calls: calls)
+        let approvedCalls = calls.filter { preDeniedIDs.contains($0.id) == false }
+        let deniedCalls = calls.filter { preDeniedIDs.contains($0.id) }
+        try await recordToolAuditEvents(
+            calls: approvedCalls,
+            decision: .autoApproved,
+            assessmentsByCallID: assessmentsByCallID,
+            input: input
+        )
+        try await recordToolAuditEvents(
+            calls: deniedCalls,
+            decision: .userDenied,
+            assessmentsByCallID: assessmentsByCallID,
+            input: input
+        )
+        return try toolDispatchPath(
+            input: input,
+            approvedCalls: approvedCalls,
+            deniedCalls: deniedCalls,
+            taskID: input.run.taskID
+        )
     }
 
-    private static func approvedToolPath(
+    private static func toolDispatchPath(
         input: HiveNodeInput<ColonySchema>,
-        calls: [HiveToolCall]
+        approvedCalls: [HiveToolCall],
+        deniedCalls: [HiveToolCall],
+        taskID: HiveTaskID
     ) throws -> HiveNodeOutput<ColonySchema> {
         var spawn: [HiveTaskSeed<ColonySchema>] = []
-        spawn.reserveCapacity(calls.count)
-        for call in calls {
+        spawn.reserveCapacity(approvedCalls.count)
+        for call in approvedCalls {
             var local = HiveTaskLocalStore<ColonySchema>.empty
             try local.set(ColonySchema.Channels.currentToolCall, call)
             spawn.append(HiveTaskSeed(nodeID: nodeToolExecute, local: local))
         }
+
+        var writes: [AnyHiveWrite<ColonySchema>] = [
+            AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, []),
+        ]
+
+        if deniedCalls.isEmpty == false {
+            let messageID = ColonyMessageID.systemMessageID(taskID: taskID)
+            let system = HiveChatMessage(
+                id: messageID,
+                role: .system,
+                content: "Tool execution rejected by user."
+            )
+
+            let cancellations = deniedCalls.map { call in
+                HiveChatMessage(
+                    id: "tool:" + call.id,
+                    role: .tool,
+                    content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.",
+                    name: call.name,
+                    toolCallID: call.id
+                )
+            }
+            writes.append(
+                AnyHiveWrite(ColonySchema.Channels.messages, [system] + cancellations)
+            )
+        }
+
+        if spawn.isEmpty {
+            return HiveNodeOutput(
+                writes: writes,
+                next: .nodes([nodePreModel])
+            )
+        }
+
         return HiveNodeOutput(
-            writes: [AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, [])],
+            writes: writes,
             spawn: spawn,
             next: .end
         )
     }
 
-    private static func rejectedToolPath(
-        input: HiveNodeInput<ColonySchema>,
+    private static func recordToolAuditEvents(
         calls: [HiveToolCall],
-        taskID: HiveTaskID
-    ) throws -> HiveNodeOutput<ColonySchema> {
-        let messageID = ColonyMessageID.systemMessageID(taskID: taskID)
-        let system = HiveChatMessage(
-            id: messageID,
-            role: .system,
-            content: "Tool execution rejected by user."
-        )
+        decision: ColonyToolAuditDecisionKind,
+        assessmentsByCallID: [String: ColonyToolSafetyAssessment],
+        input: HiveNodeInput<ColonySchema>
+    ) async throws {
+        guard calls.isEmpty == false else { return }
+        guard let recorder = input.context.configuration.toolAuditRecorder else { return }
 
-        let cancellations = calls.map { call in
-            HiveChatMessage(
-                id: "tool:" + call.id,
-                role: .tool,
-                content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.",
-                name: call.name,
-                toolCallID: call.id
+        for call in calls {
+            guard let assessment = assessmentsByCallID[call.id] else { continue }
+            let event = ColonyToolAuditEvent(
+                timestampNanoseconds: input.environment.clock.nowNanoseconds(),
+                threadID: input.run.threadID.rawValue,
+                taskID: input.run.taskID.rawValue,
+                toolCallID: call.id,
+                toolName: call.name,
+                riskLevel: assessment.riskLevel,
+                decision: decision,
+                reason: assessment.reason
             )
+            try await recorder.record(event: event)
         }
-        return HiveNodeOutput(
-            writes: [
-                AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, []),
-                AnyHiveWrite(ColonySchema.Channels.messages, [system] + cancellations),
-            ],
-            next: .nodes([nodePreModel])
-        )
+    }
+
+    private static func resolvePersistedRuleDecisions(
+        calls: [HiveToolCall],
+        assessmentsByCallID: [String: ColonyToolSafetyAssessment],
+        store: (any ColonyToolApprovalRuleStore)?
+    ) async throws -> [String: ColonyToolApprovalRuleDecision] {
+        guard let store else {
+            return [:]
+        }
+
+        var decisions: [String: ColonyToolApprovalRuleDecision] = [:]
+        decisions.reserveCapacity(calls.count)
+
+        for call in calls {
+            guard assessmentsByCallID[call.id]?.requiresApproval == true else { continue }
+            if let resolved = try await store.resolveDecision(forToolName: call.name, consumeOneShot: true) {
+                decisions[call.id] = resolved.decision
+            }
+        }
+        return decisions
     }
 
     private static func toolExecute(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
@@ -568,6 +760,67 @@ public enum ColonyAgent {
 
         if context.configuration.capabilities.contains(.shell), context.shell != nil {
             tools.append(ColonyBuiltInToolDefinitions.execute)
+            if context.configuration.capabilities.contains(.shellSessions) {
+                tools.append(contentsOf: [
+                    ColonyBuiltInToolDefinitions.shellOpen,
+                    ColonyBuiltInToolDefinitions.shellWrite,
+                    ColonyBuiltInToolDefinitions.shellRead,
+                    ColonyBuiltInToolDefinitions.shellClose,
+                ])
+            }
+        }
+
+        if context.configuration.capabilities.contains(.git), context.git != nil {
+            tools.append(contentsOf: [
+                ColonyBuiltInToolDefinitions.gitStatus,
+                ColonyBuiltInToolDefinitions.gitDiff,
+                ColonyBuiltInToolDefinitions.gitCommit,
+                ColonyBuiltInToolDefinitions.gitBranch,
+                ColonyBuiltInToolDefinitions.gitPush,
+                ColonyBuiltInToolDefinitions.gitPreparePR,
+            ])
+        }
+
+        if context.configuration.capabilities.contains(.lsp), context.lsp != nil {
+            tools.append(contentsOf: [
+                ColonyBuiltInToolDefinitions.lspSymbols,
+                ColonyBuiltInToolDefinitions.lspDiagnostics,
+                ColonyBuiltInToolDefinitions.lspReferences,
+                ColonyBuiltInToolDefinitions.lspApplyEdit,
+            ])
+        }
+
+        if context.configuration.capabilities.contains(.applyPatch), context.applyPatch != nil {
+            tools.append(ColonyBuiltInToolDefinitions.applyPatch)
+        }
+
+        if context.configuration.capabilities.contains(.webSearch), context.webSearch != nil {
+            tools.append(ColonyBuiltInToolDefinitions.webSearch)
+        }
+
+        if context.configuration.capabilities.contains(.codeSearch), context.codeSearch != nil {
+            tools.append(ColonyBuiltInToolDefinitions.codeSearch)
+        }
+
+        if context.configuration.capabilities.contains(.memory), context.memory != nil {
+            tools.append(contentsOf: [
+                ColonyBuiltInToolDefinitions.memoryRecall,
+                ColonyBuiltInToolDefinitions.memoryRemember,
+            ])
+        }
+
+        if context.configuration.capabilities.contains(.mcp), context.mcp != nil {
+            tools.append(contentsOf: [
+                ColonyBuiltInToolDefinitions.mcpListResources,
+                ColonyBuiltInToolDefinitions.mcpReadResource,
+            ])
+        }
+
+        if context.configuration.capabilities.contains(.plugins), context.plugins != nil {
+            tools.append(contentsOf: [
+                ColonyBuiltInToolDefinitions.pluginListTools,
+                ColonyBuiltInToolDefinitions.pluginInvoke,
+            ])
         }
 
         if context.configuration.capabilities.contains(.scratchbook), context.filesystem != nil {
@@ -1568,6 +1821,357 @@ enum ColonyTools {
                 writes: []
             )
 
+        case ColonyBuiltInToolDefinitions.shellOpen.name:
+            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
+            }
+            guard let shell = input.context.shell else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: ShellOpenArgs.self)
+            let cwd = try virtualPath(from: args.cwd)
+            let idleTimeout = args.idleTimeoutMilliseconds.map { UInt64(max(0, $0)) * 1_000_000 }
+            let sessionID = try await shell.openSession(
+                ColonyShellSessionOpenRequest(
+                    command: args.command,
+                    workingDirectory: cwd,
+                    idleTimeoutNanoseconds: idleTimeout
+                )
+            )
+            return ColonyToolOutcome(
+                success: true,
+                content: "session_id: \(sessionID.rawValue)",
+                writes: []
+            )
+
+        case ColonyBuiltInToolDefinitions.shellWrite.name:
+            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
+            }
+            guard let shell = input.context.shell else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: ShellWriteArgs.self)
+            try await shell.writeToSession(
+                ColonyShellSessionID(rawValue: args.sessionID),
+                data: Data(args.input.utf8)
+            )
+            return ColonyToolOutcome(success: true, content: "OK: wrote to \(args.sessionID)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.shellRead.name:
+            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
+            }
+            guard let shell = input.context.shell else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: ShellReadArgs.self)
+            let timeout = args.timeoutMilliseconds.map { UInt64(max(0, $0)) * 1_000_000 }
+            let result = try await shell.readFromSession(
+                ColonyShellSessionID(rawValue: args.sessionID),
+                maxBytes: max(1, args.maxBytes ?? 4_096),
+                timeoutNanoseconds: timeout
+            )
+            return ColonyToolOutcome(success: true, content: formatShellSessionReadResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.shellClose.name:
+            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
+            }
+            guard let shell = input.context.shell else {
+                return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: ShellCloseArgs.self)
+            await shell.closeSession(ColonyShellSessionID(rawValue: args.sessionID))
+            return ColonyToolOutcome(success: true, content: "OK: closed \(args.sessionID)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.applyPatch.name:
+            guard input.context.configuration.capabilities.contains(.applyPatch) else {
+                return ColonyToolOutcome(success: false, content: "Error: apply_patch capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.applyPatch else {
+                return ColonyToolOutcome(success: false, content: "Error: apply_patch backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: ApplyPatchArgs.self)
+            let result = try await backend.applyPatch(args.patch)
+            return ColonyToolOutcome(success: result.success, content: result.summary, writes: [])
+
+        case ColonyBuiltInToolDefinitions.webSearch.name:
+            guard input.context.configuration.capabilities.contains(.webSearch) else {
+                return ColonyToolOutcome(success: false, content: "Error: web_search capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.webSearch else {
+                return ColonyToolOutcome(success: false, content: "Error: web_search backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: WebSearchArgs.self)
+            let result = try await backend.search(query: args.query, limit: args.limit)
+            let lines = result.items.map { "\($0.title)\n\($0.url)\n\($0.snippet)" }
+            return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n\n"), writes: [])
+
+        case ColonyBuiltInToolDefinitions.codeSearch.name:
+            guard input.context.configuration.capabilities.contains(.codeSearch) else {
+                return ColonyToolOutcome(success: false, content: "Error: code_search capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.codeSearch else {
+                return ColonyToolOutcome(success: false, content: "Error: code_search backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: CodeSearchArgs.self)
+            let result = try await backend.search(query: args.query, path: try virtualPath(from: args.path))
+            let lines = result.matches.map { "\($0.path.rawValue):\($0.line): \($0.preview)" }
+            return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n"), writes: [])
+
+        case ColonyBuiltInToolDefinitions.memoryRecall.name:
+            guard input.context.configuration.capabilities.contains(.memory) else {
+                return ColonyToolOutcome(success: false, content: "Error: memory capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.memory else {
+                return ColonyToolOutcome(success: false, content: "Error: memory backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: MemoryRecallArgs.self)
+            let result = try await backend.recall(
+                ColonyMemoryRecallRequest(
+                    query: args.query,
+                    limit: args.limit
+                )
+            )
+            return ColonyToolOutcome(success: true, content: formatMemoryRecallResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.memoryRemember.name:
+            guard input.context.configuration.capabilities.contains(.memory) else {
+                return ColonyToolOutcome(success: false, content: "Error: memory capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.memory else {
+                return ColonyToolOutcome(success: false, content: "Error: memory backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: MemoryRememberArgs.self)
+            let result = try await backend.remember(
+                ColonyMemoryRememberRequest(
+                    content: args.content,
+                    tags: args.tags ?? [],
+                    metadata: args.metadata ?? [:]
+                )
+            )
+            return ColonyToolOutcome(success: true, content: formatMemoryRememberResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.mcpListResources.name:
+            guard input.context.configuration.capabilities.contains(.mcp) else {
+                return ColonyToolOutcome(success: false, content: "Error: MCP capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.mcp else {
+                return ColonyToolOutcome(success: false, content: "Error: MCP backend not configured.", writes: [])
+            }
+            let resources = try await backend.listResources()
+            let lines = resources.map { resource in
+                if let description = resource.description, description.isEmpty == false {
+                    return "\(resource.id)\t\(resource.name)\t\(description)"
+                }
+                return "\(resource.id)\t\(resource.name)"
+            }
+            return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n"), writes: [])
+
+        case ColonyBuiltInToolDefinitions.mcpReadResource.name:
+            guard input.context.configuration.capabilities.contains(.mcp) else {
+                return ColonyToolOutcome(success: false, content: "Error: MCP capability not enabled.", writes: [])
+            }
+            guard let backend = input.context.mcp else {
+                return ColonyToolOutcome(success: false, content: "Error: MCP backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: MCPReadResourceArgs.self)
+            let content = try await backend.readResource(id: args.resourceID)
+            return ColonyToolOutcome(success: true, content: content, writes: [])
+
+        case ColonyBuiltInToolDefinitions.pluginListTools.name:
+            guard input.context.configuration.capabilities.contains(.plugins) else {
+                return ColonyToolOutcome(success: false, content: "Error: plugins capability not enabled.", writes: [])
+            }
+            guard let plugins = input.context.plugins else {
+                return ColonyToolOutcome(success: false, content: "Error: plugin registry not configured.", writes: [])
+            }
+            let tools = plugins.listTools()
+            let lines = tools.map { "\($0.name): \($0.description)" }
+            return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n"), writes: [])
+
+        case ColonyBuiltInToolDefinitions.pluginInvoke.name:
+            guard input.context.configuration.capabilities.contains(.plugins) else {
+                return ColonyToolOutcome(success: false, content: "Error: plugins capability not enabled.", writes: [])
+            }
+            guard let plugins = input.context.plugins else {
+                return ColonyToolOutcome(success: false, content: "Error: plugin registry not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: PluginInvokeArgs.self)
+            let output = try await plugins.invoke(name: args.name, argumentsJSON: args.argumentsJSON)
+            return ColonyToolOutcome(success: true, content: output, writes: [])
+
+        case ColonyBuiltInToolDefinitions.gitStatus.name:
+            guard input.context.configuration.capabilities.contains(.git) else {
+                return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
+            }
+            guard let git = input.context.git else {
+                return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: GitStatusArgs.self, defaultingToEmptyObject: true)
+            let request = ColonyGitStatusRequest(
+                repositoryPath: try virtualPath(from: args.repoPath),
+                includeUntracked: args.includeUntracked ?? true
+            )
+            let result = try await git.status(request)
+            return ColonyToolOutcome(success: true, content: formatGitStatusResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.gitDiff.name:
+            guard input.context.configuration.capabilities.contains(.git) else {
+                return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
+            }
+            guard let git = input.context.git else {
+                return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: GitDiffArgs.self, defaultingToEmptyObject: true)
+            let request = ColonyGitDiffRequest(
+                repositoryPath: try virtualPath(from: args.repoPath),
+                baseRef: args.baseRef,
+                headRef: args.headRef,
+                pathspec: args.pathspec,
+                staged: args.staged ?? false
+            )
+            let result = try await git.diff(request)
+            return ColonyToolOutcome(success: true, content: result.patch, writes: [])
+
+        case ColonyBuiltInToolDefinitions.gitCommit.name:
+            guard input.context.configuration.capabilities.contains(.git) else {
+                return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
+            }
+            guard let git = input.context.git else {
+                return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: GitCommitArgs.self)
+            let request = ColonyGitCommitRequest(
+                repositoryPath: try virtualPath(from: args.repoPath),
+                message: args.message,
+                includeAll: args.includeAll ?? true,
+                amend: args.amend ?? false,
+                signoff: args.signoff ?? false
+            )
+            let result = try await git.commit(request)
+            return ColonyToolOutcome(success: true, content: formatGitCommitResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.gitBranch.name:
+            guard input.context.configuration.capabilities.contains(.git) else {
+                return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
+            }
+            guard let git = input.context.git else {
+                return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: GitBranchArgs.self)
+            let request = ColonyGitBranchRequest(
+                repositoryPath: try virtualPath(from: args.repoPath),
+                operation: args.operation,
+                name: args.name,
+                startPoint: args.startPoint,
+                force: args.force ?? false
+            )
+            let result = try await git.branch(request)
+            return ColonyToolOutcome(success: true, content: formatGitBranchResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.gitPush.name:
+            guard input.context.configuration.capabilities.contains(.git) else {
+                return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
+            }
+            guard let git = input.context.git else {
+                return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: GitPushArgs.self, defaultingToEmptyObject: true)
+            let request = ColonyGitPushRequest(
+                repositoryPath: try virtualPath(from: args.repoPath),
+                remote: args.remote ?? "origin",
+                branch: args.branch,
+                setUpstream: args.setUpstream ?? false,
+                forceWithLease: args.forceWithLease ?? false
+            )
+            let result = try await git.push(request)
+            return ColonyToolOutcome(success: true, content: formatGitPushResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.gitPreparePR.name:
+            guard input.context.configuration.capabilities.contains(.git) else {
+                return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
+            }
+            guard let git = input.context.git else {
+                return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: GitPreparePRArgs.self)
+            let request = ColonyGitPreparePullRequestRequest(
+                repositoryPath: try virtualPath(from: args.repoPath),
+                baseBranch: args.baseBranch,
+                headBranch: args.headBranch,
+                title: args.title,
+                body: args.body,
+                draft: args.draft ?? false
+            )
+            let result = try await git.preparePullRequest(request)
+            return ColonyToolOutcome(success: true, content: formatGitPreparePRResult(result), writes: [])
+
+        case ColonyBuiltInToolDefinitions.lspSymbols.name:
+            guard input.context.configuration.capabilities.contains(.lsp) else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
+            }
+            guard let lsp = input.context.lsp else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: LSPSymbolsArgs.self, defaultingToEmptyObject: true)
+            let request = ColonyLSPSymbolsRequest(
+                path: try virtualPath(from: args.path),
+                query: args.query
+            )
+            let symbols = try await lsp.symbols(request)
+            return ColonyToolOutcome(success: true, content: formatLSPSymbols(symbols), writes: [])
+
+        case ColonyBuiltInToolDefinitions.lspDiagnostics.name:
+            guard input.context.configuration.capabilities.contains(.lsp) else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
+            }
+            guard let lsp = input.context.lsp else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: LSPDiagnosticsArgs.self, defaultingToEmptyObject: true)
+            let request = ColonyLSPDiagnosticsRequest(path: try virtualPath(from: args.path))
+            let diagnostics = try await lsp.diagnostics(request)
+            return ColonyToolOutcome(success: true, content: formatLSPDiagnostics(diagnostics), writes: [])
+
+        case ColonyBuiltInToolDefinitions.lspReferences.name:
+            guard input.context.configuration.capabilities.contains(.lsp) else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
+            }
+            guard let lsp = input.context.lsp else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: LSPReferencesArgs.self)
+            let request = ColonyLSPReferencesRequest(
+                path: try ColonyVirtualPath(args.path),
+                position: ColonyLSPPosition(line: args.line, character: args.character),
+                includeDeclaration: args.includeDeclaration ?? true
+            )
+            let references = try await lsp.references(request)
+            return ColonyToolOutcome(success: true, content: formatLSPReferences(references), writes: [])
+
+        case ColonyBuiltInToolDefinitions.lspApplyEdit.name:
+            guard input.context.configuration.capabilities.contains(.lsp) else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
+            }
+            guard let lsp = input.context.lsp else {
+                return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
+            }
+            let args = try decode(call.argumentsJSON, as: LSPApplyEditArgs.self)
+            let edits = try args.edits.map { edit in
+                ColonyLSPTextEdit(
+                    path: try ColonyVirtualPath(edit.path),
+                    range: ColonyLSPRange(
+                        start: ColonyLSPPosition(line: edit.startLine, character: edit.startCharacter),
+                        end: ColonyLSPPosition(line: edit.endLine, character: edit.endCharacter)
+                    ),
+                    newText: edit.newText
+                )
+            }
+            let result = try await lsp.applyEdit(ColonyLSPApplyEditRequest(edits: edits))
+            return ColonyToolOutcome(success: true, content: formatLSPApplyEditResult(result), writes: [])
+
         case ColonyBuiltInToolDefinitions.taskName:
             guard let subagents = input.context.subagents else {
                 return ColonyToolOutcome(success: false, content: "Error: Subagent registry not configured.", writes: [])
@@ -1642,6 +2246,180 @@ enum ColonyTools {
         return sections.joined(separator: "\n\n")
     }
 
+    private static func formatShellSessionReadResult(_ result: ColonyShellSessionReadResult) -> String {
+        var sections: [String] = [
+            "eof: \(result.eof ? "true" : "false")",
+        ]
+        if result.stdout.isEmpty == false {
+            sections.append("stdout:\n\(result.stdout)")
+        }
+        if result.stderr.isEmpty == false {
+            sections.append("stderr:\n\(result.stderr)")
+        }
+        if result.wasTruncated {
+            sections.append("warning: output truncated")
+        }
+        return sections.joined(separator: "\n\n")
+    }
+
+    private static func formatGitStatusResult(_ result: ColonyGitStatusResult) -> String {
+        var lines: [String] = []
+        if let branch = result.currentBranch {
+            lines.append("branch: \(branch)")
+        }
+        if let upstream = result.upstreamBranch {
+            lines.append("upstream: \(upstream)")
+        }
+        lines.append("ahead: \(result.aheadBy)")
+        lines.append("behind: \(result.behindBy)")
+        if result.entries.isEmpty {
+            lines.append("changes: clean")
+        } else {
+            lines.append("changes:")
+            for entry in result.entries {
+                lines.append("\(gitStatusCode(for: entry.state)) \(entry.path)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func gitStatusCode(for state: ColonyGitStatusEntry.State) -> String {
+        switch state {
+        case .added: "A"
+        case .modified: "M"
+        case .deleted: "D"
+        case .renamed: "R"
+        case .copied: "C"
+        case .conflicted: "U"
+        case .untracked: "?"
+        }
+    }
+
+    private static func formatGitCommitResult(_ result: ColonyGitCommitResult) -> String {
+        [
+            "commit: \(result.commitHash)",
+            "summary: \(result.summary)",
+        ].joined(separator: "\n")
+    }
+
+    private static func formatGitBranchResult(_ result: ColonyGitBranchResult) -> String {
+        var lines: [String] = []
+        if let currentBranch = result.currentBranch {
+            lines.append("current: \(currentBranch)")
+        }
+        if result.branches.isEmpty {
+            lines.append("branches: (none)")
+        } else {
+            lines.append("branches:")
+            lines.append(contentsOf: result.branches.map { "- \($0)" })
+        }
+        if let detail = result.detail, detail.isEmpty == false {
+            lines.append("detail: \(detail)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formatGitPushResult(_ result: ColonyGitPushResult) -> String {
+        [
+            "remote: \(result.remote)",
+            "branch: \(result.branch)",
+            "summary: \(result.summary)",
+        ].joined(separator: "\n")
+    }
+
+    private static func formatGitPreparePRResult(_ result: ColonyGitPreparePullRequestResult) -> String {
+        var lines = [
+            "base: \(result.baseBranch)",
+            "head: \(result.headBranch)",
+            "title: \(result.title)",
+            "draft: \(result.draft ? "true" : "false")",
+            "body:",
+            result.body,
+        ]
+        if let summary = result.summary, summary.isEmpty == false {
+            lines.append("summary: \(summary)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formatLSPSymbols(_ symbols: [ColonyLSPSymbol]) -> String {
+        guard symbols.isEmpty == false else { return "(No symbols)" }
+        return symbols.map { symbol in
+            let line = symbol.range.start.line + 1
+            let character = symbol.range.start.character + 1
+            return "\(symbol.path.rawValue):\(line):\(character) [\(symbol.kind.rawValue)] \(symbol.name)"
+        }.joined(separator: "\n")
+    }
+
+    private static func formatLSPDiagnostics(_ diagnostics: [ColonyLSPDiagnostic]) -> String {
+        guard diagnostics.isEmpty == false else { return "(No diagnostics)" }
+        return diagnostics.map { diagnostic in
+            let line = diagnostic.range.start.line + 1
+            let character = diagnostic.range.start.character + 1
+            let code = diagnostic.code.map { "[\($0)] " } ?? ""
+            return "\(diagnostic.path.rawValue):\(line):\(character) [\(diagnostic.severity.rawValue)] \(code)\(diagnostic.message)"
+        }.joined(separator: "\n")
+    }
+
+    private static func formatLSPReferences(_ references: [ColonyLSPReference]) -> String {
+        guard references.isEmpty == false else { return "(No references)" }
+        return references.map { reference in
+            let line = reference.range.start.line + 1
+            let character = reference.range.start.character + 1
+            if let preview = reference.preview, preview.isEmpty == false {
+                return "\(reference.path.rawValue):\(line):\(character) \(preview)"
+            }
+            return "\(reference.path.rawValue):\(line):\(character)"
+        }.joined(separator: "\n")
+    }
+
+    private static func formatLSPApplyEditResult(_ result: ColonyLSPApplyEditResult) -> String {
+        var lines = ["applied_edits: \(result.appliedEditCount)"]
+        if let summary = result.summary, summary.isEmpty == false {
+            lines.append("summary: \(summary)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formatMemoryRecallResult(_ result: ColonyMemoryRecallResult) -> String {
+        guard result.items.isEmpty == false else { return "(No memory matches)" }
+
+        let blocks = result.items.map { item in
+            var lines: [String] = [
+                "id: \(item.id)",
+            ]
+            if let score = item.score {
+                lines.append(String(format: "score: %.3f", score))
+            }
+            if item.tags.isEmpty == false {
+                lines.append("tags: \(item.tags.joined(separator: ", "))")
+            }
+            if item.metadata.isEmpty == false {
+                let metadata = item.metadata
+                    .sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+                    .map { "\($0.key)=\($0.value)" }
+                    .joined(separator: ", ")
+                lines.append("metadata: \(metadata)")
+            }
+            lines.append("content:")
+            lines.append(item.content)
+            return lines.joined(separator: "\n")
+        }
+
+        return blocks.joined(separator: "\n\n")
+    }
+
+    private static func formatMemoryRememberResult(_ result: ColonyMemoryRememberResult) -> String {
+        "OK: remembered \(result.id)"
+    }
+
+    private static func virtualPath(from value: String?) throws -> ColonyVirtualPath? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+        return try ColonyVirtualPath(trimmed)
+    }
+
     private static func decode<T: Decodable>(
         _ json: String,
         as type: T.Type,
@@ -1713,6 +2491,228 @@ private struct ExecuteArgs: Decodable, Sendable {
         case command
         case cwd
         case timeoutMilliseconds = "timeout_ms"
+    }
+}
+
+private struct ShellOpenArgs: Decodable, Sendable {
+    let command: String
+    let cwd: String?
+    let idleTimeoutMilliseconds: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case cwd
+        case idleTimeoutMilliseconds = "idle_timeout_ms"
+    }
+}
+
+private struct ShellWriteArgs: Decodable, Sendable {
+    let sessionID: String
+    let input: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case input
+    }
+}
+
+private struct ShellReadArgs: Decodable, Sendable {
+    let sessionID: String
+    let maxBytes: Int?
+    let timeoutMilliseconds: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case maxBytes = "max_bytes"
+        case timeoutMilliseconds = "timeout_ms"
+    }
+}
+
+private struct ShellCloseArgs: Decodable, Sendable {
+    let sessionID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+    }
+}
+
+private struct ApplyPatchArgs: Decodable, Sendable {
+    let patch: String
+}
+
+private struct WebSearchArgs: Decodable, Sendable {
+    let query: String
+    let limit: Int?
+}
+
+private struct CodeSearchArgs: Decodable, Sendable {
+    let query: String
+    let path: String?
+}
+
+private struct MemoryRecallArgs: Decodable, Sendable {
+    let query: String
+    let limit: Int?
+}
+
+private struct MemoryRememberArgs: Decodable, Sendable {
+    let content: String
+    let tags: [String]?
+    let metadata: [String: String]?
+}
+
+private struct MCPReadResourceArgs: Decodable, Sendable {
+    let resourceID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case resourceID = "resource_id"
+    }
+}
+
+private struct PluginInvokeArgs: Decodable, Sendable {
+    let name: String
+    let argumentsJSON: String
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case argumentsJSON = "arguments_json"
+    }
+}
+
+private struct GitStatusArgs: Decodable, Sendable {
+    let repoPath: String?
+    let includeUntracked: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case repoPath = "repo_path"
+        case includeUntracked = "include_untracked"
+    }
+}
+
+private struct GitDiffArgs: Decodable, Sendable {
+    let repoPath: String?
+    let baseRef: String?
+    let headRef: String?
+    let pathspec: String?
+    let staged: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case repoPath = "repo_path"
+        case baseRef = "base_ref"
+        case headRef = "head_ref"
+        case pathspec
+        case staged
+    }
+}
+
+private struct GitCommitArgs: Decodable, Sendable {
+    let repoPath: String?
+    let message: String
+    let includeAll: Bool?
+    let amend: Bool?
+    let signoff: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case repoPath = "repo_path"
+        case message
+        case includeAll = "include_all"
+        case amend
+        case signoff
+    }
+}
+
+private struct GitBranchArgs: Decodable, Sendable {
+    let repoPath: String?
+    let operation: ColonyGitBranchRequest.Operation
+    let name: String?
+    let startPoint: String?
+    let force: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case repoPath = "repo_path"
+        case operation
+        case name
+        case startPoint = "start_point"
+        case force
+    }
+}
+
+private struct GitPushArgs: Decodable, Sendable {
+    let repoPath: String?
+    let remote: String?
+    let branch: String?
+    let setUpstream: Bool?
+    let forceWithLease: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case repoPath = "repo_path"
+        case remote
+        case branch
+        case setUpstream = "set_upstream"
+        case forceWithLease = "force_with_lease"
+    }
+}
+
+private struct GitPreparePRArgs: Decodable, Sendable {
+    let repoPath: String?
+    let baseBranch: String
+    let headBranch: String
+    let title: String
+    let body: String
+    let draft: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case repoPath = "repo_path"
+        case baseBranch = "base_branch"
+        case headBranch = "head_branch"
+        case title
+        case body
+        case draft
+    }
+}
+
+private struct LSPSymbolsArgs: Decodable, Sendable {
+    let path: String?
+    let query: String?
+}
+
+private struct LSPDiagnosticsArgs: Decodable, Sendable {
+    let path: String?
+}
+
+private struct LSPReferencesArgs: Decodable, Sendable {
+    let path: String
+    let line: Int
+    let character: Int
+    let includeDeclaration: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case line
+        case character
+        case includeDeclaration = "include_declaration"
+    }
+}
+
+private struct LSPApplyEditArgs: Decodable, Sendable {
+    let edits: [Edit]
+
+    struct Edit: Decodable, Sendable {
+        let path: String
+        let startLine: Int
+        let startCharacter: Int
+        let endLine: Int
+        let endCharacter: Int
+        let newText: String
+
+        private enum CodingKeys: String, CodingKey {
+            case path
+            case startLine = "start_line"
+            case startCharacter = "start_character"
+            case endLine = "end_line"
+            case endCharacter = "end_character"
+            case newText = "new_text"
+        }
     }
 }
 

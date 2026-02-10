@@ -31,5 +31,18 @@ public struct ColonyRuntime: Sendable {
             options: options
         )
     }
-}
 
+    public func resumeToolApproval(
+        interruptID: HiveInterruptID,
+        perToolDecisions: [String: ColonyPerToolApprovalDecision]
+    ) async -> HiveRunHandle<ColonySchema> {
+        await resumeToolApproval(
+            interruptID: interruptID,
+            decision: .perTool(
+                perToolDecisions
+                    .map { ColonyPerToolApproval(toolCallID: $0.key, decision: $0.value) }
+                    .sorted { $0.toolCallID.utf8.lexicographicallyPrecedes($1.toolCallID.utf8) }
+            )
+        )
+    }
+}

@@ -241,11 +241,11 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
 }
 
 public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
-    private let root: URL
+    private let canonicalRoot: URL
     private let fileManager: FileManager
 
     public init(root: URL, fileManager: FileManager = .default) {
-        self.root = root
+        self.canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
         self.fileManager = fileManager
     }
 
@@ -263,7 +263,7 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
             let resource = try child.resourceValues(forKeys: Set(keys))
             let isDirectory = resource.isDirectory ?? false
             let size = isDirectory ? nil : resource.fileSize
-            results.append(ColonyFileInfo(path: virtualPath(for: child), isDirectory: isDirectory, sizeBytes: size))
+            results.append(ColonyFileInfo(path: try virtualPath(for: child), isDirectory: isDirectory, sizeBytes: size))
         }
         results.sort { lhs, rhs in lhs.path.rawValue.utf8.lexicographicallyPrecedes(rhs.path.rawValue.utf8) }
         return results
@@ -283,10 +283,15 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
 
     public func write(at path: ColonyVirtualPath, content: String) async throws {
         let url = try resolve(path, asDirectory: false)
+        let parent = url.deletingLastPathComponent()
+        let resolvedParent = parent.resolvingSymlinksInPath().standardizedFileURL
+        guard Self.isWithinRoot(resolvedParent, root: canonicalRoot) else {
+            throw ColonyFileSystemError.invalidPath(path.rawValue)
+        }
+
         if fileManager.fileExists(atPath: url.path) {
             throw ColonyFileSystemError.alreadyExists(path)
         }
-        let parent = url.deletingLastPathComponent()
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true, attributes: nil)
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
@@ -328,7 +333,8 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
     public func glob(pattern: String) async throws -> [ColonyVirtualPath] {
         let urls = try allFileURLs()
         let matched = urls.compactMap { url -> ColonyVirtualPath? in
-            let virt = virtualPath(for: url)
+            let virt = try? virtualPath(for: url)
+            guard let virt else { return nil }
             guard ColonyInMemoryFileSystemBackend.matchesGlob(pattern: pattern, path: virt.rawValue) else { return nil }
             return virt
         }
@@ -340,7 +346,7 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         let urls = try allFileURLs()
         var matches: [ColonyGrepMatch] = []
         for url in urls {
-            let virt = virtualPath(for: url)
+            guard let virt = try? virtualPath(for: url) else { continue }
             if let glob, ColonyInMemoryFileSystemBackend.matchesGlob(pattern: glob, path: virt.rawValue) == false {
                 continue
             }
@@ -361,17 +367,17 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
 
     private func resolve(_ path: ColonyVirtualPath, asDirectory: Bool) throws -> URL {
         let relative = path.rawValue == "/" ? "" : String(path.rawValue.dropFirst())
-        let url = root.appendingPathComponent(relative, isDirectory: asDirectory).standardizedFileURL
+        let candidate = canonicalRoot.appendingPathComponent(relative, isDirectory: asDirectory)
+        let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
 
-        let rootPath = root.standardizedFileURL.path
-        guard url.path.hasPrefix(rootPath) else {
+        guard Self.isWithinRoot(resolved, root: canonicalRoot) else {
             throw ColonyFileSystemError.invalidPath(path.rawValue)
         }
-        return url
+        return resolved
     }
 
     private func allFileURLs() throws -> [URL] {
-        let rootURL = root.standardizedFileURL
+        let rootURL = canonicalRoot
         let enumerator = fileManager.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -381,6 +387,8 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         while let next = enumerator?.nextObject() as? URL {
             let values = try next.resourceValues(forKeys: [.isDirectoryKey])
             if values.isDirectory == true { continue }
+            let resolved = next.resolvingSymlinksInPath().standardizedFileURL
+            guard Self.isWithinRoot(resolved, root: canonicalRoot) else { continue }
             urls.append(next)
         }
         urls.sort { lhs, rhs in
@@ -389,12 +397,28 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         return urls
     }
 
-    private func virtualPath(for url: URL) -> ColonyVirtualPath {
+    private func virtualPath(for url: URL) throws -> ColonyVirtualPath {
         let standardized = url.standardizedFileURL
-        let rootPath = root.standardizedFileURL.path
-        let suffix = standardized.path.hasPrefix(rootPath) ? String(standardized.path.dropFirst(rootPath.count)) : standardized.path
+        let rootPath = canonicalRoot.path
+        let fullPath = standardized.path
+        let suffix: String
+
+        if fullPath == rootPath {
+            suffix = ""
+        } else if fullPath.hasPrefix(rootPath + "/") {
+            suffix = String(fullPath.dropFirst(rootPath.count))
+        } else {
+            throw ColonyFileSystemError.invalidPath(fullPath)
+        }
+
         let trimmed = suffix.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        // swiftlint:disable:next force_try
-        return try! ColonyVirtualPath("/" + trimmed)
+        return try ColonyVirtualPath("/" + trimmed)
+    }
+
+    private static func isWithinRoot(_ candidate: URL, root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let candidatePath = candidate.standardizedFileURL.path
+        if rootPath == "/" { return true }
+        return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
     }
 }
