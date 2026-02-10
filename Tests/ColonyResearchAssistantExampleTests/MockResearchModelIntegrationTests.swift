@@ -24,7 +24,7 @@ func mockResearchModelCompletesTaskLoop() async throws {
         }
     )
 
-    let handle = await runtime.sendUserMessage("Research this repository architecture.")
+    let handle = await runtime.runControl.start(.init(input: "Research this repository architecture."))
     let outcome = try await handle.outcome.value
 
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {

@@ -428,6 +428,8 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
                     }
 
                     let (instructions, prompt, toolsAllowed) = makePrompt(from: request)
+
+
                     let session = makeSession(instructions: instructions)
                     if configuration.prewarmSession {
                         session.prewarm(promptPrefix: nil)
@@ -460,10 +462,12 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
                         }
                     }
 
+
                     let response = try makeResponse(
                         rawModelText: lastRaw,
                         toolsAllowed: toolsAllowed
                     )
+
                     continuation.yield(.final(response))
                     continuation.finish()
                 } catch let error as ColonyFoundationModelsClientError {

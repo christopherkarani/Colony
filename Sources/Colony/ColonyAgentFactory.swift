@@ -211,6 +211,11 @@ public struct ColonyAgentFactory: Sendable {
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)
 
-        return ColonyRuntime(threadID: threadID, runtime: runtime, options: options)
+        let runControl = ColonyRunControl(
+            threadID: threadID,
+            runtime: runtime,
+            options: options
+        )
+        return ColonyRuntime(runControl: runControl)
     }
 }
