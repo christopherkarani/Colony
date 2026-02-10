@@ -1,7 +1,7 @@
 ## Prompt for Coding Agent
 
 ```text
-You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCore architecture, the runtime loop (preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel), and how to run it on iOS/macOS 26+ with a local ../hive dependency. Include proof-backed behavior for tool approval interrupts/resume, on-device 4k budgeting, summarization with /conversation_history offload, large tool result eviction to /large_tool_results, scratchbook workflows, and isolated subagents. End with a minimal runnable Swift snippet using ColonyAgentFactory + ColonyRuntime.sendUserMessage and a human-in-the-loop resume example.
+You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCore architecture, the runtime loop (preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel), and how to run it on iOS/macOS 26+ with a local ../hive dependency. Include proof-backed behavior for tool approval interrupts/resume, on-device 4k budgeting, summarization with /conversation_history offload, large tool result eviction to /large_tool_results, scratchbook workflows, and isolated subagents. End with a minimal runnable Swift snippet using ColonyAgentFactory + ColonyRuntime.runControl.start and a human-in-the-loop resume example.
 ```
 
 # Colony
@@ -10,7 +10,7 @@ Local-first Deep Agents-style runtime in Swift. If this project helps you ship b
 
 ## Why Colony
 
-- Fast to embed: create a `ColonyRuntime`, send a user message, handle finished or interrupted outcomes.
+- Fast to embed: create a `ColonyRuntime`, call `runtime.runControl.start`, handle finished or interrupted outcomes.
 - Safety by design: capability-gated tools and human-in-the-loop approval for risky calls.
 - Practical on-device defaults: a strict 4k-safe profile with compaction, summarization/history offload, and tool-result eviction.
 
@@ -29,7 +29,7 @@ Built-in tool families (all capability-gated, backend-gated):
 
 ## Proven Behaviors (Backed by Tests)
 
-- Tool approval interrupts + resume (approve/reject) are exercised end-to-end in `Tests/ColonyTests/ColonyAgentTests.swift`.
+- Tool approval interrupts + resume (approve/reject/cancelled) are exercised end-to-end in `Tests/ColonyTests/ColonyAgentTests.swift` and `Tests/ColonyTests/ColonyRunControlTests.swift`.
 - On-device profile enforces a hard 4k request budget (`requestHardTokenLimit == 4_000`) in `Tests/ColonyTests/ColonyContextBudgetTests.swift`.
 - Summarization offloads history to `/conversation_history/{thread}.md` in `Tests/ColonyTests/ColonySummarizationTests.swift`.
 - Large tool outputs are evicted to `/large_tool_results/{tool_call_id}` with deterministic preview trimming in `Tests/ColonyTests/ColonyToolResultEvictionTests.swift`.
@@ -72,7 +72,9 @@ struct Demo {
             model: AnyHiveModelClient(ColonyFoundationModelsClient())
         )
 
-        let handle = await runtime.sendUserMessage("Inspect this project and propose next steps.")
+        let handle = await runtime.runControl.start(
+            .init(input: "Inspect this project and propose next steps.")
+        )
         let outcome = try await handle.outcome.value
         print(outcome)
     }
@@ -94,16 +96,20 @@ let runtime = try factory.makeRuntime(
     }
 )
 
-let handle = await runtime.sendUserMessage("Create /note.md with a deployment checklist.")
+let handle = await runtime.runControl.start(
+    .init(input: "Create /note.md with a deployment checklist.")
+)
 let outcome = try await handle.outcome.value
 
 if case let .interrupted(interruption) = outcome,
    case let .toolApprovalRequired(toolCalls) = interruption.interrupt.payload {
     print("Approval required for:", toolCalls.map(\.name))
 
-    let resumed = await runtime.resumeToolApproval(
-        interruptID: interruption.interrupt.id,
-        decision: .approved // or .rejected
+    let resumed = await runtime.runControl.resume(
+        .init(
+            interruptID: interruption.interrupt.id,
+            decision: .approved // or .rejected / .cancelled
+        )
     )
     _ = try await resumed.outcome.value
 }
