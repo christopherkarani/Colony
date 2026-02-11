@@ -1,0 +1,4 @@
+# Pinned Hive dependency metadata for reproducible remote-source consumption.
+HIVE_URL="https://github.com/christopherkarani/Hive.git"
+HIVE_TAG="0.1.2"
+HIVE_REV="3074a0e24d6ab9db1f454dc072fa5caba1461310"

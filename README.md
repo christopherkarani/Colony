@@ -1,7 +1,7 @@
 ## Prompt for Coding Agent
 
 ```text
-You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCore architecture, the runtime loop (preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel), and how to run it on iOS/macOS 26+ with a local ../hive dependency. Include proof-backed behavior for tool approval interrupts/resume, on-device 4k budgeting, summarization with /conversation_history offload, large tool result eviction to /large_tool_results, scratchbook workflows, and isolated subagents. End with a minimal runnable Swift snippet using ColonyAgentFactory + ColonyRuntime.runControl.start and a human-in-the-loop resume example.
+You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCore architecture, the runtime loop (preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel), and how to run it on iOS/macOS 26+ with a pinned Hive checkout policy. Include proof-backed behavior for tool approval interrupts/resume, on-device 4k budgeting, summarization with /conversation_history offload, large tool result eviction to /large_tool_results, scratchbook workflows, and isolated subagents. End with a minimal runnable Swift snippet using ColonyAgentFactory + ColonyRuntime.sendUserMessage and a human-in-the-loop resume example.
 ```
 
 # Colony
@@ -10,7 +10,7 @@ Local-first Deep Agents-style runtime in Swift. If this project helps you ship b
 
 ## Why Colony
 
-- Fast to embed: create a `ColonyRuntime`, call `runtime.runControl.start`, handle finished or interrupted outcomes.
+- Fast to embed: create a `ColonyRuntime`, send a user message, handle finished or interrupted outcomes.
 - Safety by design: capability-gated tools and human-in-the-loop approval for risky calls.
 - Practical on-device defaults: a strict 4k-safe profile with compaction, summarization/history offload, and tool-result eviction.
 
@@ -29,7 +29,7 @@ Built-in tool families (all capability-gated, backend-gated):
 
 ## Proven Behaviors (Backed by Tests)
 
-- Tool approval interrupts + resume (approve/reject/cancelled) are exercised end-to-end in `Tests/ColonyTests/ColonyAgentTests.swift` and `Tests/ColonyTests/ColonyRunControlTests.swift`.
+- Tool approval interrupts + resume (approve/reject) are exercised end-to-end in `Tests/ColonyTests/ColonyAgentTests.swift`.
 - On-device profile enforces a hard 4k request budget (`requestHardTokenLimit == 4_000`) in `Tests/ColonyTests/ColonyContextBudgetTests.swift`.
 - Summarization offloads history to `/conversation_history/{thread}.md` in `Tests/ColonyTests/ColonySummarizationTests.swift`.
 - Large tool outputs are evicted to `/large_tool_results/{tool_call_id}` with deterministic preview trimming in `Tests/ColonyTests/ColonyToolResultEvictionTests.swift`.
@@ -40,17 +40,19 @@ Built-in tool families (all capability-gated, backend-gated):
 
 - Swift 6.2 (`swift-tools-version: 6.2`)
 - iOS 26+ or macOS 26+
-- A local Hive checkout at `../hive` (current `Package.swift` uses `.package(path: "../hive")`)
+- A pinned remote Hive dependency declared in `HIVE_DEPENDENCY.lock` and `Package.swift`
+- Optional offline/local fallback: bootstrap `.deps/Hive` and set `COLONY_USE_LOCAL_HIVE_PATH=1`
 
 ## Quickstart
 
-1. Ensure a sibling Hive checkout exists at `../hive` (local SwiftPM dependency path used by `Package.swift`).
+1. Validate pinned Hive dependency metadata.
 2. Build and run tests.
 3. Create a runtime and send a message.
 
 ```bash
 cd /path/to/Colony
-test -f ../hive/Package.swift || echo "Missing ../hive (required local dependency)"
+scripts/ci/bootstrap-hive.sh
+export COLONY_USE_LOCAL_HIVE_PATH=1
 swift package resolve
 swift test
 ```
@@ -72,9 +74,7 @@ struct Demo {
             model: AnyHiveModelClient(ColonyFoundationModelsClient())
         )
 
-        let handle = await runtime.runControl.start(
-            .init(input: "Inspect this project and propose next steps.")
-        )
+        let handle = await runtime.sendUserMessage("Inspect this project and propose next steps.")
         let outcome = try await handle.outcome.value
         print(outcome)
     }
@@ -96,20 +96,16 @@ let runtime = try factory.makeRuntime(
     }
 )
 
-let handle = await runtime.runControl.start(
-    .init(input: "Create /note.md with a deployment checklist.")
-)
+let handle = await runtime.sendUserMessage("Create /note.md with a deployment checklist.")
 let outcome = try await handle.outcome.value
 
 if case let .interrupted(interruption) = outcome,
    case let .toolApprovalRequired(toolCalls) = interruption.interrupt.payload {
     print("Approval required for:", toolCalls.map(\.name))
 
-    let resumed = await runtime.runControl.resume(
-        .init(
-            interruptID: interruption.interrupt.id,
-            decision: .approved // or .rejected / .cancelled
-        )
+    let resumed = await runtime.resumeToolApproval(
+        interruptID: interruption.interrupt.id,
+        decision: .approved // or .rejected
     )
     _ = try await resumed.outcome.value
 }
@@ -117,13 +113,19 @@ if case let .interrupted(interruption) = outcome,
 
 ## Troubleshooting
 
-- `swift package resolve` fails: verify `../hive` exists and is a valid Hive package checkout.
+- `swift package resolve` fails: run `scripts/ci/bootstrap-hive.sh` and verify `HIVE_DEPENDENCY.lock` matches the pinned remote Hive dependency.
 - `foundationModelsUnavailable`: on-device Foundation Models are not available on this device/configuration. Inject another `HiveModelClient` or use a router.
 - Missing tools in prompts: check both capabilities and backend wiring (for example, `shell` needs `ColonyShellBackend`; `subagents` needs `ColonySubagentRegistry`).
 - SDK/platform errors: this package targets Swift 6.2 with iOS/macOS 26+.
 
 ## Current Limitations
 
-- Dependency is local-path only today: `.package(path: "../hive")`.
+- Hive is consumed as a pinned remote dependency; update `HIVE_DEPENDENCY.lock` and `Package.swift` together when upgrading Hive.
 - Platform availability is currently iOS 26+ and macOS 26+.
 - On-device profile is intentionally strict (~4k posture): older context and large outputs are compacted/offloaded by design.
+
+## Release and Upgrade Docs
+
+- Release policy: `docs/release/release-policy.md`
+- Upgrade flow: `docs/release/upgrade-flow.md`
+- Changelog: `CHANGELOG.md`
