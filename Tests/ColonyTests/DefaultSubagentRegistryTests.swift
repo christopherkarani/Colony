@@ -43,7 +43,7 @@ private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked S
             let call = HiveToolCall(
                 id: "task-1",
                 name: ColonyBuiltInToolDefinitions.taskName,
-                argumentsJSON: #"{"prompt":"Create /from-subagent.txt with content 'hello'.","subagent_type":"general-purpose"}"#
+                argumentsJSON: #"{"prompt":"Read /from-subagent.txt and summarize it.","subagent_type":"general-purpose"}"#
             )
             return HiveChatResponse(
                 message: HiveChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
@@ -98,12 +98,12 @@ private final class SubagentWriteFileModel: HiveModelClient, @unchecked Sendable
 
         if currentCall == 1 {
             let call = HiveToolCall(
-                id: "sub-write-1",
-                name: "write_file",
-                argumentsJSON: #"{"path":"/from-subagent.txt","content":"hello"}"#
+                id: "sub-read-1",
+                name: ColonyBuiltInToolDefinitions.readFile.name,
+                argumentsJSON: #"{"path":"/from-subagent.txt"}"#
             )
             return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "writing", toolCalls: [call])
+                message: HiveChatMessage(id: "assistant", role: .assistant, content: "reading", toolCalls: [call])
             )
         }
 
@@ -238,10 +238,12 @@ private final class SubagentPromptCaptureModel: HiveModelClient, @unchecked Send
     }
 }
 
-@Test("Default subagent registry runs general-purpose in an isolated runtime (single tool result + shared FS side-effects only)")
+@Test("Default subagent registry runs general-purpose in an isolated runtime (single tool result + shared filesystem access only)")
 func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly() async throws {
     let graph = try ColonyAgent.compile()
-    let fs = ColonyInMemoryFileSystemBackend()
+    let fs = ColonyInMemoryFileSystemBackend(
+        files: [try ColonyVirtualPath("/from-subagent.txt"): "hello"]
+    )
     let subagentModel = SubagentWriteFileModel()
 
     let registry = ColonyDefaultSubagentRegistry(
@@ -255,7 +257,8 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
     let configuration = ColonyConfiguration(
         capabilities: [.subagents],
         modelName: "test-parent-model",
-        toolApprovalPolicy: .never
+        toolApprovalPolicy: .never,
+        mandatoryApprovalRiskLevels: []
     )
     let context = ColonyContext(
         configuration: configuration,
@@ -290,10 +293,10 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
     #expect(toolMessages.count == 1)
     #expect(toolMessages.first?.toolCallID == "task-1")
 
-    // Subagent internal tool calls (write_file) must not appear in the parent store.
-    #expect(messages.contains(where: { $0.toolCallID == "sub-write-1" }) == false)
+    // Subagent internal tool calls must not appear in the parent store.
+    #expect(messages.contains(where: { $0.toolCallID == "sub-read-1" }) == false)
 
-    // Shared filesystem side-effect is allowed.
+    // Shared filesystem access is allowed.
     #expect(try await fs.read(at: ColonyVirtualPath("/from-subagent.txt")) == "hello")
 
     // Prompt-only isolation: the subagent should not see parent message history.
@@ -317,7 +320,8 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
     let configuration = ColonyConfiguration(
         capabilities: [.subagents],
         modelName: "test-parent-model",
-        toolApprovalPolicy: .never
+        toolApprovalPolicy: .never,
+        mandatoryApprovalRiskLevels: []
     )
     let context = ColonyContext(
         configuration: configuration,
@@ -347,7 +351,9 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
 
     let messages = try store.get(ColonySchema.Channels.messages)
     let toolMessage = messages.first { $0.role == HiveChatRole.tool }
-    #expect(toolMessage?.content.contains("Subagent registry not configured") == true)
+    let toolMessageContent = toolMessage?.content ?? ""
+    #expect(toolMessageContent.contains("Error:") == true)
+    #expect(toolMessageContent.contains("subagent[general-purpose] completed") == false)
 }
 
 @Test("Default subagent registry inherits on-device budget posture (4k-safe) by default")

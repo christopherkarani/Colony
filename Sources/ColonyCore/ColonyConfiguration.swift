@@ -2,6 +2,11 @@ public struct ColonyConfiguration: Sendable {
     public var capabilities: ColonyCapabilities
     public var modelName: String
     public var toolApprovalPolicy: ColonyToolApprovalPolicy
+    public var toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)?
+    public var toolRiskLevelOverrides: [String: ColonyToolRiskLevel]
+    public var mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel>
+    public var defaultToolRiskLevel: ColonyToolRiskLevel
+    public var toolAuditRecorder: ColonyToolAuditRecorder?
     public var compactionPolicy: ColonyCompactionPolicy
     public var scratchbookPolicy: ColonyScratchbookPolicy
     public var includeToolListInSystemPrompt: Bool
@@ -18,6 +23,11 @@ public struct ColonyConfiguration: Sendable {
         capabilities: ColonyCapabilities = .default,
         modelName: String,
         toolApprovalPolicy: ColonyToolApprovalPolicy = .allowList(["ls", "read_file", "glob", "grep", "read_todos", "write_todos"]),
+        toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)? = nil,
+        toolRiskLevelOverrides: [String: ColonyToolRiskLevel] = [:],
+        mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel> = [.mutation, .execution, .network],
+        defaultToolRiskLevel: ColonyToolRiskLevel = .readOnly,
+        toolAuditRecorder: ColonyToolAuditRecorder? = nil,
         compactionPolicy: ColonyCompactionPolicy = .maxTokens(12_000),
         scratchbookPolicy: ColonyScratchbookPolicy = ColonyScratchbookPolicy(),
         includeToolListInSystemPrompt: Bool = true,
@@ -33,6 +43,11 @@ public struct ColonyConfiguration: Sendable {
         self.capabilities = capabilities
         self.modelName = modelName
         self.toolApprovalPolicy = toolApprovalPolicy
+        self.toolApprovalRuleStore = toolApprovalRuleStore
+        self.toolRiskLevelOverrides = toolRiskLevelOverrides
+        self.mandatoryApprovalRiskLevels = mandatoryApprovalRiskLevels
+        self.defaultToolRiskLevel = defaultToolRiskLevel
+        self.toolAuditRecorder = toolAuditRecorder
         self.compactionPolicy = compactionPolicy
         self.scratchbookPolicy = scratchbookPolicy
         self.includeToolListInSystemPrompt = includeToolListInSystemPrompt

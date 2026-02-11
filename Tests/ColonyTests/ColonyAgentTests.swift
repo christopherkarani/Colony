@@ -475,7 +475,8 @@ func colonyExecuteToolUsesShellBackend() async throws {
     let configuration = ColonyConfiguration(
         capabilities: [.shell],
         modelName: "test-model",
-        toolApprovalPolicy: .never
+        toolApprovalPolicy: .never,
+        mandatoryApprovalRiskLevels: []
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: shell)
 
@@ -518,7 +519,8 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
     let configuration = ColonyConfiguration(
         capabilities: [.subagents],
         modelName: "test-model",
-        toolApprovalPolicy: .never
+        toolApprovalPolicy: .never,
+        mandatoryApprovalRiskLevels: []
     )
     let context = ColonyContext(
         configuration: configuration,
@@ -566,7 +568,8 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
     let configuration = ColonyConfiguration(
         capabilities: [.subagents],
         modelName: "test-model",
-        toolApprovalPolicy: .never
+        toolApprovalPolicy: .never,
+        mandatoryApprovalRiskLevels: []
     )
     let context = ColonyContext(
         configuration: configuration,

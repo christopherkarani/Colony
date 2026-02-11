@@ -23,6 +23,12 @@ public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConv
     }
 }
 
+extension ColonyFoundationModelsClientError: LocalizedError {
+    public var errorDescription: String? {
+        description
+    }
+}
+
 public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
     public struct Configuration: Sendable {
         public enum ToolInstructionVerbosity: Sendable {

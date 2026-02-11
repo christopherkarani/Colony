@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COLONY_USE_LOCAL_HIVE_PATH: "1"
+
+jobs:
+  dependency-policy:
+    name: Dependency Policy
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Bootstrap pinned Hive checkout
+        run: scripts/ci/bootstrap-hive.sh
+      - name: Toolchain info
+        run: swift --version
+      - name: Validate dependency and lockfile policy
+        run: scripts/ci/check-dependency-policy.sh
+
+  swift-test:
+    name: Swift Test
+    runs-on: macos-latest
+    timeout-minutes: 30
+    needs: dependency-policy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Bootstrap pinned Hive checkout
+        run: scripts/ci/bootstrap-hive.sh
+      - name: Toolchain info
+        run: swift --version
+      - name: Run full test suite
+        run: swift test
+
+  protocol-contract-tests:
+    name: Protocol Contract Tests
+    runs-on: macos-latest
+    timeout-minutes: 20
+    needs: dependency-policy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Bootstrap pinned Hive checkout
+        run: scripts/ci/bootstrap-hive.sh
+      - name: Toolchain info
+        run: swift --version
+      - name: Run contract tests
+        run: scripts/ci/run-contract-tests.sh
+
+  e2e-approval-tests:
+    name: E2E Approve Deny Resume
+    runs-on: macos-latest
+    timeout-minutes: 20
+    needs: dependency-policy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Bootstrap pinned Hive checkout
+        run: scripts/ci/bootstrap-hive.sh
+      - name: Toolchain info
+        run: swift --version
+      - name: Run e2e approval tests
+        run: scripts/ci/run-e2e-tests.sh
+
+  security-tests:
+    name: Security Tests
+    runs-on: macos-latest
+    timeout-minutes: 20
+    needs: dependency-policy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Bootstrap pinned Hive checkout
+        run: scripts/ci/bootstrap-hive.sh
+      - name: Toolchain info
+        run: swift --version
+      - name: Run security tests
+        run: scripts/ci/run-security-tests.sh

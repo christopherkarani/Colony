@@ -19,6 +19,7 @@ func mockResearchModelCompletesTaskLoop() async throws {
         configure: { config in
             config.capabilities = [.planning, .filesystem, .subagents]
             config.toolApprovalPolicy = .never
+            config.mandatoryApprovalRiskLevels = []
             config.summarizationPolicy = nil
             config.toolResultEvictionTokenLimit = nil
         }
