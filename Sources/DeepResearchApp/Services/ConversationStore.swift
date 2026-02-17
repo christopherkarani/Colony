@@ -15,6 +15,12 @@ final class ConversationStore {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
+    /// Testable initializer that accepts a custom directory.
+    init(directory: URL) {
+        self.directory = directory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
     func load() {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {

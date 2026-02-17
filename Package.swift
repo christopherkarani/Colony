@@ -90,5 +90,9 @@ let package = Package(
             dependencies: ["ColonyControlPlane"],
             exclude: ["CLAUDE.md"]
         ),
+        .testTarget(
+            name: "DeepResearchAppTests",
+            dependencies: ["DeepResearchApp"]
+        ),
     ]
 )
