@@ -1,9 +1,6 @@
 // swift-tools-version: 6.2
 
-import Foundation
 import PackageDescription
-
-let useLocalHivePath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_HIVE_PATH"] == "1"
 
 let package = Package(
     name: "Colony",
@@ -19,11 +16,7 @@ let package = Package(
         .executable(name: "DeepResearchApp", targets: ["DeepResearchApp"]),
     ],
     dependencies: [
-        // Default: remote pinned Hive dependency.
-        // Local fallback: set COLONY_USE_LOCAL_HIVE_PATH=1 for offline/dev workflows.
-        useLocalHivePath
-            ? .package(path: ".deps/Hive/Sources/Hive")
-            : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.2"),
+        .package(url: "https://github.com/christopherkarani/Hive", exact: "0.1.5"),
         .package(
             url: "https://github.com/christopherkarani/Conduit",
             exact: "0.3.3",
