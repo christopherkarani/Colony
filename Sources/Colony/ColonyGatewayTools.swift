@@ -158,25 +158,25 @@ public final class ColonyRuntimeToolRegistry: HiveToolRegistry, @unchecked Senda
     }
 
     public func updateContextProvider(_ provider: @escaping @Sendable () -> ColonyToolExecutionContext) {
-        lock.lock()
-        defer { lock.unlock() }
-        contextProvider = provider
+        withLock {
+            contextProvider = provider
+        }
     }
 
     public func register(
         _ definition: ColonyToolDefinition,
         handler: @escaping ColonyToolHandler
     ) {
-        lock.lock()
-        definitionsByName[definition.name] = definition
-        handlersByName[definition.name] = handler
-        lock.unlock()
+        withLock {
+            definitionsByName[definition.name] = definition
+            handlersByName[definition.name] = handler
+        }
     }
 
     public func listTools() -> [HiveToolDefinition] {
-        lock.lock()
-        let definitions = definitionsByName.values
-        lock.unlock()
+        let definitions: [ColonyToolDefinition] = withLock {
+            Array(definitionsByName.values)
+        }
 
         return definitions
             .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
@@ -184,15 +184,18 @@ public final class ColonyRuntimeToolRegistry: HiveToolRegistry, @unchecked Senda
     }
 
     public func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        let definitionAndHandler: (ColonyToolDefinition, ColonyToolHandler)?
-        lock.lock()
-        if let definition = definitionsByName[call.name], let handler = handlersByName[call.name] {
-            definitionAndHandler = (definition, handler)
-        } else {
-            definitionAndHandler = nil
+        let snapshot = withLock {
+            (
+                definitionAndHandler: definitionsByName[call.name].flatMap { definition in
+                    handlersByName[call.name].map { handler in
+                        (definition, handler)
+                    }
+                },
+                contextProvider: self.contextProvider
+            )
         }
-        let contextProvider = self.contextProvider
-        lock.unlock()
+        let definitionAndHandler = snapshot.definitionAndHandler
+        let contextProvider = snapshot.contextProvider
 
         guard let (_, handler) = definitionAndHandler else {
             let envelope = ColonyToolResultEnvelope(
@@ -244,16 +247,16 @@ public final class ColonyRuntimeToolRegistry: HiveToolRegistry, @unchecked Senda
     }
 
     public func resultEnvelope(forToolCallID toolCallID: String) -> ColonyToolResultEnvelope? {
-        lock.lock()
-        defer { lock.unlock() }
-        return resultEnvelopesByToolCallID[toolCallID]
+        withLock {
+            resultEnvelopesByToolCallID[toolCallID]
+        }
     }
 
     public func registeredDefinitions() -> [ColonyToolDefinition] {
-        lock.lock()
-        defer { lock.unlock() }
-        return definitionsByName.values
-            .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+        withLock {
+            definitionsByName.values
+                .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+        }
     }
 
     public func clone(
@@ -261,10 +264,11 @@ public final class ColonyRuntimeToolRegistry: HiveToolRegistry, @unchecked Senda
     ) -> ColonyRuntimeToolRegistry {
         let cloned = ColonyRuntimeToolRegistry(contextProvider: contextProvider)
 
-        lock.lock()
-        let definitions = definitionsByName
-        let handlers = handlersByName
-        lock.unlock()
+        let snapshot = withLock {
+            (definitionsByName, handlersByName)
+        }
+        let definitions = snapshot.0
+        let handlers = snapshot.1
 
         for definition in definitions.values {
             if let handler = handlers[definition.name] {
@@ -275,9 +279,15 @@ public final class ColonyRuntimeToolRegistry: HiveToolRegistry, @unchecked Senda
     }
 
     private func store(envelope: ColonyToolResultEnvelope, toolCallID: String) {
+        withLock {
+            resultEnvelopesByToolCallID[toolCallID] = envelope
+        }
+    }
+
+    private func withLock<T>(_ body: () -> T) -> T {
         lock.lock()
-        resultEnvelopesByToolCallID[toolCallID] = envelope
-        lock.unlock()
+        defer { lock.unlock() }
+        return body()
     }
 }
 

@@ -1,5 +1,5 @@
 {
-  "originHash" : "a9aed9c2ca306cd030d24aca15ab2a4feacffbce8953bbb23a9e6ff227049e0f",
+  "originHash" : "d36fa37553b9c398a99c6ab8a60a90ff503b3749858d7ad45df654a194e1284d",
   "pins" : [
     {
       "identity" : "conduit",
@@ -17,6 +17,15 @@
       "state" : {
         "revision" : "2cf6c756e1e5ef6901ebae16576a7e4e4b834622",
         "version" : "6.29.3"
+      }
+    },
+    {
+      "identity" : "hive",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Hive",
+      "state" : {
+        "revision" : "4b52f38d014bf5610a53069ec8af62b918c5d00d",
+        "version" : "0.1.5"
       }
     },
     {
@@ -60,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/unum-cloud/USearch.git",
       "state" : {
-        "revision" : "7306bb446be5f0f0c529ec8acdc57361cef8a8a7",
-        "version" : "2.23.0"
+        "revision" : "40d127f472e9073875566f0e9308c0302b89100a",
+        "version" : "2.24.0"
       }
     },
     {
@@ -69,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Wax.git",
       "state" : {
-        "revision" : "39066b6447f8aaa468db317ccffe7ed46d44ed2c",
-        "version" : "0.1.4"
+        "revision" : "0ab0436f4492b8e74459a9dba58f77436282ac33",
+        "version" : "0.1.6"
       }
     }
   ],

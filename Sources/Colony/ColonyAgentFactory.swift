@@ -119,6 +119,8 @@ public struct ColonyAgentFactory: Sendable {
                     "wax_recall",
                     "wax_remember",
                 ]),
+                // Anchor the first user message so the original task instruction
+                // survives compaction. (System prompt is injected separately in model().)
                 compactionPolicy: .maxTokens(2_600, anchoredMessageCount: 1),
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 3_200,
@@ -153,6 +155,8 @@ public struct ColonyAgentFactory: Sendable {
                 capabilities: [.planning, .filesystem, .subagents],
                 modelName: modelName,
                 toolApprovalPolicy: .never,
+                // Anchor the first user message so the original task instruction
+                // survives compaction. (System prompt is injected separately in model().)
                 compactionPolicy: .maxTokens(12_000, anchoredMessageCount: 1),
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 170_000,
@@ -422,7 +426,7 @@ public struct ColonyAgentFactory: Sendable {
         )
 
         let graph = try ColonyAgent.compile()
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)

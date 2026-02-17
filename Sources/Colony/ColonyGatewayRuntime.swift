@@ -298,6 +298,19 @@ public actor ColonyGatewayRuntime {
         let hiveHandle = await runtimeArtifacts.runtime.sendUserMessage(request.input)
         let runID = hiveHandle.runID.rawValue
 
+        runtimeArtifacts.toolRegistry?.updateContextProvider {
+            ColonyToolExecutionContext(
+                runID: runID,
+                sessionID: session.sessionID,
+                agentID: self.configuration.agentID,
+                executionPolicy: executionPolicy,
+                correlationChain: [
+                    session.sessionID.rawValue,
+                    runID.uuidString.lowercased(),
+                ]
+            )
+        }
+
         let managed = ColonyGatewayManagedRun(
             runID: runID,
             sessionID: session.sessionID,

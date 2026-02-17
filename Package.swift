@@ -16,7 +16,7 @@ let package = Package(
         .executable(name: "DeepResearchApp", targets: ["DeepResearchApp"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/christopherkarani/Hive", exact: "0.1.5"),
+        .package(url: "https://github.com/christopherkarani/Hive", from: "0.1.5"),
         .package(
             url: "https://github.com/christopherkarani/Conduit",
             exact: "0.3.3",
@@ -47,7 +47,8 @@ let package = Package(
                 "Colony",
                 "ColonyCore",
                 .product(name: "HiveCore", package: "Hive"),
-            ]
+            ],
+            exclude: ["CLAUDE.md"]
         ),
         .executableTarget(
             name: "ColonyResearchAssistantExample",
@@ -59,7 +60,9 @@ let package = Package(
             dependencies: ["Colony"],
             path: "Sources/DeepResearchApp",
             exclude: [
+                "CLAUDE.md",
                 "Models/CLAUDE.md",
+                "Services/CLAUDE.md",
                 "ViewModels/CLAUDE.md",
                 "Views/CLAUDE.md",
             ]
@@ -67,19 +70,25 @@ let package = Package(
         .testTarget(
             name: "ColonyTests",
             dependencies: ["Colony"],
-            exclude: ["CLAUDE.md"]
+            exclude: [
+                "CLAUDE.md",
+                "TestSupport/CLAUDE.md",
+            ]
         ),
         .testTarget(
             name: "ColonyExecutionHardeningTests",
-            dependencies: ["Colony"]
+            dependencies: ["Colony"],
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "ColonyResearchAssistantExampleTests",
-            dependencies: ["ColonyResearchAssistantExample"]
+            dependencies: ["ColonyResearchAssistantExample"],
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "ColonyControlPlaneTests",
-            dependencies: ["ColonyControlPlane"]
+            dependencies: ["ColonyControlPlane"],
+            exclude: ["CLAUDE.md"]
         ),
     ]
 )

@@ -255,7 +255,7 @@ public struct ColonyPolicyAwareFileSystemBackend: ColonyFileSystemBackend, Senda
     public func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo] {
         try assertPathAllowed(path)
         let items = try await base.list(at: path)
-        return try filterToWorkspace(items) { $0.path }
+        return try filterToWorkspace(items, path: { $0.path })
     }
 
     public func read(at path: ColonyVirtualPath) async throws -> String {
@@ -290,7 +290,7 @@ public struct ColonyPolicyAwareFileSystemBackend: ColonyFileSystemBackend, Senda
 
     public func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch] {
         let matches = try await base.grep(pattern: pattern, glob: glob)
-        return try filterToWorkspace(matches) { $0.path }
+        return try filterToWorkspace(matches, path: { $0.path })
     }
 }
 
@@ -430,13 +430,6 @@ private extension ColonyPolicyAwareFileSystemBackend {
         return values.filter { value in
             Self.hasPathPrefix(path(value).rawValue, prefix: workspaceRoot.rawValue)
         }
-    }
-
-    func filterToWorkspace<T>(
-        _ values: [T],
-        _ path: (T) -> ColonyVirtualPath
-    ) throws -> [T] {
-        try filterToWorkspace(values, path: path)
     }
 
     static func hasPathPrefix(_ path: String, prefix: String) -> Bool {
