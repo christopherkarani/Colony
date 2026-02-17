@@ -64,6 +64,10 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable, RawReprese
             self = .rejected
         case Kind.cancelled.rawValue:
             self = .cancelled
+        case Kind.perTool.rawValue:
+            // RawRepresentable is a sentinel compatibility path; use Codable for full-fidelity
+            // per-tool decision payloads.
+            self = .perTool([])
         default:
             return nil
         }
