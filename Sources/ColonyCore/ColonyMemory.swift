@@ -145,6 +145,23 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         return ColonyMemoryRememberResult(id: id)
     }
 
+    /// Score assigned when the raw query substring appears in the memory item but
+    /// no individual terms overlap. This is lower than any term-overlap score (which
+    /// ranges from `1/N` to `1.0` where N = query term count) because a raw substring
+    /// hit without term overlap indicates a weaker, positional-only match.
+    private let substringMatchScore: Double = 0.25
+
+    /// Scores a memory item against a recall query using a two-tier term-overlap model:
+    ///
+    /// 1. **Term overlap (primary):** Both query and item are tokenized into lowercase
+    ///    alphanumeric terms. The score is the fraction of query terms found in the item,
+    ///    i.e. `|intersection| / |queryTerms|`. A perfect term match returns 1.0.
+    /// 2. **Substring fallback:** If no terms overlap but the raw query appears as a
+    ///    case-insensitive substring anywhere in the item's combined text, the item
+    ///    receives `substringMatchScore` (0.25).
+    /// 3. **No match:** Returns 0 if neither condition is met.
+    ///
+    /// An empty query scores every item at 1.0 (returns all items, limited by count).
     private func score(query: String, item: StoredMemory) -> Double {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedQuery.isEmpty == false else { return 1.0 }
@@ -163,7 +180,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         }
 
         if haystack.lowercased().contains(trimmedQuery.lowercased()) {
-            return 0.25
+            return substringMatchScore
         }
 
         return 0

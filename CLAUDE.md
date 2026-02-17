@@ -39,13 +39,22 @@ The loop runs until the model produces a final answer (no tool calls) or an inte
 
 Tools are only injected into the prompt/schema when their corresponding capability is enabled AND a backend is wired:
 
-| Capability       | Tools                                                        | Backend Protocol             |
-|-----------------|--------------------------------------------------------------|------------------------------|
-| `.planning`     | `write_todos`, `read_todos`                                  | (built-in)                   |
-| `.filesystem`   | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` | `ColonyFileSystemBackend`    |
-| `.shell`        | `execute`                                                    | `ColonyShellBackend`         |
-| `.scratchbook`  | `scratch_read/add/update/complete/pin/unpin`                 | (built-in, filesystem-backed)|
-| `.subagents`    | `task`                                                       | `ColonySubagentRegistry`     |
+| Capability        | Tools                                                        | Backend Protocol             | Default Profiles          |
+|-------------------|--------------------------------------------------------------|------------------------------|---------------------------|
+| `.planning`       | `write_todos`, `read_todos`                                  | (built-in)                   | onDevice4k, cloud         |
+| `.filesystem`     | `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` | `ColonyFileSystemBackend`    | onDevice4k, cloud         |
+| `.shell`          | `execute`                                                    | `ColonyShellBackend`         | coding lane               |
+| `.shellSessions`  | `shell_open`, `shell_write`, `shell_read`, `shell_close`     | `ColonyShellBackend`         | coding lane               |
+| `.scratchbook`    | `scratch_read/add/update/complete/pin/unpin`                 | (built-in, filesystem-backed)| onDevice4k                |
+| `.subagents`      | `task`                                                       | `ColonySubagentRegistry`     | onDevice4k, cloud         |
+| `.git`            | `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push`, `git_prepare_pr` | `ColonyGitBackend` | coding lane               |
+| `.lsp`            | `lsp_symbols`, `lsp_diagnostics`, `lsp_references`, `lsp_apply_edit` | `ColonyLSPBackend` | coding lane               |
+| `.applyPatch`     | `apply_patch`                                                | `ColonyApplyPatchBackend`    | coding lane               |
+| `.webSearch`      | `web_search`                                                 | `ColonyWebSearchBackend`     | research lane             |
+| `.codeSearch`     | `code_search`                                                | `ColonyCodeSearchBackend`    | research lane             |
+| `.mcp`            | `mcp_list_resources`, `mcp_read_resource`                    | `ColonyMCPBackend`           | research lane             |
+| `.plugins`        | `plugin_list_tools`, `plugin_invoke`                         | `ColonyPluginToolRegistry`   | (none by default)         |
+| `.memory`         | `wax_recall`, `wax_remember`                                 | `ColonyMemoryBackend`        | memory lane               |
 
 ### Profiles
 
