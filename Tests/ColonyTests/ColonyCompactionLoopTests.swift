@@ -96,7 +96,7 @@ func colonyCompactsBeforeSecondModelTurnAfterTools() async throws {
         model: AnyHiveModelClient(ToolThenValidateCompactionModel()),
         tools: AnyHiveToolRegistry(FixedOutputToolRegistry())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-compact-after-tool"),

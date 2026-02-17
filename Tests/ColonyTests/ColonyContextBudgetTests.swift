@@ -62,7 +62,7 @@ func contextBudget_enforcesStrictRequestLevelCap() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-context-budget-hard-cap")
 
     for turn in 0..<6 {
@@ -107,7 +107,7 @@ func contextBudget_trimsOversizedSystemPromptToFitHardCap() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-context-budget-system-overflow"),
@@ -168,7 +168,7 @@ func contextBudget_includesToolDefinitionPayloadInHardCap() async throws {
         model: AnyHiveModelClient(recordingModel),
         tools: externalTools
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-context-budget-tools"),
@@ -208,7 +208,7 @@ func contextBudget_trimsOldestFirstAndPreservesNewestMessages() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-context-budget-recency")
 
     for turn in 0..<10 {

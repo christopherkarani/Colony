@@ -262,7 +262,7 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-default-subagent-registry"),
         input: "parent secret: 123",
@@ -325,7 +325,7 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-default-subagent-registry-recursion"),
         input: "trigger",

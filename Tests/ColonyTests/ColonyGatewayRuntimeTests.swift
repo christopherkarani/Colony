@@ -16,9 +16,9 @@ private final class AlwaysFailGatewayModelClient: HiveModelClient, @unchecked Se
     }
 
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
-        lock.lock()
-        count += 1
-        lock.unlock()
+        withLock {
+            count += 1
+        }
         throw GatewayTestError.scripted(message)
     }
 
@@ -36,9 +36,13 @@ private final class AlwaysFailGatewayModelClient: HiveModelClient, @unchecked Se
     }
 
     func requestCount() -> Int {
+        withLock { count }
+    }
+
+    private func withLock<T>(_ body: () -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
-        return count
+        return body()
     }
 }
 
@@ -296,7 +300,7 @@ func gateway_resumeFromCheckpointAdapter() async throws {
     let store = try ColonyDurableRuntimeCheckpointStoreAdapter(baseURL: directory)
     let threadID = HiveThreadID("thread-gateway-checkpoint")
     let runID = HiveRunID(UUID(uuidString: "D39A7E4F-3355-43AF-AC72-3097F7706E57")!)
-    let checkpoint = HiveCheckpoint(
+    let checkpoint = HiveCheckpoint<ColonySchema>(
         id: HiveCheckpointID("cp-1"),
         threadID: threadID,
         runID: runID,

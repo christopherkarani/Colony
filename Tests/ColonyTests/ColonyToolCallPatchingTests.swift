@@ -88,7 +88,7 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-patch-toolcalls")
 
     let first = await runtime.run(

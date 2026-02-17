@@ -281,7 +281,7 @@ func colonyInterruptsAndResumesApproved() async throws {
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-approved")
 
     let handle = await runtime.run(
@@ -348,7 +348,7 @@ func colonyResumesRejected() async throws {
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-rejected")
 
     let handle = await runtime.run(
@@ -459,7 +459,7 @@ func colonyExecuteToolUsesShellBackend() async throws {
         model: AnyHiveModelClient(ExecuteToolModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-execute"),
         input: "run execute",
@@ -507,7 +507,7 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
         model: AnyHiveModelClient(TaskToolModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-task"),
         input: "delegate task",
@@ -556,7 +556,7 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
         model: AnyHiveModelClient(TaskToolStructuredContextModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-task-structured-context"),
         input: "delegate task",
@@ -617,7 +617,7 @@ func systemPromptInjectsAgentsMemory() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-memory"),
@@ -669,7 +669,7 @@ BODY_SENTINEL_SHOULD_NOT_BE_DISCLOSED
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-skills"),

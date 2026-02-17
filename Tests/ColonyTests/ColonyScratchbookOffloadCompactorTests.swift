@@ -90,7 +90,7 @@ private func runOffloadScenario(
         model: AnyHiveModelClient(ConstantModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     for i in 0..<5 {
         let input = "message-\(i): " + String(repeating: "x", count: 80)

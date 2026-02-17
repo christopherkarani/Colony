@@ -140,7 +140,7 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(modelWithBackend)
     )
-    let runtimeWithBackend = HiveRuntime(graph: graph, environment: envWithBackend)
+    let runtimeWithBackend = try HiveRuntime(graph: graph, environment: envWithBackend)
     _ = try await runtimeWithBackend
         .run(
             threadID: HiveThreadID("thread-memory-tools-with-backend"),
@@ -169,7 +169,7 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(modelWithoutBackend)
     )
-    let runtimeWithoutBackend = HiveRuntime(graph: graph, environment: envWithoutBackend)
+    let runtimeWithoutBackend = try HiveRuntime(graph: graph, environment: envWithoutBackend)
     _ = try await runtimeWithoutBackend
         .run(
             threadID: HiveThreadID("thread-memory-tools-without-backend"),
@@ -206,7 +206,7 @@ func memoryToolsDispatchAndPersist() async throws {
         logger: ColonyTestLogger(),
         model: AnyHiveModelClient(MemoryToolChainModel())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let outcome = try await runtime
         .run(
