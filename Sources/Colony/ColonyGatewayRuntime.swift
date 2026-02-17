@@ -625,6 +625,7 @@ private actor ColonyGatewayManagedRun {
     private var waiters: [CheckedContinuation<ColonyGatewayRunResult, Never>] = []
     private var assistantBuffer: String = ""
     private var cancelRequested: Bool = false
+    private var terminalTransitionInFlight: Bool = false
 
     init(
         runID: UUID,
@@ -652,6 +653,7 @@ private actor ColonyGatewayManagedRun {
 
     func setImmediateResult(_ result: ColonyGatewayRunResult) {
         finalResult = result
+        terminalTransitionInFlight = false
     }
 
     func start(with handle: HiveRunHandle<ColonySchema>) async {
@@ -659,6 +661,7 @@ private actor ColonyGatewayManagedRun {
         cancelRequested = false
         pendingInterrupt = nil
         finalResult = nil
+        terminalTransitionInFlight = false
         assistantBuffer = ""
 
         _ = await eventBus.emit(
@@ -717,6 +720,7 @@ private actor ColonyGatewayManagedRun {
 
         self.pendingInterrupt = nil
         finalResult = nil
+        terminalTransitionInFlight = false
         assistantBuffer = ""
 
         let resumed = await runtime.resumeToolApproval(
@@ -747,6 +751,7 @@ private actor ColonyGatewayManagedRun {
     private func startAttemptFromResume(_ handle: HiveRunHandle<ColonySchema>) async {
         currentHandle = handle
         cancelRequested = false
+        terminalTransitionInFlight = false
 
         eventTask?.cancel()
         outcomeTask?.cancel()
@@ -864,12 +869,15 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func process(outcome: HiveRunOutcome<ColonySchema>) async {
-        guard hasTerminalResult == false else {
+        guard hasTerminalResult == false, terminalTransitionInFlight == false else {
             return
         }
 
         switch outcome {
         case .finished(let output, _):
+            guard beginTerminalTransition() else {
+                return
+            }
             let finalAnswer: String? = {
                 if case let .fullStore(store) = output {
                     return try? store.get(ColonySchema.Channels.finalAnswer)
@@ -901,6 +909,9 @@ private actor ColonyGatewayManagedRun {
             finalize(.completed(finalAnswer: finalAnswer), cleanup: true)
 
         case .outOfSteps(_, _, _):
+            guard beginTerminalTransition() else {
+                return
+            }
             let reason: ColonyInterruptionReason = .timeout
             _ = await eventBus.emit(
                 kind: .runInterrupted,
@@ -956,7 +967,7 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func processCancellation(reason: ColonyInterruptionReason) async {
-        guard hasTerminalResult == false else {
+        guard beginTerminalTransition() else {
             return
         }
 
@@ -986,7 +997,7 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func finishWithError(_ error: Error) async {
-        guard hasTerminalResult == false else {
+        guard beginTerminalTransition() else {
             return
         }
 
@@ -1025,6 +1036,9 @@ private actor ColonyGatewayManagedRun {
         if hasTerminalResult {
             return
         }
+        if Self.isTerminal(result) {
+            terminalTransitionInFlight = false
+        }
 
         finalResult = result
         let continuations = waiters
@@ -1052,6 +1066,14 @@ private actor ColonyGatewayManagedRun {
             return false
         }
         return Self.isTerminal(finalResult)
+    }
+
+    private func beginTerminalTransition() -> Bool {
+        guard hasTerminalResult == false, terminalTransitionInFlight == false else {
+            return false
+        }
+        terminalTransitionInFlight = true
+        return true
     }
 }
 
