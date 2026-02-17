@@ -188,6 +188,7 @@ public actor ColonyGatewayRuntime {
 
     private var activeRuns: [UUID: ColonyGatewayManagedRun] = [:]
     private var runMetadata: [UUID: RunMetadata] = [:]
+    private var subagentObserverTasks: [String: Task<Void, Never>] = [:]
 
     public init(
         configuration: ColonyGatewayRuntimeConfiguration,
@@ -417,8 +418,10 @@ public actor ColonyGatewayRuntime {
             }
         )
 
-        Task {
+        subagentObserverTasks[subagentID] = Task { [weak self] in
             let outcome = await childRun.awaitResult()
+            guard let self else { return }
+
             let state: ColonySubagentLifecycleState
             switch outcome {
             case .completed:
@@ -461,6 +464,8 @@ public actor ColonyGatewayRuntime {
                     )
                 )
             }
+
+            await self.removeSubagentObserver(subagentID)
         }
 
         return ColonySpawnResult(
@@ -581,6 +586,18 @@ public actor ColonyGatewayRuntime {
         )
         try await configuration.sessionStore.createSession(session)
         return session
+    }
+
+    /// Gracefully tears down the runtime, cancelling all active subagent observers.
+    public func shutdown() {
+        for (_, task) in subagentObserverTasks {
+            task.cancel()
+        }
+        subagentObserverTasks.removeAll()
+    }
+
+    private func removeSubagentObserver(_ subagentID: String) {
+        subagentObserverTasks.removeValue(forKey: subagentID)
     }
 
     private func handleTerminalRun(_ runID: UUID) {
