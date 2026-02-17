@@ -1283,14 +1283,12 @@ Preview:
         path: ColonyVirtualPath,
         content: String
     ) async throws {
-        if let existing = try? await filesystem.read(at: path) {
-            if existing.isEmpty {
-                // No safe edit path for empty sentinel content; keep existing.
-                return
-            }
+        do {
+            let existing = try await filesystem.read(at: path)
+            guard existing.isEmpty == false else { return }
             let updated = existing + "\n\n" + content
             _ = try await filesystem.edit(at: path, oldString: existing, newString: updated, replaceAll: false)
-        } else {
+        } catch let error as ColonyFileSystemError where error == .notFound(path) {
             try await filesystem.write(at: path, content: content)
         }
     }
@@ -1305,14 +1303,18 @@ Preview:
         } catch let error as ColonyFileSystemError {
             switch error {
             case .alreadyExists:
-                if let existing = try? await filesystem.read(at: path), existing.isEmpty == false {
-                    _ = try await filesystem.edit(
-                        at: path,
-                        oldString: existing,
-                        newString: content,
-                        replaceAll: false
+                let existing = try await filesystem.read(at: path)
+                guard existing.isEmpty == false else {
+                    throw ColonyFileSystemError.ioError(
+                        "File exists but is empty and cannot be overwritten safely: \(path.rawValue)"
                     )
                 }
+                _ = try await filesystem.edit(
+                    at: path,
+                    oldString: existing,
+                    newString: content,
+                    replaceAll: false
+                )
             default:
                 throw error
             }

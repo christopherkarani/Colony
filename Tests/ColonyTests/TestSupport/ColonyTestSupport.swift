@@ -31,22 +31,8 @@ struct ColonyTestLogger: HiveLogger {
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-actor ColonyTestInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
-        checkpoints.append(checkpoint)
-    }
-
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints
-            .filter { $0.threadID == threadID }
-            .max { lhs, rhs in
-                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
-                return lhs.stepIndex < rhs.stepIndex
-            }
-    }
-}
+/// Alias for the production in-memory checkpoint store to avoid test-only duplication.
+typealias ColonyTestInMemoryCheckpointStore = ColonyInMemoryCheckpointStore
 
 func colonyWaitUntil(
     timeoutNanoseconds: UInt64 = 2_000_000_000,

@@ -22,6 +22,9 @@ public enum ColonyToolApprovalPattern: Codable, Sendable, Equatable {
         }
     }
 
+    /// NSCache is internally synchronized and NSRegularExpression is immutable after
+    /// initialization, making concurrent access safe. `nonisolated(unsafe)` satisfies
+    /// Swift 6 strict concurrency without introducing an actual data race.
     nonisolated(unsafe) private static let globRegexCache = NSCache<NSString, NSRegularExpression>()
 
     private static func globMatches(pattern: String, input: String) -> Bool {
