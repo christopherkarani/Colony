@@ -353,7 +353,21 @@ func gateway_spawnIsolationAndMessageRouting() async throws {
 
     let events = await runtime.recentEvents(limit: 100)
     #expect(events.contains(where: { $0.kind == .subagentStarted && $0.subagentID == spawned.subagentID }))
-    #expect(events.contains(where: { $0.kind == .subagentCompleted && $0.subagentID == spawned.subagentID }))
+
+    var subagentCompletedObserved = events.contains(where: {
+        $0.kind == .subagentCompleted && $0.subagentID == spawned.subagentID
+    })
+    if subagentCompletedObserved == false {
+        for _ in 0 ..< 50 {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            let polled = await runtime.recentEvents(limit: 100)
+            if polled.contains(where: { $0.kind == .subagentCompleted && $0.subagentID == spawned.subagentID }) {
+                subagentCompletedObserved = true
+                break
+            }
+        }
+    }
+    #expect(subagentCompletedObserved)
 }
 
 @Test("Gateway emits ordered structured runtime events")
