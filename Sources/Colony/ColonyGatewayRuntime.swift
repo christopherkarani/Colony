@@ -926,6 +926,9 @@ private actor ColonyGatewayManagedRun {
             let interruptID = interruption.interrupt.id
             pendingInterrupt = interruptID
 
+            // Currently tool approval is the only interrupt source, so .safetyBlock is always
+            // correct. If Hive adds new interrupt types (budget limits, external signals, etc.),
+            // derive the reason from interruption.interrupt.payload instead of hardcoding.
             let reason: ColonyInterruptionReason = .safetyBlock
             _ = await eventBus.emit(
                 kind: .runInterrupted,
