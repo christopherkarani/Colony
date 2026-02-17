@@ -56,13 +56,16 @@ public actor ColonyInMemorySchedulerQueue: ColonySchedulerQueue {
 public actor ColonySchedulerBridge {
     private let runtime: ColonyGatewayRuntime
     private let queue: any ColonySchedulerQueue
+    private let logger: any HiveLogger
 
     public init(
         runtime: ColonyGatewayRuntime,
-        queue: any ColonySchedulerQueue = ColonyInMemorySchedulerQueue()
+        queue: any ColonySchedulerQueue = ColonyInMemorySchedulerQueue(),
+        logger: any HiveLogger = ColonyNoopLogger()
     ) {
         self.runtime = runtime
         self.queue = queue
+        self.logger = logger
     }
 
     public func enqueue(_ trigger: ColonyScheduledRunTrigger) async {
@@ -84,8 +87,19 @@ public actor ColonySchedulerBridge {
                 idempotencyKey: trigger.idempotencyKey,
                 metadata: trigger.metadata
             )
-            if let handle = try? await runtime.startRun(request) {
+            do {
+                let handle = try await runtime.startRun(request)
                 runIDs.append(handle.runID)
+            } catch {
+                logger.error(
+                    "Scheduled trigger \(trigger.id) failed to start: \(error)",
+                    metadata: [
+                        "triggerID": trigger.id,
+                        "sessionID": trigger.sessionID.rawValue,
+                    ]
+                )
+                // Re-enqueue so the trigger is not permanently lost.
+                await queue.enqueue(trigger)
             }
         }
         return runIDs
