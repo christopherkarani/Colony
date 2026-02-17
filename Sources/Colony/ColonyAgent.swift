@@ -462,7 +462,13 @@ public enum ColonyAgent {
     }
 
     private static func routeAfterModel(_ store: HiveStoreView<ColonySchema>) -> HiveNext {
-        let calls = (try? store.get(ColonySchema.Channels.pendingToolCalls)) ?? []
+        let calls: [HiveToolCall]
+        do {
+            calls = try store.get(ColonySchema.Channels.pendingToolCalls)
+        } catch {
+            assertionFailure("[Colony] routeAfterModel: failed to read pendingToolCalls — \(error)")
+            calls = []
+        }
         return calls.isEmpty ? .end : .nodes([nodeTools])
     }
 
@@ -1041,10 +1047,11 @@ public enum ColonyAgent {
             updatedAtNanoseconds: 0
         )
 
-        let updated = ColonyScratchbook(
+        var updated = ColonyScratchbook(
             items: retained + [summary, nextActions],
             pinnedItemIDs: scratchbook.pinnedItemIDs
         )
+        updated.sanitize()
 
         try await ColonyScratchbookStore.save(
             updated,
@@ -1063,11 +1070,14 @@ public enum ColonyAgent {
         var parts: [String] = []
         parts.reserveCapacity(sources.count)
         for path in sources {
-            if let content = try? await filesystem.read(at: path) {
+            do {
+                let content = try await filesystem.read(at: path)
                 let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.isEmpty == false {
                     parts.append(trimmed)
                 }
+            } catch {
+                assertionFailure("[Colony] loadAgentsMemory: failed to read memory source \(path.rawValue) — \(error)")
             }
         }
         let merged = parts.isEmpty ? nil : parts.joined(separator: "\n\n")
@@ -1092,8 +1102,11 @@ public enum ColonyAgent {
                 continue
             }
             let pattern = root.rawValue + "/**/SKILL.md"
-            if let matches = try? await filesystem.glob(pattern: pattern) {
+            do {
+                let matches = try await filesystem.glob(pattern: pattern)
                 skillPaths.formUnion(matches)
+            } catch {
+                assertionFailure("[Colony] loadSkillsCatalogMetadata: failed to glob \(pattern) — \(error)")
             }
         }
 
@@ -1103,7 +1116,13 @@ public enum ColonyAgent {
         var lines: [String] = []
         lines.reserveCapacity(sorted.count)
         for path in sorted {
-            guard let content = try? await filesystem.read(at: path) else { continue }
+            let content: String
+            do {
+                content = try await filesystem.read(at: path)
+            } catch {
+                assertionFailure("[Colony] loadSkillsCatalogMetadata: failed to read \(path.rawValue) — \(error)")
+                continue
+            }
             let metadata = parseSkillFrontmatter(content)
             guard let name = metadata.name, name.isEmpty == false else { continue }
 

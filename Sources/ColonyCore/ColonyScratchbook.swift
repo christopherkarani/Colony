@@ -111,6 +111,12 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
         self.pinnedItemIDs = pinnedItemIDs
     }
 
+    /// Removes any `pinnedItemIDs` entries that do not reference an existing item.
+    public mutating func sanitize() {
+        let existingIDs = Set(items.map(\.id))
+        pinnedItemIDs = pinnedItemIDs.filter { existingIDs.contains($0) }
+    }
+
     public func renderView(policy: ColonyScratchbookPolicy) -> String {
         renderView(viewTokenLimit: policy.viewTokenLimit, maxRenderedItems: policy.maxRenderedItems)
     }

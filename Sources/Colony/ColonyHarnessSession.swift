@@ -277,7 +277,11 @@ public actor ColonyHarnessSession {
         }
 
         if let runStateStore {
-            try? await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            do {
+                try await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            } catch {
+                assertionFailure("[Colony] ColonyHarnessSession: failed to persist audit event \(eventType) — \(error)")
+            }
         }
 
         if let observabilityEmitter {

@@ -232,9 +232,17 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
     }
 
     private func compactArgumentSummary(from schemaJSON: String) -> String {
-        guard let data = schemaJSON.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
+        guard let data = schemaJSON.data(using: .utf8) else {
+            return ""
+        }
+        let object: [String: Any]
+        do {
+            guard let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return ""
+            }
+            object = parsed
+        } catch {
+            assertionFailure("[Colony] compactArgumentSummary: malformed schema JSON — \(error)")
             return ""
         }
 

@@ -57,7 +57,11 @@ public struct ColonyRedactionPolicy: Sendable {
     }
 
     private func replacing(pattern: String, in value: String, withTemplate template: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        let regex: NSRegularExpression
+        do {
+            regex = try NSRegularExpression(pattern: pattern)
+        } catch {
+            assertionFailure("[Colony] ColonySecretRedactor: invalid regex pattern \"\(pattern)\" — \(error)")
             return value
         }
 

@@ -179,7 +179,11 @@ public actor ColonyArtifactStore {
 
         let removed = Array(removeIDs).sorted()
         for id in removed {
-            try? fileManager.removeItem(at: artifactURLForID(id))
+            do {
+                try fileManager.removeItem(at: artifactURLForID(id))
+            } catch {
+                assertionFailure("[Colony] ColonyArtifactStore: failed to remove artifact \(id) — \(error)")
+            }
         }
 
         return removed

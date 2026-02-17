@@ -36,7 +36,9 @@ public enum ColonyScratchbookStore {
             throw ColonyFileSystemError.ioError("Scratchbook file was not valid UTF-8: \(scratchbookPath.rawValue)")
         }
 
-        return try JSONDecoder().decode(ColonyScratchbook.self, from: data)
+        var scratchbook = try JSONDecoder().decode(ColonyScratchbook.self, from: data)
+        scratchbook.sanitize()
+        return scratchbook
     }
 
     public static func save(
