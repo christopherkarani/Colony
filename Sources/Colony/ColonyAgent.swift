@@ -1285,6 +1285,9 @@ Preview:
     ) async throws {
         do {
             let existing = try await filesystem.read(at: path)
+            // An empty file acts as a sentinel for "no prior content" — skip the
+            // edit-based append and leave it empty. writeOrOverwrite intentionally
+            // throws on empty files instead; the asymmetry is deliberate.
             guard existing.isEmpty == false else { return }
             let updated = existing + "\n\n" + content
             _ = try await filesystem.edit(at: path, oldString: existing, newString: updated, replaceAll: false)
