@@ -24,6 +24,11 @@ let package = Package(
         useLocalHivePath
             ? .package(path: ".deps/Hive/Sources/Hive")
             : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.2"),
+        .package(
+            url: "https://github.com/christopherkarani/Conduit",
+            exact: "0.3.3",
+            traits: ["OpenAI", "OpenRouter", "Anthropic"]
+        ),
     ],
     targets: [
         .target(
@@ -38,6 +43,8 @@ let package = Package(
             dependencies: [
                 "ColonyCore",
                 .product(name: "HiveCore", package: "Hive"),
+                .product(name: "HiveConduit", package: "Hive"),
+                .product(name: "Conduit", package: "Conduit"),
             ],
             exclude: ["CLAUDE.md"]
         ),
