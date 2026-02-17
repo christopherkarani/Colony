@@ -873,6 +873,9 @@ private actor ColonyGatewayManagedRun {
                 return nil
             }() ?? (assistantBuffer.isEmpty ? nil : assistantBuffer)
             if let finalAnswer {
+                // Best-effort persistence: the run already completed successfully, so a
+                // session store write failure should not retroactively fail the run result.
+                // Callers observe the final answer via the returned ColonyGatewayRunResult.
                 try? await sessionStore.appendMessage(
                     ColonyRuntimeMessage(role: .assistant, content: finalAnswer),
                     sessionID: sessionID
