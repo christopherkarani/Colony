@@ -438,4 +438,49 @@ public struct ColonyAgentFactory: Sendable {
         )
         return ColonyRuntime(runControl: runControl)
     }
+
+    /// Convenience overload that accepts grouped backend and runtime option bundles.
+    ///
+    /// Reduces parameter count from 28 to 10. Delegates to the full-parameter overload.
+    public func makeRuntime(
+        profile: ColonyProfile = .onDevice4k,
+        threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
+        modelName: String,
+        lane: ColonyLane? = nil,
+        intent: String? = nil,
+        model: AnyHiveModelClient? = nil,
+        modelRouter: (any HiveModelRouter)? = nil,
+        inferenceHints: HiveInferenceHints? = nil,
+        backends: ColonyBackendBundle = ColonyBackendBundle(),
+        options: ColonyRuntimeOptions = ColonyRuntimeOptions()
+    ) throws -> ColonyRuntime {
+        try makeRuntime(
+            profile: profile,
+            threadID: threadID,
+            modelName: modelName,
+            lane: lane,
+            intent: intent,
+            model: model,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints,
+            tools: backends.tools,
+            filesystem: backends.filesystem,
+            shell: backends.shell,
+            git: backends.git,
+            lsp: backends.lsp,
+            applyPatch: backends.applyPatch,
+            webSearch: backends.webSearch,
+            codeSearch: backends.codeSearch,
+            mcp: backends.mcp,
+            memory: backends.memory,
+            plugins: backends.plugins,
+            subagents: backends.subagents,
+            checkpointStore: backends.checkpointStore,
+            durableCheckpointDirectoryURL: backends.durableCheckpointDirectoryURL,
+            clock: options.clock,
+            logger: options.logger,
+            configure: options.configure,
+            configureRunOptions: options.configureRunOptions
+        )
+    }
 }
