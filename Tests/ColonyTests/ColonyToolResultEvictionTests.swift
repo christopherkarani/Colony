@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private struct LargeOutputToolRegistry: HiveToolRegistry, Sendable {
     let output: String
 
@@ -96,8 +85,8 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(BigToolModel()),
         tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
@@ -111,7 +100,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -124,7 +113,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     let toolMessage = messages.first { $0.role == HiveChatRole.tool && $0.toolCallID == "evict-1" }
     #expect(toolMessage != nil)
     #expect(toolMessage?.content.contains("/large_tool_results/evict-1") == true)
-    #expect(toolMessage?.content.contains("Result too large") == true)
+    #expect(toolMessage?.content.contains("Tool result too large") == true)
 }
 
 @Test("Colony caps tool eviction preview by toolResultEvictionTokenLimit budget")
@@ -150,8 +139,8 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(BigToolModel()),
         tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
@@ -165,18 +154,18 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     let messages = try store.get(ColonySchema.Channels.messages)
     guard let toolMessage = messages.first(where: { $0.role == .tool && $0.toolCallID == "evict-1" }) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     guard let preview = extractEvictionPreview(from: toolMessage.content) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -205,8 +194,8 @@ func colonyToolEvictionPreviewTrimming_isDeterministic() async throws {
 
         let environment = HiveEnvironment<ColonySchema>(
             context: context,
-            clock: NoopClock(),
-            logger: NoopLogger(),
+            clock: ColonyTestClock(),
+            logger: ColonyTestLogger(),
             model: AnyHiveModelClient(BigToolModel()),
             tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
         )

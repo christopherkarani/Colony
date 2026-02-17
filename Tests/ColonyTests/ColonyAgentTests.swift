@@ -2,34 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
-private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
-        checkpoints.append(checkpoint)
-    }
-
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints
-            .filter { $0.threadID == threadID }
-            .max { lhs, rhs in
-                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
-                return lhs.stepIndex < rhs.stepIndex
-            }
-    }
-}
-
 private final class ScriptedModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
@@ -300,11 +272,11 @@ func colonyInterruptsAndResumesApproved() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
+    let checkpointStore = ColonyTestInMemoryCheckpointStore<ColonySchema>()
     let environment = HiveEnvironment(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ScriptedModel()),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
@@ -320,12 +292,12 @@ func colonyInterruptsAndResumesApproved() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .interrupted(interruption) = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     guard case let .toolApprovalRequired(toolCalls) = interruption.interrupt.payload else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
     #expect(toolCalls.count == 1)
@@ -340,12 +312,12 @@ func colonyInterruptsAndResumesApproved() async throws {
 
     let resumedOutcome = try await resumed.outcome.value
     guard case let .finished(output, _) = resumedOutcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     guard case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -367,11 +339,11 @@ func colonyResumesRejected() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
+    let checkpointStore = ColonyTestInMemoryCheckpointStore<ColonySchema>()
     let environment = HiveEnvironment(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ScriptedModel()),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
@@ -387,7 +359,7 @@ func colonyResumesRejected() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .interrupted(interruption) = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -400,12 +372,12 @@ func colonyResumesRejected() async throws {
 
     let resumedOutcome = try await resumed.outcome.value
     guard case let .finished(output, _) = resumedOutcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     guard case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -413,7 +385,7 @@ func colonyResumesRejected() async throws {
 
     do {
         _ = try await fs.read(at: try ColonyVirtualPath("/note.md"))
-        #expect(Bool(false))
+        colonyTestFail()
     } catch {
         // Expected: file does not exist.
     }
@@ -452,16 +424,16 @@ func colonyMessagesReducerSemantics() throws {
             left: [a],
             right: [HiveChatMessage(id: "missing", role: .system, content: "", op: .remove)]
         )
-        #expect(Bool(false))
+        colonyTestFail()
     } catch let error as HiveRuntimeError {
         switch error {
         case .invalidMessagesUpdate:
             #expect(Bool(true))
         default:
-            #expect(Bool(false))
+            colonyTestFail()
         }
     } catch {
-        #expect(Bool(false))
+        colonyTestFail()
     }
 }
 
@@ -482,8 +454,8 @@ func colonyExecuteToolUsesShellBackend() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ExecuteToolModel())
     )
 
@@ -496,7 +468,7 @@ func colonyExecuteToolUsesShellBackend() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -530,8 +502,8 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(TaskToolModel())
     )
 
@@ -544,7 +516,7 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -579,8 +551,8 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(TaskToolStructuredContextModel())
     )
 
@@ -593,7 +565,7 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -641,8 +613,8 @@ func systemPromptInjectsAgentsMemory() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -693,8 +665,8 @@ BODY_SENTINEL_SHOULD_NOT_BE_DISCLOSED
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)

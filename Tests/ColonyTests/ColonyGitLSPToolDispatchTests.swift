@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct GitLSPNoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct GitLSPNoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class GitLSPToolChainModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callIndex: Int = 0
@@ -293,8 +282,8 @@ func gitAndLspToolsDispatchToTypedBackends() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: GitLSPNoopClock(),
-        logger: GitLSPNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(GitLSPToolChainModel())
     )
 
@@ -307,7 +296,7 @@ func gitAndLspToolsDispatchToTypedBackends() async throws {
     let outcome = try await handle.outcome.value
 
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -392,8 +381,8 @@ func gitAndLspToolsAdvertisedWithBackendWiring() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: GitLSPNoopClock(),
-        logger: GitLSPNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -430,8 +419,8 @@ func gitAndLspToolsNotAdvertisedWithoutBackends() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: GitLSPNoopClock(),
-        logger: GitLSPNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)

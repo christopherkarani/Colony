@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class ConstantModel: HiveModelClient, @unchecked Sendable {
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         try await streamFinal(request)
@@ -96,8 +85,8 @@ private func runOffloadScenario(
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ConstantModel())
     )
 

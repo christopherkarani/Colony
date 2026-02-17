@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [HiveChatRequest] = []
@@ -105,8 +94,8 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel),
         tools: AnyHiveToolRegistry(FixedToolRegistry(tools: [tool]))
     )
@@ -120,7 +109,7 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
     _ = try await handle.outcome.value
 
     guard let request = recordingModel.recordedRequests().last else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -141,8 +130,8 @@ func defaultSubagentRuntime_inheritsOnDeviceHard4kRequestCap() async throws {
     let registry = ColonyDefaultSubagentRegistry(
         modelName: "test-subagent-model",
         model: AnyHiveModelClient(recordingModel),
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         filesystem: nil
     )
 
@@ -151,7 +140,7 @@ func defaultSubagentRuntime_inheritsOnDeviceHard4kRequestCap() async throws {
     _ = try await registry.run(ColonySubagentRequest(prompt: prompt, subagentType: "general-purpose"))
 
     guard let request = recordingModel.recordedRequests().last else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 

@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
@@ -249,8 +238,8 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
     let registry = ColonyDefaultSubagentRegistry(
         modelName: "test-subagent-model",
         model: AnyHiveModelClient(subagentModel),
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         filesystem: fs
     )
 
@@ -268,8 +257,8 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
@@ -282,7 +271,7 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -312,8 +301,8 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
     let registry = ColonyDefaultSubagentRegistry(
         modelName: "test-subagent-model",
         model: AnyHiveModelClient(RecursiveTaskCallModel()),
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         filesystem: nil
     )
 
@@ -331,8 +320,8 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
@@ -345,7 +334,7 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -368,8 +357,8 @@ func defaultSubagentRegistry_inheritsOnDeviceBudgetPosture() async throws {
         profile: .onDevice4k,
         modelName: "test-subagent-model",
         model: AnyHiveModelClient(model),
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         filesystem: fs
     )
 
@@ -382,7 +371,7 @@ func defaultSubagentRegistry_inheritsOnDeviceBudgetPosture() async throws {
 
     let recorded = model.recordedRequests()
     guard recorded.count >= 2 else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -404,8 +393,8 @@ func defaultSubagentRegistry_includesStructuredAndFileBackedContextSnippets() as
         profile: .onDevice4k,
         modelName: "test-subagent-model",
         model: AnyHiveModelClient(model),
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         filesystem: fs
     )
 
@@ -454,8 +443,8 @@ func defaultSubagentRegistry_advertisesCompactorSubagentType() async throws {
         profile: .onDevice4k,
         modelName: "test-subagent-model",
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel()),
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         filesystem: nil
     )
 

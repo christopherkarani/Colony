@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [HiveChatRequest] = []
@@ -110,8 +99,8 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -123,7 +112,7 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
 
     guard let request = recordingModel.recordedRequests().last,
           let systemPrompt = systemPromptString(from: request) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -178,8 +167,8 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -191,7 +180,7 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
 
     guard let request = recordingModel.recordedRequests().last,
           let systemPrompt = systemPromptString(from: request) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -222,8 +211,8 @@ func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: nil)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -235,7 +224,7 @@ func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
 
     guard let request = recordingModel.recordedRequests().last,
           let systemPrompt = systemPromptString(from: request) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -283,8 +272,8 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -297,7 +286,7 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
     guard let request = recordingModel.recordedRequests().last,
           let systemPrompt = systemPromptString(from: request),
           let scratchbookView = extractSection(named: "Scratchbook:", from: systemPrompt) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -349,8 +338,8 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -363,7 +352,7 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
     guard let request = recordingModel.recordedRequests().last,
           let systemPrompt = systemPromptString(from: request),
           let scratchbookView = extractSection(named: "Scratchbook:", from: systemPrompt) else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -392,8 +381,8 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
         let context = ColonyContext(configuration: configuration, filesystem: fs)
         let environment = HiveEnvironment<ColonySchema>(
             context: context,
-            clock: NoopClock(),
-            logger: NoopLogger(),
+            clock: ColonyTestClock(),
+            logger: ColonyTestLogger(),
             model: AnyHiveModelClient(recordingModel)
         )
         let runtime = HiveRuntime(graph: graph, environment: environment)

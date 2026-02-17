@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class ToolCallSequenceModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callIndex: Int = 0
@@ -195,8 +184,8 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -209,7 +198,7 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
     _ = try await handle.outcome.value
 
     guard let request = recordingModel.recordedRequests().last else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -244,8 +233,8 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -258,7 +247,7 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
     _ = try await handle.outcome.value
 
     guard let request = recordingModel.recordedRequests().last else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -296,8 +285,8 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -310,7 +299,7 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
     )
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -378,8 +367,8 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let context1 = ColonyContext(configuration: configuration, filesystem: fs1)
     let env1 = HiveEnvironment<ColonySchema>(
         context: context1,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model1)
     )
     let runtime1 = HiveRuntime(graph: graph, environment: env1)
@@ -401,8 +390,8 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let context2 = ColonyContext(configuration: configuration, filesystem: fs2)
     let env2 = HiveEnvironment<ColonySchema>(
         context: context2,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model2)
     )
     let runtime2 = HiveRuntime(graph: graph, environment: env2)
@@ -428,8 +417,8 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let context3 = ColonyContext(configuration: configuration, filesystem: fs3)
     let env3 = HiveEnvironment<ColonySchema>(
         context: context3,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model3)
     )
     let runtime3 = HiveRuntime(graph: graph, environment: env3)
@@ -440,7 +429,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     )
     let outcome3 = try await handle3.outcome.value
     guard case let .finished(output3, _) = outcome3, case let .fullStore(store3) = output3 else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -560,8 +549,8 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: baseFS)
     let env = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(model)
     )
     let runtime = HiveRuntime(graph: graph, environment: env)
@@ -572,7 +561,7 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
     )
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -587,7 +576,7 @@ func onDeviceAllowList_includesScratchbookToolNames() throws {
     let config = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
     #expect(config.capabilities.contains(.scratchbook))
     guard case let .allowList(allowed) = config.toolApprovalPolicy else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 

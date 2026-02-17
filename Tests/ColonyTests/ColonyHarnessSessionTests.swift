@@ -3,17 +3,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct HarnessNoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct HarnessNoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class InterruptThenFinishModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
@@ -105,23 +94,6 @@ private actor HarnessEventSink {
     }
 }
 
-private func waitUntil(
-    timeoutNanoseconds: UInt64 = 2_000_000_000,
-    pollNanoseconds: UInt64 = 10_000_000,
-    _ condition: @escaping @Sendable () async -> Bool
-) async -> Bool {
-    let start = DispatchTime.now().uptimeNanoseconds
-    while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
-        if await condition() {
-            return true
-        }
-
-        try? await Task.sleep(nanoseconds: pollNanoseconds)
-    }
-
-    return await condition()
-}
-
 @Test("Harness protocol envelope contracts are Codable and preserve v1 payload shape")
 func harnessProtocolEnvelopeContractsAreCodable() throws {
     let sessionID = ColonyHarnessSessionID(rawValue: "session-1")
@@ -191,8 +163,8 @@ func harnessSessionLifecycleAndOrdering() async throws {
         threadID: HiveThreadID("thread-harness-lifecycle"),
         modelName: "test-model",
         model: AnyHiveModelClient(InterruptThenFinishModel()),
-        clock: HarnessNoopClock(),
-        logger: HarnessNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         configure: { configuration in
             configuration.toolApprovalPolicy = .always
         }
@@ -209,7 +181,7 @@ func harnessSessionLifecycleAndOrdering() async throws {
 
     try await session.start(input: "start")
 
-    let interruptedObserved = await waitUntil {
+    let interruptedObserved = await colonyWaitUntil {
         let events = await sink.snapshot()
         return events.contains { $0.eventType == .runInterrupted }
     }
@@ -225,7 +197,7 @@ func harnessSessionLifecycleAndOrdering() async throws {
     try await session.resume(decision: .rejected)
     #expect(await session.pendingInterruptions().isEmpty)
 
-    let finishedObserved = await waitUntil {
+    let finishedObserved = await colonyWaitUntil {
         let events = await sink.snapshot()
         return events.contains { $0.eventType == .runFinished }
     }
@@ -275,8 +247,8 @@ func harnessSessionStopCancelsActiveRun() async throws {
         threadID: HiveThreadID("thread-harness-stop"),
         modelName: "slow-model",
         model: AnyHiveModelClient(SlowStreamingModel()),
-        clock: HarnessNoopClock(),
-        logger: HarnessNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         configure: { configuration in
             configuration.toolApprovalPolicy = .never
         }
@@ -293,7 +265,7 @@ func harnessSessionStopCancelsActiveRun() async throws {
 
     try await session.start(input: "start")
 
-    let startedObserved = await waitUntil {
+    let startedObserved = await colonyWaitUntil {
         let events = await sink.snapshot()
         return events.contains { $0.eventType == .runStarted }
     }
@@ -301,7 +273,7 @@ func harnessSessionStopCancelsActiveRun() async throws {
 
     await session.stop()
 
-    let cancelledObserved = await waitUntil {
+    let cancelledObserved = await colonyWaitUntil {
         let events = await sink.snapshot()
         return events.contains { $0.eventType == .runCancelled }
     }

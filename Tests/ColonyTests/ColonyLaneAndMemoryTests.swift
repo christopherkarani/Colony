@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct LaneMemoryNoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct LaneMemoryNoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class LaneMemoryToolListModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [HiveChatRequest] = []
@@ -147,8 +136,8 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
     )
     let envWithBackend = HiveEnvironment<ColonySchema>(
         context: contextWithBackend,
-        clock: LaneMemoryNoopClock(),
-        logger: LaneMemoryNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(modelWithBackend)
     )
     let runtimeWithBackend = HiveRuntime(graph: graph, environment: envWithBackend)
@@ -176,8 +165,8 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
     )
     let envWithoutBackend = HiveEnvironment<ColonySchema>(
         context: contextWithoutBackend,
-        clock: LaneMemoryNoopClock(),
-        logger: LaneMemoryNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(modelWithoutBackend)
     )
     let runtimeWithoutBackend = HiveRuntime(graph: graph, environment: envWithoutBackend)
@@ -213,8 +202,8 @@ func memoryToolsDispatchAndPersist() async throws {
     )
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: LaneMemoryNoopClock(),
-        logger: LaneMemoryNoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(MemoryToolChainModel())
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
@@ -229,7 +218,7 @@ func memoryToolsDispatchAndPersist() async throws {
         .value
 
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 

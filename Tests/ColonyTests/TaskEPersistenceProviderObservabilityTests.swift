@@ -154,23 +154,6 @@ private func makeEnvelope(
     )
 }
 
-private func waitUntil(
-    timeoutNanoseconds: UInt64 = 2_000_000_000,
-    pollNanoseconds: UInt64 = 10_000_000,
-    _ condition: @escaping @Sendable () async -> Bool
-) async -> Bool {
-    let start = DispatchTime.now().uptimeNanoseconds
-    while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
-        if await condition() {
-            return true
-        }
-
-        try? await Task.sleep(nanoseconds: pollNanoseconds)
-    }
-
-    return await condition()
-}
-
 @Test("Task E durable checkpoint store persists and supports query")
 func taskE_durableCheckpointStorePersistsAndQueries() async throws {
     let directory = try temporaryDirectory("checkpoints")
@@ -215,7 +198,7 @@ func taskE_durableCheckpointStoreIntegratesWithFactory() async throws {
     let outcome = try await handle.outcome.value
 
     guard case .interrupted = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -443,7 +426,7 @@ func taskE_observabilityRedactionAndHarnessIntegration() async throws {
 
     try await session.start(input: "hello")
 
-    let finishedObserved = await waitUntil {
+    let finishedObserved = await colonyWaitUntil {
         let current = try? await runStateStore.latestRunState(
             sessionID: ColonyHarnessSessionID(rawValue: "session-observability-task-e")
         )

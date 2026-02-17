@@ -2,34 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct SafetyNoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 42 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct SafetyNoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
-private actor SafetyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
-        checkpoints.append(checkpoint)
-    }
-
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints
-            .filter { $0.threadID == threadID }
-            .max { lhs, rhs in
-                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
-                return lhs.stepIndex < rhs.stepIndex
-            }
-    }
-}
-
 private final class SingleMutatingCallModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount = 0
@@ -134,10 +106,10 @@ func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
 
     let environment = HiveEnvironment(
         context: context,
-        clock: SafetyNoopClock(),
-        logger: SafetyNoopLogger(),
+        clock: ColonyTestClock(nowValue: 42),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(SingleMutatingCallModel()),
-        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+        checkpointStore: AnyHiveCheckpointStore(ColonyTestInMemoryCheckpointStore<ColonySchema>())
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
 
@@ -149,12 +121,12 @@ func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .interrupted(interruption) = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     guard case let .toolApprovalRequired(toolCalls) = interruption.interrupt.payload else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -176,10 +148,10 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
 
     let environment = HiveEnvironment(
         context: context,
-        clock: SafetyNoopClock(),
-        logger: SafetyNoopLogger(),
+        clock: ColonyTestClock(nowValue: 42),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(DualMutatingCallsModel()),
-        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+        checkpointStore: AnyHiveCheckpointStore(ColonyTestInMemoryCheckpointStore<ColonySchema>())
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("tool-safety-partial")
@@ -191,7 +163,7 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
     )
     let outcome = try await handle.outcome.value
     guard case let .interrupted(interruption) = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -204,19 +176,19 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
 
     let resumedOutcome = try await resumed.outcome.value
     guard case let .finished(output, _) = resumedOutcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     guard case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
     #expect(try await fs.read(at: ColonyVirtualPath("/a.md")) == "A")
     do {
         _ = try await fs.read(at: ColonyVirtualPath("/b.md"))
-        #expect(Bool(false))
+        colonyTestFail()
     } catch {
         // Expected: denied call did not execute.
     }
@@ -325,16 +297,16 @@ func fileSystemAuditStoreEnforcesAppendOnlyChain() async throws {
 
     do {
         try await store.append(invalid)
-        #expect(Bool(false))
+        colonyTestFail()
     } catch let error as ColonyToolAuditError {
         switch error {
         case .invalidSequence:
             #expect(Bool(true))
         case .previousHashMismatch:
-            #expect(Bool(false))
+            colonyTestFail()
         }
     } catch {
-        #expect(Bool(false))
+        colonyTestFail()
     }
 }
 
@@ -357,10 +329,10 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
 
     let environment = HiveEnvironment(
         context: context,
-        clock: SafetyNoopClock(),
-        logger: SafetyNoopLogger(),
+        clock: ColonyTestClock(nowValue: 42),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(SingleMutatingCallModel()),
-        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+        checkpointStore: AnyHiveCheckpointStore(ColonyTestInMemoryCheckpointStore<ColonySchema>())
     )
     let runtime = HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("tool-audit-runtime")
@@ -373,7 +345,7 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .interrupted(interruption) = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 

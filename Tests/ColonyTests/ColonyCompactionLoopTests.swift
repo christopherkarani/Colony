@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private struct FixedOutputToolRegistry: HiveToolRegistry, Sendable {
     func listTools() -> [HiveToolDefinition] {
         [
@@ -102,8 +91,8 @@ func colonyCompactsBeforeSecondModelTurnAfterTools() async throws {
 
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ToolThenValidateCompactionModel()),
         tools: AnyHiveToolRegistry(FixedOutputToolRegistry())
     )
@@ -117,7 +106,7 @@ func colonyCompactsBeforeSecondModelTurnAfterTools() async throws {
 
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 

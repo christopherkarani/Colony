@@ -94,7 +94,7 @@ func persistedAllowAlwaysRuleAutoApprovesMutatingTool() async throws {
     let outcome = try await handle.outcome.value
 
     guard case .finished = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -131,7 +131,7 @@ func persistedRejectAlwaysRuleDeniesMutatingTool() async throws {
     let outcome = try await handle.outcome.value
 
     guard case .finished = outcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -169,7 +169,7 @@ func persistedAllowOnceRuleIsConsumedAfterOneRun() async throws {
     let first = await runtime.sendUserMessage("run one")
     let firstOutcome = try await first.outcome.value
     guard case .finished = firstOutcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -177,7 +177,7 @@ func persistedAllowOnceRuleIsConsumedAfterOneRun() async throws {
     let secondOutcome = try await second.outcome.value
 
     guard case .interrupted = secondOutcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 }

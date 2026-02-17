@@ -2,17 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
 private final class ConstantModel: HiveModelClient, @unchecked Sendable {
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         try await streamFinal(request)
@@ -48,8 +37,8 @@ func colonySummarizationOffloadsHistory() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
     let environment = HiveEnvironment<ColonySchema>(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ConstantModel())
     )
 
@@ -74,7 +63,7 @@ func colonySummarizationOffloadsHistory() async throws {
 
     let outcome = try await latest.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -84,7 +73,7 @@ func colonySummarizationOffloadsHistory() async throws {
 
     // In-context messages contain a summary marker and file reference.
     let messages = try store.get(ColonySchema.Channels.messages)
-    let summaryMessage = messages.first { $0.content.contains("Conversation summarized") }
+    let summaryMessage = messages.first { $0.content.contains("conversation has been summarized") }
     #expect(summaryMessage != nil)
     #expect(summaryMessage?.content.contains("/conversation_history/thread-summarize.md") == true)
 }

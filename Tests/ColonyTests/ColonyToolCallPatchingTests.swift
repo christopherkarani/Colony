@@ -2,34 +2,6 @@ import Foundation
 import Testing
 @testable import Colony
 
-private struct NoopClock: HiveClock {
-    func nowNanoseconds() -> UInt64 { 0 }
-    func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
-}
-
-private struct NoopLogger: HiveLogger {
-    func debug(_ message: String, metadata: [String: String]) {}
-    func info(_ message: String, metadata: [String: String]) {}
-    func error(_ message: String, metadata: [String: String]) {}
-}
-
-private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
-        checkpoints.append(checkpoint)
-    }
-
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints
-            .filter { $0.threadID == threadID }
-            .max { lhs, rhs in
-                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
-                return lhs.stepIndex < rhs.stepIndex
-            }
-    }
-}
-
 private enum ToolCallValidationError: Error, Sendable {
     case danglingToolCall(toolName: String, toolCallID: String)
 }
@@ -107,11 +79,11 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
+    let checkpointStore = ColonyTestInMemoryCheckpointStore<ColonySchema>()
     let environment = HiveEnvironment(
         context: context,
-        clock: NoopClock(),
-        logger: NoopLogger(),
+        clock: ColonyTestClock(),
+        logger: ColonyTestLogger(),
         model: AnyHiveModelClient(ToolCallThenValidateModel()),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
@@ -126,7 +98,7 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
     )
     let firstOutcome = try await first.outcome.value
     guard case .interrupted = firstOutcome else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
@@ -141,7 +113,7 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
 
     let secondOutcome = try await second.outcome.value
     guard case let .finished(output, _) = secondOutcome, case let .fullStore(store) = output else {
-        #expect(Bool(false))
+        colonyTestFail()
         return
     }
 
