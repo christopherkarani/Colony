@@ -18,6 +18,7 @@ public struct ColonyConfiguration: Sendable {
     public var systemPromptMemoryTokenLimit: Int?
     public var systemPromptSkillsTokenLimit: Int?
     public var additionalSystemPrompt: String?
+    public var observabilityHandler: (any ColonyObservabilityHandler)?
 
     public init(
         capabilities: ColonyCapabilities = .default,
@@ -38,7 +39,8 @@ public struct ColonyConfiguration: Sendable {
         requestHardTokenLimit: Int? = nil,
         toolResultEvictionTokenLimit: Int? = 20_000,
         systemPromptMemoryTokenLimit: Int? = nil,
-        systemPromptSkillsTokenLimit: Int? = nil
+        systemPromptSkillsTokenLimit: Int? = nil,
+        observabilityHandler: (any ColonyObservabilityHandler)? = nil
     ) {
         self.capabilities = capabilities
         self.modelName = modelName
@@ -59,5 +61,6 @@ public struct ColonyConfiguration: Sendable {
         self.toolResultEvictionTokenLimit = toolResultEvictionTokenLimit
         self.systemPromptMemoryTokenLimit = systemPromptMemoryTokenLimit
         self.systemPromptSkillsTokenLimit = systemPromptSkillsTokenLimit
+        self.observabilityHandler = observabilityHandler
     }
 }

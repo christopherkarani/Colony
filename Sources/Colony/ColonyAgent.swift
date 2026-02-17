@@ -362,6 +362,24 @@ public enum ColonyAgent {
             writes.append(AnyHiveWrite(ColonySchema.Channels.finalAnswer, assistantMessage.content))
         }
 
+        if let handler = input.context.configuration.observabilityHandler {
+            let isFinal = assistantMessage.toolCalls.isEmpty
+            await handler.onModelRequestCompleted(
+                ColonyModelRequestEvent(
+                    modelName: request.model,
+                    inputMessageCount: requestMessages.count,
+                    toolCount: tools.count,
+                    hasToolCalls: !isFinal
+                )
+            )
+            await handler.onTurnCompleted(
+                ColonyTurnEvent(
+                    isFinalAnswer: isFinal,
+                    toolCallCount: assistantMessage.toolCalls.count
+                )
+            )
+        }
+
         return HiveNodeOutput(writes: writes)
     }
 
@@ -721,6 +739,16 @@ public enum ColonyAgent {
 
         let outcome = await ColonyTools.execute(call: call, input: input)
         input.emitStream(.toolInvocationFinished(name: call.name, success: outcome.success), ["toolCallID": call.id])
+
+        if let handler = input.context.configuration.observabilityHandler {
+            await handler.onToolExecuted(
+                ColonyToolExecutionEvent(
+                    toolName: call.name,
+                    toolCallID: call.id,
+                    success: outcome.success
+                )
+            )
+        }
 
         let toolContent = await maybeEvictLargeToolResult(
             toolCall: call,
