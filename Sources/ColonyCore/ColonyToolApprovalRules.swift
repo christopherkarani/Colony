@@ -22,13 +22,23 @@ public enum ColonyToolApprovalPattern: Codable, Sendable, Equatable {
         }
     }
 
+    nonisolated(unsafe) private static let globRegexCache = NSCache<NSString, NSRegularExpression>()
+
     private static func globMatches(pattern: String, input: String) -> Bool {
-        let escaped = NSRegularExpression.escapedPattern(for: pattern)
-        let regexPattern = "^" + escaped
-            .replacingOccurrences(of: "\\*", with: ".*")
-            .replacingOccurrences(of: "\\?", with: ".") + "$"
-        guard let regex = try? NSRegularExpression(pattern: regexPattern) else {
-            return false
+        let cacheKey = pattern as NSString
+        let regex: NSRegularExpression
+        if let cached = globRegexCache.object(forKey: cacheKey) {
+            regex = cached
+        } else {
+            let escaped = NSRegularExpression.escapedPattern(for: pattern)
+            let regexPattern = "^" + escaped
+                .replacingOccurrences(of: "\\*", with: ".*")
+                .replacingOccurrences(of: "\\?", with: ".") + "$"
+            guard let compiled = try? NSRegularExpression(pattern: regexPattern) else {
+                return false
+            }
+            globRegexCache.setObject(compiled, forKey: cacheKey)
+            regex = compiled
         }
         let range = NSRange(input.startIndex ..< input.endIndex, in: input)
         return regex.firstMatch(in: input, options: [], range: range) != nil
