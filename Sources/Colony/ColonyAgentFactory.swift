@@ -72,6 +72,26 @@ public actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointSt
 }
 
 public struct ColonyAgentFactory: Sendable {
+    // Static paths validated once at first access instead of on every configuration() call.
+    private static let conversationHistoryPath = try! ColonyVirtualPath("/conversation_history")
+    private static let scratchbookPath = try! ColonyVirtualPath("/scratchbook")
+
+    /// Maps each backend-gated capability to its dot-syntax name for log messages.
+    private static let capabilityNames: [(ColonyCapabilities, String)] = [
+        (.filesystem, "filesystem"),
+        (.shell, "shell"),
+        (.shellSessions, "shellSessions"),
+        (.git, "git"),
+        (.lsp, "lsp"),
+        (.applyPatch, "applyPatch"),
+        (.webSearch, "webSearch"),
+        (.codeSearch, "codeSearch"),
+        (.memory, "memory"),
+        (.mcp, "mcp"),
+        (.plugins, "plugins"),
+        (.subagents, "subagents"),
+    ]
+
     public init() {}
 
     public static func configuration(
@@ -99,11 +119,11 @@ public struct ColonyAgentFactory: Sendable {
                     "wax_recall",
                     "wax_remember",
                 ]),
-                compactionPolicy: .maxTokens(2_600),
+                compactionPolicy: .maxTokens(2_600, anchoredMessageCount: 1),
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 3_200,
                     keepLastMessages: 8,
-                    historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                    historyPathPrefix: conversationHistoryPath
                 ),
                 requestHardTokenLimit: 4_000,
                 toolResultEvictionTokenLimit: 700,
@@ -120,7 +140,7 @@ public struct ColonyAgentFactory: Sendable {
             - Prefer single focused tool calls over batching unrelated operations.
             """
             config.scratchbookPolicy = ColonyScratchbookPolicy(
-                pathPrefix: try! ColonyVirtualPath("/scratchbook"),
+                pathPrefix: scratchbookPath,
                 viewTokenLimit: 700,
                 maxRenderedItems: 20,
                 autoCompact: true
@@ -133,11 +153,11 @@ public struct ColonyAgentFactory: Sendable {
                 capabilities: [.planning, .filesystem, .subagents],
                 modelName: modelName,
                 toolApprovalPolicy: .never,
-                compactionPolicy: .maxTokens(12_000),
+                compactionPolicy: .maxTokens(12_000, anchoredMessageCount: 1),
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 170_000,
                     keepLastMessages: 20,
-                    historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                    historyPathPrefix: conversationHistoryPath
                 ),
                 requestHardTokenLimit: nil,
                 toolResultEvictionTokenLimit: 20_000,
@@ -335,6 +355,7 @@ public struct ColonyAgentFactory: Sendable {
         }()
 
         // Ensure capability gating is consistent with configured backends.
+        let requestedCapabilities = configuration.capabilities
         var capabilities = configuration.capabilities
         if filesystem != nil { capabilities.insert(.filesystem) } else { capabilities.remove(.filesystem) }
         if shell != nil { capabilities.insert(.shell) } else { capabilities.remove(.shell) }
@@ -349,6 +370,19 @@ public struct ColonyAgentFactory: Sendable {
         if plugins != nil { capabilities.insert(.plugins) } else { capabilities.remove(.plugins) }
         if resolvedSubagents != nil { capabilities.insert(.subagents) } else { capabilities.remove(.subagents) }
         configuration.capabilities = capabilities
+
+        // Warn about capabilities that were requested but dropped due to missing backends.
+        let droppedCapabilities = requestedCapabilities.subtracting(capabilities)
+        if !droppedCapabilities.isEmpty {
+            for (cap, name) in Self.capabilityNames {
+                if droppedCapabilities.contains(cap) {
+                    logger.info(
+                        "Colony: capability .\(name) requested but dropped — no backend provided.",
+                        metadata: [:]
+                    )
+                }
+            }
+        }
 
         let context = ColonyContext(
             configuration: configuration,
