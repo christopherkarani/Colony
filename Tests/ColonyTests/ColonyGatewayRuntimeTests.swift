@@ -131,6 +131,38 @@ private final class ToolThenDoneGatewayModelClient: HiveModelClient, @unchecked 
     }
 }
 
+private final class SlowGatewayStreamingModelClient: HiveModelClient, @unchecked Sendable {
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        try await streamFinal(request)
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                for index in 0 ..< 20 {
+                    try? await Task.sleep(nanoseconds: 20_000_000)
+                    continuation.yield(.token("chunk-\(index)"))
+                }
+                continuation.yield(
+                    .final(
+                        HiveChatResponse(
+                            message: HiveChatMessage(
+                                id: UUID().uuidString.lowercased(),
+                                role: .assistant,
+                                content: "done"
+                            )
+                        )
+                    )
+                )
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+}
+
 private final class RecordingShellBackend: ColonyShellBackend, @unchecked Sendable {
     private(set) var recorded: [ColonyShellExecutionRequest] = []
 
@@ -406,6 +438,50 @@ func gateway_orderedRuntimeEvents() async throws {
     #expect(kinds.contains(.toolDispatched))
     #expect(kinds.contains(.toolResult))
     #expect(kinds.contains(.runCompleted))
+}
+
+@Test("Gateway cancel emits terminal events exactly once")
+func gateway_cancelEmitsTerminalEventsExactlyOnce() async throws {
+    let runtime = try await makeGatewayRuntime(
+        model: AnyHiveModelClient(SlowGatewayStreamingModelClient()),
+        filesystem: nil,
+        messageSink: nil
+    )
+
+    let handle = try await runtime.startRun(
+        ColonyGatewayRunRequest(
+            sessionID: ColonyRuntimeSessionID(rawValue: "session:cancel-once"),
+            input: "cancel this run"
+        )
+    )
+
+    var runStartedObserved = false
+    for _ in 0 ..< 50 where runStartedObserved == false {
+        let events = await runtime.recentEvents(limit: 50)
+        runStartedObserved = events.contains {
+            $0.runID == handle.runID && $0.kind == .runStarted
+        }
+        if runStartedObserved == false {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+    #expect(runStartedObserved)
+
+    let cancelled = await handle.cancel()
+    #expect(cancelled)
+
+    let result = await handle.awaitResult()
+    guard case .cancelled = result else {
+        Issue.record("Expected cancelled run result.")
+        return
+    }
+
+    let runEvents = await runtime.recentEvents(limit: 200).filter { $0.runID == handle.runID }
+    let interruptedCount = runEvents.filter { $0.kind == .runInterrupted }.count
+    let completedCount = runEvents.filter { $0.kind == .runCompleted }.count
+
+    #expect(interruptedCount == 1)
+    #expect(completedCount == 1)
 }
 
 private func makeGatewayRuntime(

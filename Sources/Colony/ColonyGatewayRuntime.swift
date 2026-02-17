@@ -864,6 +864,10 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func process(outcome: HiveRunOutcome<ColonySchema>) async {
+        guard hasTerminalResult == false else {
+            return
+        }
+
         switch outcome {
         case .finished(let output, _):
             let finalAnswer: String? = {
@@ -952,6 +956,10 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func processCancellation(reason: ColonyInterruptionReason) async {
+        guard hasTerminalResult == false else {
+            return
+        }
+
         _ = await eventBus.emit(
             kind: .runInterrupted,
             runID: runID,
@@ -978,6 +986,10 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func finishWithError(_ error: Error) async {
+        guard hasTerminalResult == false else {
+            return
+        }
+
         let reason: ColonyInterruptionReason = .dependencyFailure
         _ = await eventBus.emit(
             kind: .runInterrupted,
@@ -1010,6 +1022,10 @@ private actor ColonyGatewayManagedRun {
     }
 
     private func finalize(_ result: ColonyGatewayRunResult, cleanup: Bool) {
+        if hasTerminalResult {
+            return
+        }
+
         finalResult = result
         let continuations = waiters
         waiters.removeAll(keepingCapacity: false)
@@ -1029,6 +1045,13 @@ private actor ColonyGatewayManagedRun {
         case .interrupted:
             return false
         }
+    }
+
+    private var hasTerminalResult: Bool {
+        guard let finalResult else {
+            return false
+        }
+        return Self.isTerminal(finalResult)
     }
 }
 
