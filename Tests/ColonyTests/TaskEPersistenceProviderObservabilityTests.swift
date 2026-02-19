@@ -269,6 +269,72 @@ func taskE_durableRunStateStorePersistsAndRestarts() async throws {
     #expect(latestInterrupted?.runID == runID)
 }
 
+@Test("Task E durable run-state store ignores stale events and rejects conflicting duplicate sequence")
+func taskE_durableRunStateStoreGuardsEventOrdering() async throws {
+    let directory = try temporaryDirectory("run-state-ordering")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let store = try ColonyDurableRunStateStore(baseURL: directory)
+    let runID = UUID(uuidString: "C243AA46-827A-4377-B0DA-8A24B4A2D4C9")!
+    let sessionID = ColonyHarnessSessionID(rawValue: "session-task-e-ordering")
+    let threadID = HiveThreadID("thread-task-e-run-ordering")
+    let timestamp = Date(timeIntervalSince1970: 1_700_001_111)
+
+    let started = makeEnvelope(
+        runID: runID,
+        sessionID: sessionID,
+        sequence: 1,
+        eventType: .runStarted,
+        timestamp: timestamp
+    )
+    let interrupted = makeEnvelope(
+        runID: runID,
+        sessionID: sessionID,
+        sequence: 2,
+        eventType: .runInterrupted,
+        timestamp: timestamp.addingTimeInterval(1)
+    )
+
+    try await store.appendEvent(started, threadID: threadID)
+    try await store.appendEvent(interrupted, threadID: threadID)
+
+    // Stale events should be ignored once a newer sequence has been persisted.
+    try await store.appendEvent(started, threadID: threadID)
+
+    // Exact duplicate for the latest sequence should be idempotent.
+    try await store.appendEvent(interrupted, threadID: threadID)
+
+    do {
+        try await store.appendEvent(
+            makeEnvelope(
+                runID: runID,
+                sessionID: sessionID,
+                sequence: 2,
+                eventType: .runFinished,
+                timestamp: timestamp.addingTimeInterval(2)
+            ),
+            threadID: threadID
+        )
+        #expect(Bool(false))
+    } catch let error as ColonyDurableRunStateStoreError {
+        switch error {
+        case .conflictingDuplicateSequence(let conflictingRunID, let sequence):
+            #expect(conflictingRunID == runID)
+            #expect(sequence == 2)
+        }
+    } catch {
+        #expect(Bool(false))
+    }
+
+    let state = try await store.loadRunState(runID: runID)
+    #expect(state?.phase == .interrupted)
+    #expect(state?.lastEventSequence == 2)
+
+    let events = try await store.loadEvents(runID: runID)
+    #expect(events.count == 2)
+    #expect(events.map(\.eventType) == [.runStarted, .runInterrupted])
+}
+
 @Test("Task E artifact store applies retention and redaction")
 func taskE_artifactStoreRetentionAndRedaction() async throws {
     let directory = try temporaryDirectory("artifacts")
@@ -328,6 +394,33 @@ func taskE_artifactStoreRetentionAndRedaction() async throws {
 
     let secondContent = try await store.readContent(id: second.id)
     #expect(secondContent == "token=[REDACTED]")
+}
+
+@Test("Task E artifact retention uses wall clock time even for backfilled createdAt values")
+func taskE_artifactStoreRetentionUsesWallClockNow() async throws {
+    let directory = try temporaryDirectory("artifacts-backfilled")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let store = try ColonyArtifactStore(
+        baseURL: directory,
+        retentionPolicy: ColonyArtifactRetentionPolicy(maxArtifacts: nil, maxAge: 60)
+    )
+
+    let threadID = HiveThreadID("thread-task-e-artifact-backfilled")
+    let veryOld = Date(timeIntervalSince1970: 10)
+
+    let expired = try await store.put(
+        threadID: threadID,
+        runID: nil,
+        kind: "log",
+        content: "historical",
+        metadata: [:],
+        createdAt: veryOld
+    )
+
+    let records = try await store.list(threadID: threadID)
+    #expect(records.contains(where: { $0.id == expired.id }) == false)
+    #expect(try await store.readContent(id: expired.id) == nil)
 }
 
 @Test("Task E provider router enforces retry, fallback, rate ceiling, and cost ceiling")

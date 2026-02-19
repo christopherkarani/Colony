@@ -119,7 +119,16 @@ public actor ColonyHarnessSession {
         stopRequested = true
         lifecycleStateStorage = .stopped
         interruptionQueue.removeAll(keepingCapacity: false)
+        eventPumpTask?.cancel()
+        outcomeMonitorTask?.cancel()
         activeOutcomeTask?.cancel()
+
+        if let activeRunID, activeRunCancellationEmitted == false {
+            activeRunCancellationEmitted = true
+            Task {
+                await self.emit(runID: activeRunID, eventType: .runCancelled, payload: .none)
+            }
+        }
     }
 
     private let runtime: ColonyRuntime
@@ -131,6 +140,8 @@ public actor ColonyHarnessSession {
     private var stopRequested: Bool = false
 
     private var activeAttemptID: HiveRunAttemptID?
+    private var activeRunID: UUID?
+    private var activeRunCancellationEmitted: Bool = false
     private var activeOutcomeTask: Task<HiveRunOutcome<ColonySchema>, Error>?
     private var eventPumpTask: Task<Void, Never>?
     private var outcomeMonitorTask: Task<Void, Never>?
@@ -152,6 +163,8 @@ public actor ColonyHarnessSession {
 
     private func beginAttemptMonitoring(handle: HiveRunHandle<ColonySchema>, runID: UUID) {
         activeAttemptID = handle.attemptID
+        activeRunID = runID
+        activeRunCancellationEmitted = false
         activeOutcomeTask = handle.outcome
 
         eventPumpTask?.cancel()
@@ -179,7 +192,8 @@ public actor ColonyHarnessSession {
                 let outcome = try await handle.outcome.value
                 await self.processOutcome(outcome, runID: runID)
             } catch {
-                if self.stopRequested {
+                if self.stopRequested, self.activeRunCancellationEmitted == false {
+                    self.activeRunCancellationEmitted = true
                     await self.emit(runID: runID, eventType: .runCancelled, payload: .none)
                 }
                 self.lifecycleStateStorage = self.stopRequested ? .stopped : .idle
@@ -230,7 +244,10 @@ public actor ColonyHarnessSession {
 
         case .cancelled:
             lifecycleStateStorage = .stopped
-            await emit(runID: runID, eventType: .runCancelled, payload: .none)
+            if activeRunCancellationEmitted == false {
+                activeRunCancellationEmitted = true
+                await emit(runID: runID, eventType: .runCancelled, payload: .none)
+            }
 
         case .interrupted(let interruption):
             switch interruption.interrupt.payload {
@@ -291,6 +308,8 @@ public actor ColonyHarnessSession {
         }
 
         activeAttemptID = nil
+        activeRunID = nil
+        activeRunCancellationEmitted = false
         activeOutcomeTask = nil
         eventPumpTask?.cancel()
         outcomeMonitorTask?.cancel()

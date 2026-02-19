@@ -4,6 +4,7 @@ import Foundation
 public enum ColonyToolAuditDecisionKind: String, Codable, Sendable, Equatable {
     case approvalRequired = "approval_required"
     case autoApproved = "auto_approved"
+    case autoDenied = "auto_denied"
     case userApproved = "user_approved"
     case userDenied = "user_denied"
 }

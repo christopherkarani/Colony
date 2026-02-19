@@ -2,6 +2,10 @@ import Foundation
 import HiveCore
 import ColonyCore
 
+public enum ColonyDurableRunStateStoreError: Error, Sendable, Equatable {
+    case conflictingDuplicateSequence(runID: UUID, sequence: Int)
+}
+
 public enum ColonyRunPhase: String, Codable, Sendable, Equatable {
     case running
     case interrupted
@@ -66,9 +70,48 @@ public actor ColonyDurableRunStateStore {
 
         let eventFileName = String(format: "event-%012d.json", envelope.sequence)
         let eventURL = eventsDirectory.appendingPathComponent(eventFileName, isDirectory: false)
+        let priorState = try readRunState(runID: envelope.runID)
+
+        if let priorState {
+            if envelope.sequence < priorState.lastEventSequence {
+                return
+            }
+
+            if envelope.sequence == priorState.lastEventSequence {
+                if fileManager.fileExists(atPath: eventURL.path) {
+                    let existing = try ColonyPersistenceIO.readJSON(
+                        ColonyHarnessEventEnvelope.self,
+                        from: eventURL,
+                        decoder: decoder
+                    )
+                    if existing == envelope {
+                        return
+                    }
+                }
+                throw ColonyDurableRunStateStoreError.conflictingDuplicateSequence(
+                    runID: envelope.runID,
+                    sequence: envelope.sequence
+                )
+            }
+        }
+
+        if fileManager.fileExists(atPath: eventURL.path) {
+            let existing = try ColonyPersistenceIO.readJSON(
+                ColonyHarnessEventEnvelope.self,
+                from: eventURL,
+                decoder: decoder
+            )
+            if existing != envelope {
+                throw ColonyDurableRunStateStoreError.conflictingDuplicateSequence(
+                    runID: envelope.runID,
+                    sequence: envelope.sequence
+                )
+            }
+            return
+        }
+
         try ColonyPersistenceIO.writeJSON(envelope, to: eventURL, encoder: encoder, fileManager: fileManager)
 
-        let priorState = try await loadRunState(runID: envelope.runID)
         let nextPhase = phase(for: envelope.eventType, fallback: priorState?.phase ?? .running)
         let snapshot = ColonyRunStateSnapshot(
             runID: envelope.runID,
@@ -84,6 +127,10 @@ public actor ColonyDurableRunStateStore {
     }
 
     public func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
+        try readRunState(runID: runID)
+    }
+
+    private func readRunState(runID: UUID) throws -> ColonyRunStateSnapshot? {
         let stateURL = runDirectoryURL(runID: runID).appendingPathComponent("state.json", isDirectory: false)
         guard fileManager.fileExists(atPath: stateURL.path) else {
             return nil

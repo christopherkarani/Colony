@@ -395,3 +395,55 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
     #expect(records[1].payload.event.decision == .userDenied)
     #expect(try await recorder.verifyIntegrity())
 }
+
+@Test("Runtime integration labels persisted-rule rejects as auto denied in the audit trail")
+func runtimeWritesAuditRecordsForPersistedRuleReject() async throws {
+    let graph = try ColonyAgent.compile()
+    let fs = ColonyInMemoryFileSystemBackend()
+
+    let signer = ColonyHMACSHA256ToolAuditSigner(keyData: Data("audit-key".utf8), keyID: "k1")
+    let store = ColonyInMemoryToolAuditLogStore()
+    let recorder = ColonyToolAuditRecorder(store: store, signer: signer)
+    let rules = ColonyInMemoryToolApprovalRuleStore(
+        rules: [
+            ColonyToolApprovalRule(
+                pattern: .exact("write_file"),
+                decision: .rejectAlways
+            ),
+        ]
+    )
+
+    let configuration = ColonyConfiguration(
+        capabilities: [.filesystem],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        toolApprovalRuleStore: rules,
+        toolAuditRecorder: recorder
+    )
+    let context = ColonyContext(configuration: configuration, filesystem: fs)
+    let environment = HiveEnvironment(
+        context: context,
+        clock: SafetyNoopClock(),
+        logger: SafetyNoopLogger(),
+        model: AnyHiveModelClient(SingleMutatingCallModel()),
+        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+    )
+    let runtime = HiveRuntime(graph: graph, environment: environment)
+
+    let handle = await runtime.run(
+        threadID: HiveThreadID("tool-audit-rule-reject"),
+        input: "hi",
+        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+    )
+    let outcome = try await handle.outcome.value
+
+    guard case .finished = outcome else {
+        #expect(Bool(false))
+        return
+    }
+
+    let records = try await recorder.records()
+    #expect(records.count == 1)
+    #expect(records.first?.payload.event.decision == .autoDenied)
+    #expect(try await recorder.verifyIntegrity())
+}

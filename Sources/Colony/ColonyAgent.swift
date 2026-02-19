@@ -533,6 +533,8 @@ public enum ColonyAgent {
 
                 let approvedCalls = calls.filter { approvedIDs.contains($0.id) }
                 let deniedCalls = calls.filter { deniedIDs.contains($0.id) }
+                let userDeniedCalls = approvalRequiredCalls.filter { deniedIDs.contains($0.id) }
+                let autoDeniedCalls = calls.filter { preDeniedIDs.contains($0.id) }
 
                 try await recordToolAuditEvents(
                     calls: calls.filter { approvedIDs.contains($0.id) && approvalRequiredIDs.contains($0.id) == false },
@@ -547,8 +549,14 @@ public enum ColonyAgent {
                     input: input
                 )
                 try await recordToolAuditEvents(
-                    calls: deniedCalls,
+                    calls: userDeniedCalls,
                     decision: .userDenied,
+                    assessmentsByCallID: assessmentsByCallID,
+                    input: input
+                )
+                try await recordToolAuditEvents(
+                    calls: autoDeniedCalls,
+                    decision: .autoDenied,
                     assessmentsByCallID: assessmentsByCallID,
                     input: input
                 )
@@ -569,7 +577,7 @@ public enum ColonyAgent {
             )
             try await recordToolAuditEvents(
                 calls: calls.filter { preDeniedIDs.contains($0.id) },
-                decision: .userDenied,
+                decision: .autoDenied,
                 assessmentsByCallID: assessmentsByCallID,
                 input: input
             )
@@ -597,7 +605,7 @@ public enum ColonyAgent {
         )
         try await recordToolAuditEvents(
             calls: deniedCalls,
-            decision: .userDenied,
+            decision: .autoDenied,
             assessmentsByCallID: assessmentsByCallID,
             input: input
         )

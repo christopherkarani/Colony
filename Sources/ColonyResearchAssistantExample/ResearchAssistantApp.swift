@@ -144,7 +144,7 @@ struct ResearchAssistantApp: Sendable {
             return .approved
         }
         if response == "c" || response == "cancel" || response == "cancelled" {
-            return .cancelled
+            return .rejected
         }
         return .rejected
     }

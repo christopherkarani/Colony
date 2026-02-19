@@ -103,7 +103,7 @@ public actor ColonyArtifactStore {
         let artifactURL = artifactURLForID(artifactID)
         try ColonyPersistenceIO.writeJSON(stored, to: artifactURL, encoder: encoder, fileManager: fileManager)
 
-        _ = try await enforceRetention(now: createdAt)
+        _ = try await enforceRetention(now: Date())
         return record
     }
 
