@@ -5,18 +5,15 @@ import ColonyCore
 public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private enum RegistryError: Error, Sendable, Equatable {
         case unsupportedSubagentType(String)
+        case graphCompilationFailed(String)
         case runInterrupted
         case runCancelled
         case runOutOfSteps(maxSteps: Int)
         case missingFullStoreOutput
     }
 
-    private static let compiledGraph: CompiledHiveGraph<ColonySchema> = {
-        do {
-            return try ColonyAgent.compile()
-        } catch {
-            preconditionFailure("ColonyDefaultSubagentRegistry failed to compile ColonyAgent graph: \(error)")
-        }
+    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error> = {
+        Result { try ColonyAgent.compile() }
     }()
 
     private let profile: ColonyProfile
@@ -106,13 +103,20 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             subagents: nil
         )
 
+        let compiledGraph: CompiledHiveGraph<ColonySchema>
+        do {
+            compiledGraph = try Self.compiledGraphResult.get()
+        } catch {
+            throw RegistryError.graphCompilationFailed(String(describing: error))
+        }
+
         let environment = HiveEnvironment<ColonySchema>(
             context: context,
             clock: clock,
             logger: logger,
             model: model
         )
-        let runtime = HiveRuntime(graph: Self.compiledGraph, environment: environment)
+        let runtime = HiveRuntime(graph: compiledGraph, environment: environment)
 
         let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
         let handle = await runtime.run(

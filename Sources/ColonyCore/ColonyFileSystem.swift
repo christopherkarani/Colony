@@ -30,8 +30,14 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
     }
 
     public static var root: ColonyVirtualPath {
-        // swiftlint:disable:next force_try
-        try! ColonyVirtualPath("/")
+        Self.safe("/")
+    }
+
+    public static func safe(
+        _ rawValue: String,
+        fallback: ColonyVirtualPath = ColonyVirtualPath(unsafeRawValue: "/")
+    ) -> ColonyVirtualPath {
+        (try? ColonyVirtualPath(rawValue)) ?? fallback
     }
 
     private static func normalize(_ input: String) throws -> String {
@@ -58,6 +64,10 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
         }
 
         return path
+    }
+
+    private init(unsafeRawValue: String) {
+        self.rawValue = unsafeRawValue
     }
 }
 
