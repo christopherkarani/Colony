@@ -9,15 +9,12 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         case runCancelled
         case runOutOfSteps(maxSteps: Int)
         case missingFullStoreOutput
+        case graphCompilationFailed(String)
     }
 
-    private static let compiledGraph: CompiledHiveGraph<ColonySchema> = {
-        do {
-            return try ColonyAgent.compile()
-        } catch {
-            preconditionFailure("ColonyDefaultSubagentRegistry failed to compile ColonyAgent graph: \(error)")
-        }
-    }()
+    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error> = Result {
+        try ColonyAgent.compile()
+    }
 
     private let profile: ColonyProfile
     private let modelName: String
@@ -73,6 +70,13 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }
 
     public func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
+        let compiledGraph: CompiledHiveGraph<ColonySchema>
+        do {
+            compiledGraph = try Self.compiledGraphResult.get()
+        } catch {
+            throw RegistryError.graphCompilationFailed(String(describing: error))
+        }
+
         let type = request.subagentType.trimmingCharacters(in: .whitespacesAndNewlines)
         guard type == "general-purpose" || type == "compactor" else {
             throw RegistryError.unsupportedSubagentType(request.subagentType)
@@ -112,7 +116,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             logger: logger,
             model: model
         )
-        let runtime = HiveRuntime(graph: Self.compiledGraph, environment: environment)
+        let runtime = HiveRuntime(graph: compiledGraph, environment: environment)
 
         let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
         let handle = await runtime.run(

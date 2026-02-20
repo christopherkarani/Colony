@@ -104,14 +104,14 @@ public enum ColonyScratchbookStore {
             switch error {
             case .alreadyExists:
                 let existing = try await filesystem.read(at: path)
-                guard existing.isEmpty == false else {
-                    throw ColonyFileSystemError.ioError("Scratchbook file exists but is empty and cannot be overwritten safely: \(path.rawValue)")
+                if existing.isEmpty {
+                    _ = try await filesystem.edit(at: path, oldString: "", newString: content, replaceAll: false)
+                } else {
+                    _ = try await filesystem.edit(at: path, oldString: existing, newString: content, replaceAll: false)
                 }
-                _ = try await filesystem.edit(at: path, oldString: existing, newString: content, replaceAll: false)
             default:
                 throw error
             }
         }
     }
 }
-
