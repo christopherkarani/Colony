@@ -13,6 +13,23 @@ private struct NoopLogger: HiveLogger {
     func error(_ message: String, metadata: [String: String]) {}
 }
 
+private enum SubagentRegistryTestError: Error {
+    case compileFailed
+}
+
+private final class FixedResponseModel: HiveModelClient, @unchecked Sendable {
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        HiveChatResponse(message: HiveChatMessage(id: "fixed", role: .assistant, content: "ok"))
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.final(HiveChatResponse(message: HiveChatMessage(id: "fixed", role: .assistant, content: "ok"))))
+            continuation.finish()
+        }
+    }
+}
+
 private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
@@ -446,6 +463,25 @@ func defaultSubagentRegistry_includesStructuredAndFileBackedContextSnippets() as
     #expect(delegatedPrompt.contains("line-3") == true)
     #expect(delegatedPrompt.contains("line-5") == true)
     #expect(delegatedPrompt.contains("line-6") == false)
+}
+
+@Test("Default subagent registry surfaces graph compilation failures")
+func defaultSubagentRegistry_surfacesGraphCompilationFailures() async throws {
+    let registry = ColonyDefaultSubagentRegistry(
+        profile: .onDevice4k,
+        modelName: "test-subagent-model",
+        model: AnyHiveModelClient(FixedResponseModel()),
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        filesystem: nil,
+        compiledGraphResult: .failure(SubagentRegistryTestError.compileFailed)
+    )
+
+    let request = ColonySubagentRequest(prompt: "hi", subagentType: "general-purpose")
+
+    await #expect(throws: ColonyDefaultSubagentRegistryError.graphCompilationFailed("compileFailed")) {
+        _ = try await registry.run(request)
+    }
 }
 
 @Test("Default subagent registry advertises a compactor subagent type")

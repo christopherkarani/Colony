@@ -2,21 +2,18 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
-    private enum RegistryError: Error, Sendable, Equatable {
-        case unsupportedSubagentType(String)
-        case runInterrupted
-        case runCancelled
-        case runOutOfSteps(maxSteps: Int)
-        case missingFullStoreOutput
-    }
+enum ColonyDefaultSubagentRegistryError: Error, Sendable, Equatable {
+    case unsupportedSubagentType(String)
+    case runInterrupted
+    case runCancelled
+    case runOutOfSteps(maxSteps: Int)
+    case missingFullStoreOutput
+    case graphCompilationFailed(String)
+}
 
-    private static let compiledGraph: CompiledHiveGraph<ColonySchema> = {
-        do {
-            return try ColonyAgent.compile()
-        } catch {
-            preconditionFailure("ColonyDefaultSubagentRegistry failed to compile ColonyAgent graph: \(error)")
-        }
+public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
+    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error> = {
+        Result { try ColonyAgent.compile() }
     }()
 
     private let profile: ColonyProfile
@@ -25,6 +22,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private let clock: any HiveClock
     private let logger: any HiveLogger
     private let filesystem: (any ColonyFileSystemBackend)?
+    private let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error>
 
     public init(
         modelName: String,
@@ -39,7 +37,8 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             model: model,
             clock: clock,
             logger: logger,
-            filesystem: filesystem
+            filesystem: filesystem,
+            compiledGraphResult: Self.compiledGraphResult
         )
     }
 
@@ -51,12 +50,33 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         logger: any HiveLogger,
         filesystem: (any ColonyFileSystemBackend)? = nil
     ) {
+        self.init(
+            profile: profile,
+            modelName: modelName,
+            model: model,
+            clock: clock,
+            logger: logger,
+            filesystem: filesystem,
+            compiledGraphResult: Self.compiledGraphResult
+        )
+    }
+
+    init(
+        profile: ColonyProfile,
+        modelName: String,
+        model: AnyHiveModelClient,
+        clock: any HiveClock,
+        logger: any HiveLogger,
+        filesystem: (any ColonyFileSystemBackend)? = nil,
+        compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error>
+    ) {
         self.profile = profile
         self.modelName = modelName
         self.model = model
         self.clock = clock
         self.logger = logger
         self.filesystem = filesystem
+        self.compiledGraphResult = compiledGraphResult
     }
 
     public func listSubagents() -> [ColonySubagentDescriptor] {
@@ -75,7 +95,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     public func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
         let type = request.subagentType.trimmingCharacters(in: .whitespacesAndNewlines)
         guard type == "general-purpose" || type == "compactor" else {
-            throw RegistryError.unsupportedSubagentType(request.subagentType)
+            throw ColonyDefaultSubagentRegistryError.unsupportedSubagentType(request.subagentType)
         }
 
         let delegatedPrompt = try await renderDelegatedPrompt(request)
@@ -112,7 +132,13 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             logger: logger,
             model: model
         )
-        let runtime = HiveRuntime(graph: Self.compiledGraph, environment: environment)
+        let graph: CompiledHiveGraph<ColonySchema>
+        do {
+            graph = try compiledGraphResult.get()
+        } catch {
+            throw ColonyDefaultSubagentRegistryError.graphCompilationFailed(String(describing: error))
+        }
+        let runtime = HiveRuntime(graph: graph, environment: environment)
 
         let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
         let handle = await runtime.run(
@@ -126,12 +152,12 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         switch outcome {
         case .finished(let output, _), .cancelled(let output, _), .outOfSteps(_, let output, _):
             guard case let .fullStore(fullStore) = output else {
-                throw RegistryError.missingFullStoreOutput
+                throw ColonyDefaultSubagentRegistryError.missingFullStoreOutput
             }
             store = fullStore
 
         case .interrupted:
-            throw RegistryError.runInterrupted
+            throw ColonyDefaultSubagentRegistryError.runInterrupted
         }
 
         let messages = try store.get(ColonySchema.Channels.messages)

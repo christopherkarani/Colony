@@ -19,6 +19,62 @@ private actor RequestCounter {
     }
 }
 
+private actor AsyncGate {
+    private var isOpen: Bool = false
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
+}
+
+private final class BlockingModelClient: HiveModelClient, @unchecked Sendable {
+    private let counter = RequestCounter()
+    private let gate: AsyncGate
+    private let content: String
+
+    init(content: String, gate: AsyncGate) {
+        self.content = content
+        self.gate = gate
+    }
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        await counter.increment()
+        await gate.wait()
+        return HiveChatResponse(message: HiveChatMessage(id: UUID().uuidString, role: .assistant, content: content))
+    }
+
+    func snapshotRequestCount() async -> Int {
+        await counter.value()
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let response = try await complete(request)
+                    continuation.yield(.final(response))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 private final class AlwaysFailModelClient: HiveModelClient, @unchecked Sendable {
     private let counter = RequestCounter()
     private let message: String
@@ -409,6 +465,61 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
     let degraded = try await costClient.complete(request)
     #expect(degraded.message.content == "budget-exhausted")
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
+}
+
+@Test("Task E provider router reserves global rate limit across concurrent requests")
+func taskE_providerRouterReservesGlobalRateLimitAcrossConcurrentRequests() async throws {
+    let gate = AsyncGate()
+    let provider = BlockingModelClient(content: "ok", gate: gate)
+
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "primary",
+                client: AnyHiveModelClient(provider),
+                priority: 0,
+                maxRequestsPerMinute: nil,
+                usdPer1KTokens: nil
+            ),
+        ],
+        policy: ColonyProviderRouter.Policy(
+            maxAttemptsPerProvider: 1,
+            initialBackoffNanoseconds: 1,
+            maxBackoffNanoseconds: 1,
+            globalMaxRequestsPerMinute: 1,
+            costCeilingUSD: nil,
+            estimatedOutputToInputRatio: 0,
+            gracefulDegradation: .syntheticResponse("degraded")
+        ),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = HiveChatRequest(
+        model: "router-model",
+        messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
+        tools: []
+    )
+
+    let client = router.route(request, hints: nil)
+    let firstTask = Task { try await client.complete(request) }
+
+    let firstStarted = await waitUntil {
+        await provider.snapshotRequestCount() == 1
+    }
+    #expect(firstStarted)
+
+    let secondTask = Task { try await client.complete(request) }
+    try? await Task.sleep(nanoseconds: 50_000_000)
+
+    await gate.open()
+
+    let firstResponse = try await firstTask.value
+    let secondResponse = try await secondTask.value
+
+    #expect(firstResponse.message.content == "ok")
+    #expect(secondResponse.message.content == "degraded")
+    #expect(await provider.snapshotRequestCount() == 1)
 }
 
 @Test("Task E observability emitter redacts sensitive payloads and harness writes durable run state")

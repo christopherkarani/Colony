@@ -109,7 +109,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         for provider in providers {
             let estimate = estimatedRequestCostUSD(for: request, provider: provider)
-            let eligibility = await state.checkEligibility(
+            let eligibility = await state.reserveUsageIfEligible(
                 provider: provider,
                 estimatedCostUSD: estimate,
                 policy: policy,
@@ -122,9 +122,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
             }
 
             do {
-                let response = try await attemptProvider(provider, request: request)
-                await state.recordUsage(provider: provider, costUSD: estimate, now: clock.now())
-                return response
+                return try await attemptProvider(provider, request: request)
             } catch {
                 failures.append("\(provider.id):\(String(describing: error))")
             }
@@ -220,7 +218,7 @@ private actor ColonyProviderBudgetState {
     private var globalRequestTimestamps: [Date] = []
     private var spentCostUSD: Double = 0
 
-    func checkEligibility(
+    func reserveUsageIfEligible(
         provider: ColonyProviderRouter.Provider,
         estimatedCostUSD: Double,
         policy: ColonyProviderRouter.Policy,
@@ -245,14 +243,10 @@ private actor ColonyProviderBudgetState {
             return Eligibility(allowed: false, reason: "cost ceiling exceeded")
         }
 
-        return Eligibility(allowed: true, reason: "eligible")
-    }
-
-    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: Double, now: Date) {
-        prune(now: now)
         globalRequestTimestamps.append(now)
         requestTimestampsByProvider[provider.id, default: []].append(now)
-        spentCostUSD += costUSD
+        spentCostUSD += estimatedCostUSD
+        return Eligibility(allowed: true, reason: "eligible")
     }
 
     private func prune(now: Date) {
