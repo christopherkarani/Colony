@@ -173,8 +173,12 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
         guard let content = files[path] else {
             throw ColonyFileSystemError.notFound(path)
         }
-        guard oldString.isEmpty == false else {
-            throw ColonyFileSystemError.ioError("oldString must be non-empty.")
+        if oldString.isEmpty {
+            guard content.isEmpty else {
+                throw ColonyFileSystemError.ioError("oldString must be non-empty unless the existing file is empty.")
+            }
+            files[path] = newString
+            return 1
         }
 
         let occurrences = content.components(separatedBy: oldString).count - 1
@@ -307,8 +311,17 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         replaceAll: Bool
     ) async throws -> Int {
         let existing = try await read(at: path)
-        guard oldString.isEmpty == false else {
-            throw ColonyFileSystemError.ioError("oldString must be non-empty.")
+        if oldString.isEmpty {
+            guard existing.isEmpty else {
+                throw ColonyFileSystemError.ioError("oldString must be non-empty unless the existing file is empty.")
+            }
+            let url = try resolve(path, asDirectory: false)
+            do {
+                try newString.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                throw ColonyFileSystemError.ioError(error.localizedDescription)
+            }
+            return 1
         }
         let occurrences = existing.components(separatedBy: oldString).count - 1
         if occurrences == 0 {
