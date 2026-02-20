@@ -334,3 +334,44 @@ func scratchbookStorage_loadMissing_returnsEmptyScratchbook() async throws {
     )
     #expect(scratchbook.items.isEmpty == true)
 }
+
+@Test("Scratchbook store overwrites empty existing files on save")
+func scratchbookStorage_overwritesEmptyExistingFile() async throws {
+    let policy = ColonyScratchbookPolicy(
+        pathPrefix: try ColonyVirtualPath("/scratchbook"),
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
+
+    let threadID = HiveThreadID("empty-thread")
+    let expectedPath = try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
+    let filesystem = ColonyInMemoryFileSystemBackend(files: [expectedPath: ""])
+
+    let scratchbook = ColonyScratchbook(
+        items: [
+            ColonyScratchItem(
+                id: "item-1",
+                kind: .note,
+                status: .open,
+                title: "Overwrite",
+                body: "Now populated",
+                tags: [],
+                createdAtNanoseconds: 1,
+                updatedAtNanoseconds: 1
+            )
+        ],
+        pinnedItemIDs: []
+    )
+
+    try await ColonyScratchbookStore.save(
+        scratchbook,
+        filesystem: filesystem,
+        threadID: threadID.rawValue,
+        policy: policy
+    )
+
+    let persistedJSON = try await filesystem.read(at: expectedPath)
+    let expectedJSON = try encodeSortedJSON(scratchbook)
+    #expect(persistedJSON == expectedJSON)
+}
