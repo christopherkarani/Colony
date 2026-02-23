@@ -7,6 +7,10 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
         self.rawValue = try Self.normalize(rawValue)
     }
 
+    private init(unchecked rawValue: String) {
+        self.rawValue = rawValue
+    }
+
     public init(from decoder: any Decoder) throws {
         if let single = try? decoder.singleValueContainer(),
            let raw = try? single.decode(String.self)
@@ -30,8 +34,20 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
     }
 
     public static var root: ColonyVirtualPath {
-        // swiftlint:disable:next force_try
-        try! ColonyVirtualPath("/")
+        if let normalized = try? ColonyVirtualPath("/") {
+            return normalized
+        }
+        assertionFailure("Failed to normalize root virtual path; falling back to '/'")
+        return ColonyVirtualPath(unchecked: "/")
+    }
+
+    public static func safe(_ rawValue: String, fallback: ColonyVirtualPath = .root) -> ColonyVirtualPath {
+        do {
+            return try ColonyVirtualPath(rawValue)
+        } catch {
+            assertionFailure("Invalid virtual path '\(rawValue)': \(error). Falling back to \(fallback.rawValue).")
+            return fallback
+        }
     }
 
     private static func normalize(_ input: String) throws -> String {

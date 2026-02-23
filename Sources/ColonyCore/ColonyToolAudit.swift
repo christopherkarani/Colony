@@ -146,7 +146,7 @@ public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore
 
     public init(
         filesystem: any ColonyFileSystemBackend,
-        pathPrefix: ColonyVirtualPath = try! ColonyVirtualPath("/audit/tool_decisions")
+        pathPrefix: ColonyVirtualPath = ColonyVirtualPath.safe("/audit/tool_decisions")
     ) {
         self.filesystem = filesystem
         self.pathPrefix = pathPrefix
@@ -221,27 +221,37 @@ public actor ColonyToolAuditRecorder {
 
     @discardableResult
     public func record(event: ColonyToolAuditEvent) async throws -> ColonySignedToolAuditRecord {
-        let existing = try await store.records()
-        let previousHash = existing.last?.entryHash
-        let payload = ColonyToolAuditRecordPayload(
-            sequence: (existing.last?.payload.sequence ?? 0) + 1,
-            previousEntryHash: previousHash,
-            event: event
-        )
+        var lastError: Error?
+        for _ in 0..<3 {
+            let existing = try await store.records()
+            let previousHash = existing.last?.entryHash
+            let payload = ColonyToolAuditRecordPayload(
+                sequence: (existing.last?.payload.sequence ?? 0) + 1,
+                previousEntryHash: previousHash,
+                event: event
+            )
 
-        let chainData = try Self.chainData(payload: payload)
-        let entryHash = Self.sha256Hex(chainData)
-        let signature = try signer.sign(message: Data(entryHash.utf8))
+            let chainData = try Self.chainData(payload: payload)
+            let entryHash = Self.sha256Hex(chainData)
+            let signature = try signer.sign(message: Data(entryHash.utf8))
 
-        let record = ColonySignedToolAuditRecord(
-            payload: payload,
-            entryHash: entryHash,
-            signatureBase64: signature.base64EncodedString(),
-            signatureAlgorithm: signer.algorithm,
-            signerKeyID: signer.keyID
-        )
-        try await store.append(record)
-        return record
+            let record = ColonySignedToolAuditRecord(
+                payload: payload,
+                entryHash: entryHash,
+                signatureBase64: signature.base64EncodedString(),
+                signatureAlgorithm: signer.algorithm,
+                signerKeyID: signer.keyID
+            )
+
+            do {
+                try await store.append(record)
+                return record
+            } catch let error as ColonyToolAuditError {
+                lastError = error
+                continue
+            }
+        }
+        throw lastError ?? ColonyToolAuditError.invalidSequence(expected: 0, actual: -1)
     }
 
     public func records() async throws -> [ColonySignedToolAuditRecord] {

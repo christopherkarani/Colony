@@ -30,6 +30,35 @@ private actor SafetyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointS
     }
 }
 
+private actor FlakyAuditStore: ColonyImmutableToolAuditLogStore {
+    private var storage: [ColonySignedToolAuditRecord] = []
+    private var failNextAppend = true
+
+    func append(_ record: ColonySignedToolAuditRecord) async throws {
+        if failNextAppend {
+            failNextAppend = false
+            throw ColonyToolAuditError.invalidSequence(expected: 1, actual: record.payload.sequence)
+        }
+
+        let expectedSequence = (storage.last?.payload.sequence ?? 0) + 1
+        guard record.payload.sequence == expectedSequence else {
+            throw ColonyToolAuditError.invalidSequence(expected: expectedSequence, actual: record.payload.sequence)
+        }
+        let expectedPreviousHash = storage.last?.entryHash
+        guard record.payload.previousEntryHash == expectedPreviousHash else {
+            throw ColonyToolAuditError.previousHashMismatch(
+                expected: expectedPreviousHash,
+                actual: record.payload.previousEntryHash
+            )
+        }
+        storage.append(record)
+    }
+
+    func records() async throws -> [ColonySignedToolAuditRecord] {
+        storage
+    }
+}
+
 private final class SingleMutatingCallModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount = 0
@@ -264,6 +293,29 @@ func signedAuditRecordVerification() async throws {
     var tampered = try await recorder.records()
     tampered[1].payload.event.toolName = "tampered"
     #expect(try ColonyToolAuditVerifier.verify(records: tampered, signer: signer) == false)
+}
+
+@Test("Audit recorder retries on sequence/hash mismatches")
+func auditRecorderRetriesOnSequenceMismatch() async throws {
+    let signer = ColonyHMACSHA256ToolAuditSigner(keyData: Data("audit-key".utf8), keyID: "k1")
+    let store = FlakyAuditStore()
+    let recorder = ColonyToolAuditRecorder(store: store, signer: signer)
+
+    let record = try await recorder.record(
+        event: ColonyToolAuditEvent(
+            timestampNanoseconds: 1,
+            threadID: "thread-audit",
+            taskID: "task-1",
+            toolCallID: "call-1",
+            toolName: "write_file",
+            riskLevel: .mutation,
+            decision: .approvalRequired,
+            reason: .mandatoryRiskLevel
+        )
+    )
+
+    #expect(record.payload.sequence == 1)
+    #expect(try await recorder.verifyIntegrity())
 }
 
 @Test("Filesystem audit log store is append-only and enforces sequence/hash linkage")
