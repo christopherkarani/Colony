@@ -139,6 +139,23 @@ func sessionRevertNoPreviousVersion() async throws {
     }
 }
 
+@Test("Session store auto-creates version lineage when omitted")
+func sessionStoreAutoCreatesVersionLineage() async throws {
+    let store = ColonySessionStore()
+    let sessionID = ColonyProductSessionID(rawValue: "session:auto")
+    let created = try await store.createSession(
+        ColonySessionCreateInput(
+            sessionID: sessionID,
+            projectID: ColonyProjectID(rawValue: "project:auto"),
+            metadata: ["purpose": "autogen"]
+        )
+    )
+
+    #expect(created.sessionID == sessionID)
+    #expect(created.versionLineage.count == 1)
+    #expect(created.activeVersionID == created.versionLineage[0].versionID)
+}
+
 @Test("Control-plane service methods map to project/session operations")
 func controlPlaneServiceOperations() async throws {
     let service = ColonyControlPlaneService(

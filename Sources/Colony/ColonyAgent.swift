@@ -2178,7 +2178,7 @@ enum ColonyTools {
             }
             let args = try decode(call.argumentsJSON, as: TaskArgs.self)
             let type = args.subagentType?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let selectedType = (type?.isEmpty == false) ? type! : "general-purpose"
+            let selectedType = (type?.isEmpty == false ? type : nil) ?? "general-purpose"
             let result = try await subagents.run(
                 ColonySubagentRequest(
                     prompt: args.prompt,

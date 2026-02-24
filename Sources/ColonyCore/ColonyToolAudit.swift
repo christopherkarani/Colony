@@ -146,7 +146,7 @@ public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore
 
     public init(
         filesystem: any ColonyFileSystemBackend,
-        pathPrefix: ColonyVirtualPath = try! ColonyVirtualPath("/audit/tool_decisions")
+        pathPrefix: ColonyVirtualPath = ColonyVirtualPath.safe("/audit/tool_decisions")
     ) {
         self.filesystem = filesystem
         self.pathPrefix = pathPrefix
