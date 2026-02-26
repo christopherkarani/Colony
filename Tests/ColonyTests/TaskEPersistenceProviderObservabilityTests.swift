@@ -411,6 +411,87 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
 }
 
+@Test("Task E provider router streaming forwards token chunks from routed provider")
+func taskE_providerRouterStreamingForwardsTokens() async throws {
+    let provider = FixedModelClient(content: "stream-final", token: "stream-token")
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "stream-primary",
+                client: AnyHiveModelClient(provider),
+                priority: 0
+            ),
+        ],
+        policy: ColonyProviderRouter.Policy(maxAttemptsPerProvider: 1),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = HiveChatRequest(
+        model: "router-stream-model",
+        messages: [HiveChatMessage(id: "stream-1", role: .user, content: "stream")],
+        tools: []
+    )
+
+    let stream = router.route(request, hints: nil).stream(request)
+    var sawToken = false
+    var finalContent: String?
+    for try await chunk in stream {
+        switch chunk {
+        case .token(let token):
+            if token == "stream-token" {
+                sawToken = true
+            }
+        case .final(let response):
+            finalContent = response.message.content
+        }
+    }
+
+    #expect(sawToken)
+    #expect(finalContent == "stream-final")
+}
+
+@Test("Task E provider router reserves budget for failed provider attempts")
+func taskE_providerRouterCountsFailedAttemptsTowardsRateLimit() async throws {
+    let failing = AlwaysFailModelClient(message: "always-fails")
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "limited",
+                client: AnyHiveModelClient(failing),
+                priority: 0,
+                maxRequestsPerMinute: 1
+            ),
+        ],
+        policy: ColonyProviderRouter.Policy(
+            maxAttemptsPerProvider: 1,
+            initialBackoffNanoseconds: 1,
+            maxBackoffNanoseconds: 1,
+            globalMaxRequestsPerMinute: nil,
+            costCeilingUSD: nil,
+            estimatedOutputToInputRatio: 0,
+            gracefulDegradation: .syntheticResponse("degraded")
+        ),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = HiveChatRequest(
+        model: "router-limit-model",
+        messages: [HiveChatMessage(id: "rate-1", role: .user, content: "hello")],
+        tools: []
+    )
+
+    let client = router.route(request, hints: nil)
+    let first = try await client.complete(request)
+    #expect(first.message.content == "degraded")
+    #expect(await failing.snapshotRequestCount() == 1)
+
+    let second = try await client.complete(request)
+    #expect(second.message.content == "degraded")
+    #expect(await failing.snapshotRequestCount() == 1)
+}
+
 @Test("Task E observability emitter redacts sensitive payloads and harness writes durable run state")
 func taskE_observabilityRedactionAndHarnessIntegration() async throws {
     let temp = try temporaryDirectory("obs")

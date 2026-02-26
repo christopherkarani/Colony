@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import Colony
@@ -127,6 +128,43 @@ func hardenedShellBackend_timesOutLongRunningCommand() async throws {
     #expect(result.stderr.contains("timed out"))
 }
 
+@Test("Hardened shell backend timeout terminates child processes")
+func hardenedShellBackend_timeoutTerminatesChildProcesses() async throws {
+    let temp = try TemporaryDirectory(prefix: "colony-shell-child-timeout")
+    defer { temp.cleanup() }
+
+    let root = temp.url.appendingPathComponent("root", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let policy = try ColonyShellConfinementPolicy(allowedRoot: root)
+    let backend = ColonyHardenedShellBackend(confinement: policy)
+    let request = ColonyShellExecutionRequest(
+        command: "/bin/sh -c '(/bin/sleep 30 &) ; child=$!; echo $child > child.pid; wait $child'",
+        timeoutNanoseconds: 200_000_000
+    )
+
+    let result = try await backend.execute(request)
+    #expect(result.exitCode == 124)
+
+    let childPIDPath = root.appendingPathComponent("child.pid")
+    var childPIDValue: String = ""
+    let deadline = Date().addingTimeInterval(1)
+    while Date() < deadline, childPIDValue.isEmpty {
+        childPIDValue = (try? String(contentsOf: childPIDPath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if childPIDValue.isEmpty {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    guard let childPID = Int32(childPIDValue), childPID > 0 else {
+        Issue.record("Expected timeout command to persist child pid for verification.")
+        return
+    }
+
+    #expect(processEventuallyExits(pid: childPID, timeoutNanoseconds: 1_000_000_000))
+}
+
 @Test("Hardened shell backend truncates output at max byte cap")
 func hardenedShellBackend_truncatesOutputAtByteCap() async throws {
     let temp = try TemporaryDirectory(prefix: "colony-shell-truncate")
@@ -217,4 +255,15 @@ func hardenedShellBackend_closesIdleManagedSessions() async throws {
 
     let sessions = await backend.listSessions()
     #expect(sessions.isEmpty)
+}
+
+private func processEventuallyExits(pid: Int32, timeoutNanoseconds: UInt64) -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds &+ timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if kill(pid, 0) != 0, errno == ESRCH {
+            return true
+        }
+        Thread.sleep(forTimeInterval: 0.02)
+    }
+    return kill(pid, 0) != 0 && errno == ESRCH
 }

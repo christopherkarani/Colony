@@ -35,7 +35,7 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
     }
 
     private static func normalize(_ input: String) throws -> String {
-        if input.contains("..") || input.hasPrefix("~") {
+        if input.hasPrefix("~") {
             throw ColonyFileSystemError.invalidPath(input)
         }
 
@@ -55,6 +55,11 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
         // Canonicalize trailing slash (keep "/" only for root).
         if path.count > 1, path.hasSuffix("/") {
             path.removeLast()
+        }
+
+        let segments = path.split(separator: "/", omittingEmptySubsequences: true)
+        if segments.contains("..") {
+            throw ColonyFileSystemError.invalidPath(input)
         }
 
         return path

@@ -109,7 +109,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         for provider in providers {
             let estimate = estimatedRequestCostUSD(for: request, provider: provider)
-            let eligibility = await state.checkEligibility(
+            let eligibility = await state.reserveIfEligible(
                 provider: provider,
                 estimatedCostUSD: estimate,
                 policy: policy,
@@ -123,7 +123,6 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
             do {
                 let response = try await attemptProvider(provider, request: request)
-                await state.recordUsage(provider: provider, costUSD: estimate, now: clock.now())
                 return response
             } catch {
                 failures.append("\(provider.id):\(String(describing: error))")
@@ -185,6 +184,74 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
     private let policy: Policy
     private let clock: SleepClock
     private let state: ColonyProviderBudgetState
+
+    fileprivate func stream(request: HiveChatRequest, hints: HiveInferenceHints?) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        _ = hints
+        let providers = self.providers
+        let policy = self.policy
+        let clock = self.clock
+        let state = self.state
+
+        return AsyncThrowingStream { continuation in
+            Task {
+                guard providers.isEmpty == false else {
+                    continuation.finish(throwing: ColonyProviderRouterError.noProvidersConfigured)
+                    return
+                }
+
+                var failures: [String] = []
+
+                for provider in providers {
+                    let estimate = estimatedRequestCostUSD(for: request, provider: provider)
+                    let eligibility = await state.reserveIfEligible(
+                        provider: provider,
+                        estimatedCostUSD: estimate,
+                        policy: policy,
+                        now: clock.now()
+                    )
+
+                    guard eligibility.allowed else {
+                        failures.append("\(provider.id):\(eligibility.reason)")
+                        continue
+                    }
+
+                    var emittedAnyChunk = false
+                    do {
+                        for try await chunk in provider.client.stream(request) {
+                            emittedAnyChunk = true
+                            continuation.yield(chunk)
+                        }
+                        continuation.finish()
+                        return
+                    } catch {
+                        failures.append("\(provider.id):\(String(describing: error))")
+                        if emittedAnyChunk {
+                            continuation.finish(throwing: error)
+                            return
+                        }
+                    }
+                }
+
+                switch policy.gracefulDegradation {
+                case .fail:
+                    continuation.finish(throwing: ColonyProviderRouterError.noEligibleProvider(reasons: failures))
+                case .syntheticResponse(let message):
+                    continuation.yield(
+                        .final(
+                            HiveChatResponse(
+                                message: HiveChatMessage(
+                                    id: "degraded-" + UUID().uuidString.lowercased(),
+                                    role: .assistant,
+                                    content: message
+                                )
+                            )
+                        )
+                    )
+                    continuation.finish()
+                }
+            }
+        }
+    }
 }
 
 private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
@@ -196,17 +263,7 @@ private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
     }
 
     func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let response = try await complete(request)
-                    continuation.yield(.final(response))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
+        router.stream(request: request, hints: hints)
     }
 }
 
@@ -220,7 +277,7 @@ private actor ColonyProviderBudgetState {
     private var globalRequestTimestamps: [Date] = []
     private var spentCostUSD: Double = 0
 
-    func checkEligibility(
+    func reserveIfEligible(
         provider: ColonyProviderRouter.Provider,
         estimatedCostUSD: Double,
         policy: ColonyProviderRouter.Policy,
@@ -245,14 +302,11 @@ private actor ColonyProviderBudgetState {
             return Eligibility(allowed: false, reason: "cost ceiling exceeded")
         }
 
-        return Eligibility(allowed: true, reason: "eligible")
-    }
-
-    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: Double, now: Date) {
-        prune(now: now)
         globalRequestTimestamps.append(now)
         requestTimestampsByProvider[provider.id, default: []].append(now)
-        spentCostUSD += costUSD
+        spentCostUSD += estimatedCostUSD
+
+        return Eligibility(allowed: true, reason: "eligible")
     }
 
     private func prune(now: Date) {

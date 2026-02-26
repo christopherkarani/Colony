@@ -388,7 +388,7 @@ public struct ColonyAgentFactory: Sendable {
         )
 
         let graph = try ColonyAgent.compile()
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)

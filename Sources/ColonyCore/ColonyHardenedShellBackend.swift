@@ -314,19 +314,79 @@ private final class RunningProcess: @unchecked Sendable {
     var exitCode: Int32 { process.terminationStatus }
 
     func terminateTree() {
-        guard process.isRunning else { return }
-        process.terminate()
+        signalTree(SIGTERM)
     }
 
     func forceKill() {
-        guard process.isRunning else { return }
-        kill(process.processIdentifier, SIGKILL)
+        signalTree(SIGKILL)
     }
 
     func finishAndCollectOutput() -> (stdout: String, stderr: String, wasTruncated: Bool) {
         standardIO.teardownHandlersAndDrain(into: collector)
         standardIO.teardownHandlersAndClose()
         return collector.snapshot()
+    }
+
+    private func signalTree(_ signal: Int32) {
+        guard process.isRunning else { return }
+        let rootPID = process.processIdentifier
+        let descendants = Self.descendantProcessIDs(of: rootPID)
+        for pid in descendants.reversed() {
+            _ = kill(pid, signal)
+        }
+        _ = kill(rootPID, signal)
+    }
+
+    private static func descendantProcessIDs(of rootPID: pid_t) -> [pid_t] {
+        guard let ps = try? runPS(), ps.isEmpty == false else { return [] }
+
+        var childrenByParent: [pid_t: [pid_t]] = [:]
+        for (pid, ppid) in ps where pid > 0 && ppid > 0 {
+            childrenByParent[ppid, default: []].append(pid)
+        }
+
+        var descendants: [pid_t] = []
+        var queue: [pid_t] = [rootPID]
+        var visited = Set<pid_t>()
+        visited.insert(rootPID)
+
+        while queue.isEmpty == false {
+            let parent = queue.removeFirst()
+            for child in childrenByParent[parent, default: []] where visited.insert(child).inserted {
+                descendants.append(child)
+                queue.append(child)
+            }
+        }
+
+        return descendants
+    }
+
+    private static func runPS() throws -> [(pid_t, pid_t)] {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["-axo", "pid=,ppid="]
+
+        let outputPipe = Pipe()
+        ps.standardOutput = outputPipe
+        ps.standardError = FileHandle.nullDevice
+
+        try ps.run()
+        ps.waitUntilExit()
+        guard ps.terminationStatus == 0 else { return [] }
+
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8), text.isEmpty == false else { return [] }
+
+        return text.split(separator: "\n").compactMap { line in
+            let columns = line.split(whereSeparator: \.isWhitespace)
+            guard columns.count == 2,
+                  let pid = Int32(columns[0]),
+                  let ppid = Int32(columns[1])
+            else {
+                return nil
+            }
+            return (pid, ppid)
+        }
     }
 }
 
