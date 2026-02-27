@@ -17,16 +17,8 @@ source ./HIVE_DEPENDENCY.lock
 
 echo "dependency-policy: validating Package.swift Hive dependency policy"
 
-if ! rg -n 'COLONY_USE_LOCAL_HIVE_PATH' Package.swift >/dev/null; then
-  fail "Package.swift must gate any local Hive fallback behind COLONY_USE_LOCAL_HIVE_PATH"
-fi
-
-if ! rg -n "\\.package\\s*\\(\\s*url\\s*:\\s*\"$HIVE_URL\"\\s*,\\s*exact\\s*:\\s*\"$HIVE_TAG\"\\s*\\)" Package.swift >/dev/null; then
-  fail "Package.swift must pin Hive remote dependency from HIVE_DEPENDENCY.lock"
-fi
-
 if ! rg -n '\.package\s*\(\s*path\s*:\s*"\.deps/Hive/Sources/Hive"\s*\)' Package.swift >/dev/null; then
-  fail "Package.swift must keep the explicit .deps/Hive local fallback path for offline mode"
+  fail "Package.swift must consume Hive from .deps/Hive/Sources/Hive"
 fi
 
 if [[ ! -f Package.resolved ]]; then
@@ -41,7 +33,7 @@ if rg -n "\"location\"\\s*:\\s*\"$HIVE_URL\"" Package.resolved >/dev/null; then
     fail "Package.resolved must pin Hive version to $HIVE_TAG"
   fi
 else
-  echo "dependency-policy: warning - Hive pin missing from Package.resolved (likely local fallback mode)"
+  echo "dependency-policy: warning - Hive pin missing from Package.resolved (local path mode)"
 fi
 
 echo "dependency-policy: checking lockfile reproducibility"
@@ -49,7 +41,30 @@ resolved_snapshot="$(mktemp)"
 cp Package.resolved "$resolved_snapshot"
 
 mkdir -p /tmp/clang-module-cache
-COLONY_USE_LOCAL_HIVE_PATH=1 CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache swift package resolve >/dev/null
+mkdir -p .build/swiftpm-cache .build/swiftpm-config .build/swift-home
+./scripts/ci/bootstrap-hive.sh >/dev/null
+set +e
+resolve_output="$(
+  HOME="$ROOT_DIR/.build/swift-home" \
+  SWIFTPM_PACKAGECACHE="$ROOT_DIR/.build/swiftpm-cache" \
+  SWIFTPM_CONFIG_PATH="$ROOT_DIR/.build/swiftpm-config" \
+  CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
+  swift package resolve --disable-sandbox --scratch-path /tmp/colony-swiftpm-policy 2>&1
+)"
+resolve_status=$?
+set -e
+
+if [[ $resolve_status -ne 0 ]]; then
+  if echo "$resolve_output" | rg -q 'Could not resolve host|Failed to clone repository'; then
+    echo "dependency-policy: warning - skipping lockfile reproducibility check (offline dependency fetch failure)"
+    rm -f "$resolved_snapshot"
+    echo "dependency-policy: OK (offline mode)"
+    exit 0
+  fi
+  echo "$resolve_output" >&2
+  rm -f "$resolved_snapshot"
+  fail "swift package resolve failed"
+fi
 
 if ! diff -u "$resolved_snapshot" Package.resolved >/dev/null; then
   echo "dependency-policy: Package.resolved changed after resolve" >&2

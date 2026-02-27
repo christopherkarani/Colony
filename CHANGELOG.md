@@ -24,6 +24,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 ### Changed
 - `Package.swift`: removed legacy lowercase sibling path (`../hive`) and standardized pinned Hive checkout path via `HIVE_DEPENDENCY.lock` + `scripts/ci/bootstrap-hive.sh`:
   - path now: `.package(path: ".deps/Hive/Sources/Hive")`
+- `Package.swift`: removed `COLONY_USE_LOCAL_HIVE_PATH` branch logic so default resolution is deterministic and buildable against the pinned checkout.
+- `scripts/ci/check-dependency-policy.sh`: now bootstraps Hive before `swift package resolve` and validates local-path consumption policy.
 - `README.md`: updated setup guidance for pinned Hive checkout bootstrap flow and release/upgrade doc links.
 
 ### Notes

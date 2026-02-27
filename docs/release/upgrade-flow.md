@@ -29,5 +29,5 @@ Last updated: 2026-02-10
 
 - Keep dependencies reproducible with committed `Package.resolved`.
 - Keep Hive pin metadata in `HIVE_DEPENDENCY.lock` (URL/tag/revision) in sync with `Package.swift`.
-- Use `COLONY_USE_LOCAL_HIVE_PATH=1` only for offline/local fallback workflows (with `.deps/Hive/Sources/Hive` bootstrapped).
+- Run `scripts/ci/bootstrap-hive.sh` so Hive resolves from `.deps/Hive/Sources/Hive` before `swift package resolve`.
 - Avoid local path dependencies for Hive in released code.

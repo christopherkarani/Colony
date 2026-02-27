@@ -18,7 +18,7 @@ Colony follows SemVer (`MAJOR.MINOR.PATCH`).
 
 - Legacy sibling path dependencies (for example `../hive/...`) are forbidden.
 - Hive is pinned through `HIVE_DEPENDENCY.lock` (URL, tag, revision) and a matching remote pin in `Package.swift`.
-- Local fallback (`COLONY_USE_LOCAL_HIVE_PATH=1`) is allowed only for offline/dev workflows and must resolve from `.deps/Hive/Sources/Hive`.
+- Hive must resolve from `.deps/Hive/Sources/Hive` after running `scripts/ci/bootstrap-hive.sh`.
 - `Package.resolved` is required and must be reproducible after `swift package resolve`.
 - Dependency policy is enforced by `scripts/ci/check-dependency-policy.sh` and CI.
 

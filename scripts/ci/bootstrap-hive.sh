@@ -9,11 +9,12 @@ source ./HIVE_DEPENDENCY.lock
 HIVE_CHECKOUT=".deps/Hive"
 HIVE_PACKAGE_PATH="$HIVE_CHECKOUT/Sources/Hive"
 LOCAL_FALLBACK_HIVE="$(cd .. && pwd)/Hive"
+HIVE_CACHE_REPO="$(ls -d .build/repositories/Hive-* 2>/dev/null | head -n 1 || true)"
 USING_FALLBACK_MIRROR=false
 
-echo "bootstrap-hive: validating Package.swift remote pin"
-if ! rg -n "\\.package\\s*\\(\\s*url\\s*:\\s*\"$HIVE_URL\"\\s*,\\s*exact\\s*:\\s*\"$HIVE_TAG\"\\s*\\)" Package.swift >/dev/null; then
-  echo "bootstrap-hive: Package.swift does not match pinned Hive remote dependency" >&2
+echo "bootstrap-hive: validating Package.swift Hive checkout path"
+if ! rg -n '\.package\s*\(\s*path\s*:\s*"\.deps/Hive/Sources/Hive"\s*\)' Package.swift >/dev/null; then
+  echo "bootstrap-hive: Package.swift must consume Hive from .deps/Hive/Sources/Hive" >&2
   exit 1
 fi
 
@@ -23,7 +24,13 @@ if [[ -d "$HIVE_CHECKOUT/.git" ]]; then
 else
   echo "bootstrap-hive: cloning $HIVE_URL into $HIVE_CHECKOUT"
   if ! git clone "$HIVE_URL" "$HIVE_CHECKOUT" >/dev/null 2>&1; then
-    if [[ -d "$LOCAL_FALLBACK_HIVE/.git" ]]; then
+    if [[ -n "$HIVE_CACHE_REPO" && -d "$HIVE_CACHE_REPO" ]]; then
+      echo "bootstrap-hive: remote clone unavailable, seeding checkout from local SwiftPM cache $HIVE_CACHE_REPO"
+      mkdir -p "$(dirname "$HIVE_CHECKOUT")"
+      rm -rf "$HIVE_CHECKOUT"
+      git clone "$HIVE_CACHE_REPO" "$HIVE_CHECKOUT" >/dev/null 2>&1
+      git -C "$HIVE_CHECKOUT" remote set-url origin "$HIVE_URL"
+    elif [[ -d "$LOCAL_FALLBACK_HIVE/.git" ]]; then
       echo "bootstrap-hive: remote clone unavailable, falling back to local mirror $LOCAL_FALLBACK_HIVE"
       mkdir -p "$(dirname "$HIVE_CHECKOUT")"
       ln -sfn "$LOCAL_FALLBACK_HIVE" "$HIVE_CHECKOUT"
@@ -65,4 +72,4 @@ if [[ "$resolved_rev" != "$HIVE_REV" ]]; then
 fi
 
 echo "bootstrap-hive: ready ($HIVE_URL @ $HIVE_REV, tag $HIVE_TAG)"
-echo "bootstrap-hive: use COLONY_USE_LOCAL_HIVE_PATH=1 for offline/local fallback builds"
+echo "bootstrap-hive: Hive checkout ready at $HIVE_PACKAGE_PATH"

@@ -40,19 +40,17 @@ Built-in tool families (all capability-gated, backend-gated):
 
 - Swift 6.2 (`swift-tools-version: 6.2`)
 - iOS 26+ or macOS 26+
-- A pinned remote Hive dependency declared in `HIVE_DEPENDENCY.lock` and `Package.swift`
-- Optional offline/local fallback: bootstrap `.deps/Hive` and set `COLONY_USE_LOCAL_HIVE_PATH=1`
+- A bootstrapped local Hive checkout at `.deps/Hive/Sources/Hive`, pinned by `HIVE_DEPENDENCY.lock`
 
 ## Quickstart
 
-1. Validate pinned Hive dependency metadata.
+1. Bootstrap the pinned Hive checkout.
 2. Build and run tests.
 3. Create a runtime and send a message.
 
 ```bash
 cd /path/to/Colony
 scripts/ci/bootstrap-hive.sh
-export COLONY_USE_LOCAL_HIVE_PATH=1
 swift package resolve
 swift test
 ```
@@ -113,7 +111,7 @@ if case let .interrupted(interruption) = outcome,
 
 ## Troubleshooting
 
-- `swift package resolve` fails: run `scripts/ci/bootstrap-hive.sh` and verify `HIVE_DEPENDENCY.lock` matches the pinned remote Hive dependency.
+- `swift package resolve` fails: run `scripts/ci/bootstrap-hive.sh` and verify `HIVE_DEPENDENCY.lock` matches the pinned Hive checkout.
 - `foundationModelsUnavailable`: on-device Foundation Models are not available on this device/configuration. Inject another `HiveModelClient` or use a router.
 - Missing tools in prompts: check both capabilities and backend wiring (for example, `shell` needs `ColonyShellBackend`; `subagents` needs `ColonySubagentRegistry`).
 - SDK/platform errors: this package targets Swift 6.2 with iOS/macOS 26+.
