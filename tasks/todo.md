@@ -5,7 +5,7 @@
 - [x] Implement fixes for identified issues with minimal, production-grade changes
 - [x] Add/adjust regression tests (TDD) covering each fix
 - [x] Re-run full tests and build to prove no regressions
-- [ ] Prepare commit(s), push branch, and create PR with detailed notes
+- [ ] Prepare commit(s), push branch, and create PR with detailed notes (commit+push done; PR blocked by GitHub API connectivity)
 
 ## Review
 - Baseline: initial build/test runs were blocked by SwiftPM path/dependency resolution and API skew (`.cancelled` not present in `ColonyToolApprovalDecision`).
