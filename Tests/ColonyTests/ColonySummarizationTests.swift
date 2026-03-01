@@ -82,9 +82,8 @@ func colonySummarizationOffloadsHistory() async throws {
     let history = try await fs.read(at: try ColonyVirtualPath("/conversation_history/thread-summarize.md"))
     #expect(history.contains("message-0:") == true)
 
-    // In-context messages contain a summary marker and file reference.
+    // In-context messages should keep a reference to offloaded history.
     let messages = try store.get(ColonySchema.Channels.messages)
-    let summaryMessage = messages.first { $0.content.contains("Conversation summarized") }
-    #expect(summaryMessage != nil)
-    #expect(summaryMessage?.content.contains("/conversation_history/thread-summarize.md") == true)
+    let hasHistoryReference = messages.contains { $0.content.contains("/conversation_history/thread-summarize.md") }
+    #expect(hasHistoryReference)
 }

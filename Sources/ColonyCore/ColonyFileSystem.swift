@@ -3,6 +3,10 @@ import Foundation
 public struct ColonyVirtualPath: Hashable, Sendable, Codable {
     public let rawValue: String
 
+    private init(normalizedRawValue: String) {
+        self.rawValue = normalizedRawValue
+    }
+
     public init(_ rawValue: String) throws {
         self.rawValue = try Self.normalize(rawValue)
     }
@@ -29,9 +33,13 @@ public struct ColonyVirtualPath: Hashable, Sendable, Codable {
         case rawValue
     }
 
-    public static var root: ColonyVirtualPath {
-        // swiftlint:disable:next force_try
-        try! ColonyVirtualPath("/")
+    public static let root: ColonyVirtualPath = trustedConstantPath("/")
+
+    public static func trustedConstantPath(_ rawValue: String, fallback: String = "/") -> ColonyVirtualPath {
+        if let value = try? ColonyVirtualPath(rawValue) {
+            return value
+        }
+        return ColonyVirtualPath(normalizedRawValue: fallback)
     }
 
     private static func normalize(_ input: String) throws -> String {

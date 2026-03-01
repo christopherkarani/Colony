@@ -5,19 +5,43 @@ import Foundation
 final class ConversationStore {
     private(set) var conversations: [Conversation] = []
     private let directory: URL
+    private let fileManager: FileManager
+    private let reportError: @MainActor @Sendable (String) -> Void
 
-    init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        self.directory = appSupport
+    init(
+        directory: URL? = nil,
+        fileManager: FileManager = .default,
+        reportError: @escaping @MainActor @Sendable (String) -> Void = { message in
+            fputs("[ConversationStore] \(message)\n", stderr)
+        }
+    ) {
+        self.fileManager = fileManager
+        self.reportError = reportError
+
+        let baseDirectory: URL
+        if let directory {
+            baseDirectory = directory
+        } else {
+            baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        }
+
+        self.directory = baseDirectory
             .appendingPathComponent("DeepResearch", isDirectory: true)
             .appendingPathComponent("conversations", isDirectory: true)
 
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
+        } catch {
+            reportError("Failed to create conversations directory: \(error)")
+        }
     }
 
     func load() {
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+        let files: [URL]
+        do {
+            files = try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        } catch {
+            reportError("Failed to list conversations directory: \(error)")
             return
         }
 
@@ -26,11 +50,14 @@ final class ConversationStore {
 
         var loaded: [Conversation] = []
         for file in files where file.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: file),
-                  let conversation = try? decoder.decode(Conversation.self, from: data) else {
+            do {
+                let data = try Data(contentsOf: file)
+                let conversation = try decoder.decode(Conversation.self, from: data)
+                loaded.append(conversation)
+            } catch {
+                reportError("Failed to load conversation at \(file.lastPathComponent): \(error)")
                 continue
             }
-            loaded.append(conversation)
         }
 
         conversations = loaded.sorted { $0.createdAt > $1.createdAt }
@@ -43,8 +70,13 @@ final class ConversationStore {
 
         let fileURL = directory.appendingPathComponent("\(conversation.id.uuidString).json")
 
-        guard let data = try? encoder.encode(conversation) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try encoder.encode(conversation)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            reportError("Failed to save conversation \(conversation.id.uuidString): \(error)")
+            return
+        }
 
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index] = conversation
@@ -56,7 +88,11 @@ final class ConversationStore {
 
     func delete(_ conversation: Conversation) {
         let fileURL = directory.appendingPathComponent("\(conversation.id.uuidString).json")
-        try? FileManager.default.removeItem(at: fileURL)
+        do {
+            try fileManager.removeItem(at: fileURL)
+        } catch {
+            reportError("Failed to delete conversation \(conversation.id.uuidString): \(error)")
+        }
         conversations.removeAll { $0.id == conversation.id }
     }
 

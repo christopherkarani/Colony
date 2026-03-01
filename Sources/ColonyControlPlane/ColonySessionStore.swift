@@ -29,7 +29,10 @@ public actor ColonySessionStore {
             ]
         }
 
-        let activeVersionID = input.activeVersionID ?? versionLineage.last!.versionID
+        guard let newestVersionID = versionLineage.last?.versionID else {
+            throw ColonySessionStoreError.invalidVersionLineage
+        }
+        let activeVersionID = input.activeVersionID ?? newestVersionID
         guard versionLineage.contains(where: { $0.versionID == activeVersionID }) else {
             throw ColonySessionStoreError.activeVersionMissing(activeVersionID)
         }

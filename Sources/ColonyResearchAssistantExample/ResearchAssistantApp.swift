@@ -137,14 +137,11 @@ struct ResearchAssistantApp: Sendable {
     private func promptForApproval(toolCalls: [HiveToolCall]) -> ColonyToolApprovalDecision {
         let names = toolCalls.map(\.name).joined(separator: ", ")
         print("Tool approval required for: \(names)")
-        print("Approve? [y/N/c(ancel)]: ", terminator: "")
+        print("Approve? [y/N]: ", terminator: "")
         fflush(stdout)
         let response = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         if response == "y" || response == "yes" {
             return .approved
-        }
-        if response == "c" || response == "cancel" || response == "cancelled" {
-            return .cancelled
         }
         return .rejected
     }

@@ -9,13 +9,14 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         case runCancelled
         case runOutOfSteps(maxSteps: Int)
         case missingFullStoreOutput
+        case graphCompilationFailed(String)
     }
 
-    private static let compiledGraph: CompiledHiveGraph<ColonySchema> = {
+    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, RegistryError> = {
         do {
-            return try ColonyAgent.compile()
+            return .success(try ColonyAgent.compile())
         } catch {
-            preconditionFailure("ColonyDefaultSubagentRegistry failed to compile ColonyAgent graph: \(error)")
+            return .failure(.graphCompilationFailed(String(describing: error)))
         }
     }()
 
@@ -112,7 +113,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             logger: logger,
             model: model
         )
-        let runtime = HiveRuntime(graph: Self.compiledGraph, environment: environment)
+        let runtime = HiveRuntime(graph: try Self.compiledGraphResult.get(), environment: environment)
 
         let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
         let handle = await runtime.run(

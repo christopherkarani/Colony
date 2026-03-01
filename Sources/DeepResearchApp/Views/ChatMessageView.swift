@@ -227,8 +227,8 @@ struct CompletedToolSummary: View {
     private var summaryText: String {
         let completed = toolCalls.filter { $0.status == .completed }.count
         let uniqueNames = Set(toolCalls.map(\.name))
-        if uniqueNames.count == 1 {
-            return "\(uniqueNames.first!) completed"
+        if uniqueNames.count == 1, let toolName = uniqueNames.first {
+            return "\(toolName) completed"
         }
         return "\(completed) tools completed"
     }

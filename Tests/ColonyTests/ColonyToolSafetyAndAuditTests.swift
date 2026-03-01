@@ -338,6 +338,30 @@ func fileSystemAuditStoreEnforcesAppendOnlyChain() async throws {
     }
 }
 
+@Test("Filesystem audit log store default prefix remains stable and writable")
+func fileSystemAuditStoreDefaultPrefixWritesExpectedEntryPath() async throws {
+    let fs = ColonyInMemoryFileSystemBackend()
+    let store = ColonyFileSystemToolAuditLogStore(filesystem: fs)
+    let signer = ColonyHMACSHA256ToolAuditSigner(keyData: Data("audit-key".utf8), keyID: "k1")
+    let recorder = ColonyToolAuditRecorder(store: store, signer: signer)
+
+    _ = try await recorder.record(
+        event: ColonyToolAuditEvent(
+            timestampNanoseconds: 1,
+            threadID: "thread-default-prefix",
+            taskID: "task-1",
+            toolCallID: "call-1",
+            toolName: "write_file",
+            riskLevel: .mutation,
+            decision: .approvalRequired,
+            reason: .mandatoryRiskLevel
+        )
+    )
+
+    let written = try await fs.read(at: ColonyVirtualPath("/audit/tool_decisions/entry-000000000001.json"))
+    #expect(written.isEmpty == false)
+}
+
 @Test("Runtime integration appends audit records for approval request and explicit deny decision")
 func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
     let graph = try ColonyAgent.compile()

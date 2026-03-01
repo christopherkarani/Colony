@@ -143,10 +143,11 @@ public actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
 public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore {
     private let filesystem: any ColonyFileSystemBackend
     private let pathPrefix: ColonyVirtualPath
+    public static let defaultPathPrefix = ColonyVirtualPath.trustedConstantPath("/audit/tool_decisions")
 
     public init(
         filesystem: any ColonyFileSystemBackend,
-        pathPrefix: ColonyVirtualPath = try! ColonyVirtualPath("/audit/tool_decisions")
+        pathPrefix: ColonyVirtualPath = ColonyFileSystemToolAuditLogStore.defaultPathPrefix
     ) {
         self.filesystem = filesystem
         self.pathPrefix = pathPrefix

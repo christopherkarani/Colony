@@ -137,11 +137,11 @@ struct ColonyRunControlTests {
         }
     }
 
-    @Test("Run control cancelled decision records cancellation and skips tool execution")
-    func runControl_cancelledDecisionSkipsToolExecution() async throws {
+    @Test("Run control rejected decision records rejection and skips tool execution")
+    func runControl_rejectedDecisionSkipsToolExecution() async throws {
         let filesystem = ColonyInMemoryFileSystemBackend()
         let runtime = try makeRuntime(
-            threadID: "run-control-cancelled",
+            threadID: "run-control-rejected",
             model: AnyHiveModelClient(ScriptedApprovalModel()),
             filesystem: filesystem
         )
@@ -149,36 +149,36 @@ struct ColonyRunControlTests {
         let startHandle = await runtime.runControl.start(.init(input: "Write /note.md"))
         let startOutcome = try await startHandle.outcome.value
         guard case let .interrupted(interruption) = startOutcome else {
-            Issue.record("Expected interrupted outcome before cancelled resume assertion.")
+            Issue.record("Expected interrupted outcome before rejected resume assertion.")
             return
         }
 
         let resumeHandle = await runtime.runControl.resume(
-            .init(interruptID: interruption.interrupt.id, decision: .cancelled)
+            .init(interruptID: interruption.interrupt.id, decision: .rejected)
         )
         let resumedOutcome = try await resumeHandle.outcome.value
         guard case let .finished(output, _) = resumedOutcome,
               case let .fullStore(store) = output else {
-            Issue.record("Expected finished full-store outcome after cancelled resume.")
+            Issue.record("Expected finished full-store outcome after rejected resume.")
             return
         }
 
         let messages = try store.get(ColonySchema.Channels.messages)
-        let hasCancellationSystem = messages.contains(where: { message in
-            message.role == .system && message.content == "Tool execution cancelled by user."
+        let hasRejectionSystem = messages.contains(where: { message in
+            message.role == .system && message.content == "Tool execution rejected by user."
         })
-        #expect(hasCancellationSystem)
+        #expect(hasRejectionSystem)
 
-        let hasCancellationTool = messages.contains(where: { message in
+        let hasRejectionTool = messages.contains(where: { message in
             message.role == .tool
                 && message.toolCallID == "call-1"
-                && message.content.contains("cancelled")
+                && message.content.contains("rejected")
         })
-        #expect(hasCancellationTool)
+        #expect(hasRejectionTool)
 
         do {
             _ = try await filesystem.read(at: try ColonyVirtualPath("/note.md"))
-            Issue.record("Tool output file should not exist after cancelled decision.")
+            Issue.record("Tool output file should not exist after rejected decision.")
         } catch {
             #expect(Bool(true))
         }

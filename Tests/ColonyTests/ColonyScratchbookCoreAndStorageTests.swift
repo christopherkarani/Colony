@@ -45,6 +45,12 @@ func scratchbookCore_conformance() {
     requireIdentifiable(ColonyScratchItem.self)
 }
 
+@Test("Default virtual path constants are stable")
+func scratchbookCore_defaultPathConstants() throws {
+    #expect(ColonyVirtualPath.root.rawValue == "/")
+    #expect(ColonyScratchbookPolicy.defaultPathPrefix.rawValue == "/scratchbook")
+}
+
 @Test("Scratchbook renderView prioritizes pinned, then open/in-progress tasks, then open todos, then recent notes")
 func scratchbookCore_renderView_prioritizationAndDeterminism() throws {
     let pinnedNote = ColonyScratchItem(

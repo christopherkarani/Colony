@@ -63,8 +63,8 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
     private static let searchToolName = "tavily_search"
     private static let extractToolName = "tavily_extract"
 
-    private static let searchURL = URL(string: "https://api.tavily.com/search")!
-    private static let extractURL = URL(string: "https://api.tavily.com/extract")!
+    private static let searchURL = safeURL(path: "/search")
+    private static let extractURL = safeURL(path: "/extract")
 
     func listTools() -> [HiveToolDefinition] {
         [
@@ -226,6 +226,14 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
             throw TavilyError.invalidArguments
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func safeURL(path: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "api.tavily.com"
+        components.path = path
+        return components.url ?? URL(fileURLWithPath: "/")
     }
 }
 

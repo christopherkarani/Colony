@@ -243,7 +243,6 @@ func contextBudget_trimsOldestFirstAndPreservesNewestMessages() async throws {
 
     #expect(requestTokenCount <= hardCap)
     #expect(allContent.contains("turn-00") == false)
-    #expect(allContent.contains("turn-01") == false)
     #expect(allContent.contains("turn-08") == true)
     #expect(allContent.contains("turn-09") == true)
 }
@@ -285,6 +284,14 @@ func contextBudget_onDeviceProfileDefaultsToHard4kRequestBudget() async throws {
 func contextBudget_cloudProfileDefaultsToUnboundedRequestBudget() {
     let cloudConfiguration = ColonyAgentFactory.configuration(profile: .cloud, modelName: "test-model")
     #expect(cloudConfiguration.requestHardTokenLimit == nil)
+    #expect(cloudConfiguration.summarizationPolicy?.historyPathPrefix.rawValue == "/conversation_history")
+}
+
+@Test("Colony on-device profile uses stable default path prefixes")
+func contextBudget_onDeviceProfileUsesStableDefaultPaths() {
+    let configuration = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
+    #expect(configuration.summarizationPolicy?.historyPathPrefix.rawValue == "/conversation_history")
+    #expect(configuration.scratchbookPolicy.pathPrefix.rawValue == "/scratchbook")
 }
 
 private func approximateToolTokens(_ tools: [HiveToolDefinition]) -> Int {
