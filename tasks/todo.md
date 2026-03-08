@@ -7,7 +7,7 @@
 - [x] Implement production-grade fixes with minimal blast radius.
 - [x] Re-run targeted tests after each fix.
 - [x] Run full regression suite (`swift test` + `swift build`).
-- [ ] Commit with detailed message, push branch, and open PR.
+- [x] Commit with detailed message, push branch, and open PR.
 
 ## Notes
 - Prior automation memory referenced a different path with no package; this run is in a valid Swift package with tests.
@@ -31,3 +31,4 @@
 - Verification:
   - `COLONY_USE_LOCAL_HIVE_PATH=1 swift test` passed: 111 tests.
   - `COLONY_USE_LOCAL_HIVE_PATH=1 swift build` passed.
+  - PR opened: https://github.com/christopherkarani/Colony/pull/8 (base: `develop`)
