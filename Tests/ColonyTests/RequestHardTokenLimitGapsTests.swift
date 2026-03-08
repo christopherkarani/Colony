@@ -110,7 +110,7 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
         model: AnyHiveModelClient(recordingModel),
         tools: AnyHiveToolRegistry(FixedToolRegistry(tools: [tool]))
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-request-hard-cap-tools-payload"),

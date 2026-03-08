@@ -296,9 +296,10 @@ public enum ColonyAgent {
                 )
             }
             // Our tokenizer is an approximation (chars/4) over the *combined* request payload. When we subtract
-            // tool-definition tokens and then bound messages independently, integer division rounding can carry
-            // and exceed the hard cap by ~1 token. Subtract an additional 1 token as conservative padding.
-            messageTokenLimit = max(1, hardLimit - toolTokenCount - 1)
+            // tool-definition tokens and then bound messages independently, rounding and prompt-shape drift can
+            // under-trim by a few tokens; reserve a small fixed cushion to preserve recency-first trimming.
+            let budgetPadding = 8
+            messageTokenLimit = max(1, hardLimit - toolTokenCount - budgetPadding)
         } else {
             messageTokenLimit = nil
         }
@@ -990,7 +991,7 @@ public enum ColonyAgent {
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
-            content: "Note: conversation has been summarized. Full prior history is available at \(historyPath.rawValue)."
+            content: "Conversation summarized. Full prior history is available at \(historyPath.rawValue)."
         )
 
         return [summaryMessage] + tail
@@ -1201,7 +1202,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Tool result too large (tool_call_id: \(toolCall.id)).
+Result too large (tool_call_id: \(toolCall.id)).
 Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
 
 Preview:

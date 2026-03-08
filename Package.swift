@@ -75,7 +75,8 @@ let package = Package(
         ),
         .testTarget(
             name: "ColonyResearchAssistantExampleTests",
-            dependencies: ["ColonyResearchAssistantExample"]
+            dependencies: ["ColonyResearchAssistantExample"],
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "ColonyControlPlaneTests",
