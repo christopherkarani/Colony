@@ -6,7 +6,7 @@
 - [x] Add/adjust tests that reproduce each issue first (TDD)
 - [x] Implement production-grade fixes with minimal scope
 - [x] Re-run full tests and verify clean build
-- [ ] Commit with detailed message
+- [x] Commit with detailed message
 - [ ] Push branch and open PR
 
 ## Review
@@ -17,3 +17,5 @@
 - Removed crash-on-compile failure path in default subagent registry by surfacing a typed runtime error.
 - Added parser edge-case tests for Foundation Models tool-call parsing boundary.
 - Verification complete: `swift build` and `swift test` pass.
+- Branch pushed: `automation/check-frameworks-audit-20260310`.
+- PR creation blocked in this environment: `gh` token for `christopherkarani` is invalid (`gh auth status`).
