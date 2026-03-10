@@ -518,6 +518,23 @@ public enum ColonyAgent {
 
         if approvalRequiredCalls.isEmpty == false {
             if let resume = input.run.resume, case let .toolApproval(decision) = resume.payload {
+                if decision == .cancelled {
+                    let deniedCalls = calls
+                    try await recordToolAuditEvents(
+                        calls: deniedCalls,
+                        decision: .userDenied,
+                        assessmentsByCallID: assessmentsByCallID,
+                        input: input
+                    )
+                    return try toolDispatchPath(
+                        input: input,
+                        approvedCalls: [],
+                        deniedCalls: deniedCalls,
+                        taskID: input.run.taskID,
+                        denialReason: .cancelled
+                    )
+                }
+
                 var approvedIDs = preApprovedIDs
                 var deniedIDs = preDeniedIDs
                 approvedIDs.reserveCapacity(calls.count)
@@ -613,7 +630,8 @@ public enum ColonyAgent {
         input: HiveNodeInput<ColonySchema>,
         approvedCalls: [HiveToolCall],
         deniedCalls: [HiveToolCall],
-        taskID: HiveTaskID
+        taskID: HiveTaskID,
+        denialReason: ToolDenialReason = .rejected
     ) throws -> HiveNodeOutput<ColonySchema> {
         var spawn: [HiveTaskSeed<ColonySchema>] = []
         spawn.reserveCapacity(approvedCalls.count)
@@ -632,14 +650,14 @@ public enum ColonyAgent {
             let system = HiveChatMessage(
                 id: messageID,
                 role: .system,
-                content: "Tool execution rejected by user."
+                content: denialReason.systemMessage
             )
 
             let cancellations = deniedCalls.map { call in
                 HiveChatMessage(
                     id: "tool:" + call.id,
                     role: .tool,
-                    content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.",
+                    content: denialReason.renderToolMessage(callName: call.name, callID: call.id),
                     name: call.name,
                     toolCallID: call.id
                 )
@@ -661,6 +679,29 @@ public enum ColonyAgent {
             spawn: spawn,
             next: .end
         )
+    }
+
+    private enum ToolDenialReason {
+        case rejected
+        case cancelled
+
+        var systemMessage: String {
+            switch self {
+            case .rejected:
+                return "Tool execution rejected by user."
+            case .cancelled:
+                return "Tool execution cancelled by user."
+            }
+        }
+
+        func renderToolMessage(callName: String, callID: String) -> String {
+            switch self {
+            case .rejected:
+                return "Tool call \(callName) with id \(callID) was cancelled - tool execution was rejected by the user."
+            case .cancelled:
+                return "Tool call \(callName) with id \(callID) was cancelled - tool execution was cancelled by the user."
+            }
+        }
     }
 
     private static func recordToolAuditEvents(
@@ -990,7 +1031,7 @@ public enum ColonyAgent {
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
-            content: "Note: conversation has been summarized. Full prior history is available at \(historyPath.rawValue)."
+            content: "Conversation summarized. Full prior history is available at \(historyPath.rawValue)."
         )
 
         return [summaryMessage] + tail
@@ -1201,7 +1242,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Tool result too large (tool_call_id: \(toolCall.id)).
+Result too large for inline context (tool_call_id: \(toolCall.id)).
 Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
 
 Preview:

@@ -129,6 +129,14 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         return HiveChatResponse(message: message)
     }
 
+    func parseAssistantOutputForTesting(
+        raw: String,
+        toolsAllowed: Set<String>
+    ) throws -> (visibleText: String, toolCalls: [HiveToolCall]) {
+        let parsed = try parseFinalAssistantOutput(raw: raw, toolsAllowed: toolsAllowed)
+        return (parsed.visibleText, parsed.toolCalls)
+    }
+
     private func makePrompt(from request: HiveChatRequest) -> (instructions: String?, prompt: String, toolsAllowed: Set<String>) {
         var systemParts: [String] = []
         var promptLines: [String] = []

@@ -298,7 +298,7 @@ func gitAndLspToolsDispatchToTypedBackends() async throws {
         model: AnyHiveModelClient(GitLSPToolChainModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-git-lsp-dispatch"),
         input: "Run all git/lsp tools",
@@ -396,7 +396,7 @@ func gitAndLspToolsAdvertisedWithBackendWiring() async throws {
         logger: GitLSPNoopLogger(),
         model: AnyHiveModelClient(model)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-git-lsp-advertised"),
@@ -434,7 +434,7 @@ func gitAndLspToolsNotAdvertisedWithoutBackends() async throws {
         logger: GitLSPNoopLogger(),
         model: AnyHiveModelClient(model)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-git-lsp-not-advertised"),

@@ -109,7 +109,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         for provider in providers {
             let estimate = estimatedRequestCostUSD(for: request, provider: provider)
-            let eligibility = await state.checkEligibility(
+            let eligibility = await state.admitIfEligible(
                 provider: provider,
                 estimatedCostUSD: estimate,
                 policy: policy,
@@ -122,9 +122,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
             }
 
             do {
-                let response = try await attemptProvider(provider, request: request)
-                await state.recordUsage(provider: provider, costUSD: estimate, now: clock.now())
-                return response
+                return try await attemptProvider(provider, request: request)
             } catch {
                 failures.append("\(provider.id):\(String(describing: error))")
             }
@@ -197,7 +195,7 @@ private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
 
     func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let response = try await complete(request)
                     continuation.yield(.final(response))
@@ -205,6 +203,9 @@ private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
@@ -220,7 +221,7 @@ private actor ColonyProviderBudgetState {
     private var globalRequestTimestamps: [Date] = []
     private var spentCostUSD: Double = 0
 
-    func checkEligibility(
+    func admitIfEligible(
         provider: ColonyProviderRouter.Provider,
         estimatedCostUSD: Double,
         policy: ColonyProviderRouter.Policy,
@@ -245,14 +246,12 @@ private actor ColonyProviderBudgetState {
             return Eligibility(allowed: false, reason: "cost ceiling exceeded")
         }
 
-        return Eligibility(allowed: true, reason: "eligible")
-    }
-
-    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: Double, now: Date) {
-        prune(now: now)
+        // Admission + accounting is atomic to avoid races under concurrency.
         globalRequestTimestamps.append(now)
         requestTimestampsByProvider[provider.id, default: []].append(now)
-        spentCostUSD += costUSD
+        spentCostUSD += estimatedCostUSD
+
+        return Eligibility(allowed: true, reason: "eligible")
     }
 
     private func prune(now: Date) {

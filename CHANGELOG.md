@@ -27,5 +27,5 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - `README.md`: updated setup guidance for pinned Hive checkout bootstrap flow and release/upgrade doc links.
 
 ### Notes
-- Hive tag `0.1.2` / revision `3074a0e24d6ab9db1f454dc072fa5caba1461310` is pinned in `HIVE_DEPENDENCY.lock`.
-- Direct SwiftPM remote pinning is blocked today because Hive’s manifest is nested under `Sources/Hive/Package.swift` instead of repository root.
+- Hive tag `0.1.5` / revision `4b52f38d014bf5610a53069ec8af62b918c5d00d` is pinned in `HIVE_DEPENDENCY.lock`.
+- Direct SwiftPM remote pinning is enabled with the pinned `0.1.5` Hive release.

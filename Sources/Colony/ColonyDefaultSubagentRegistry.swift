@@ -5,19 +5,16 @@ import ColonyCore
 public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private enum RegistryError: Error, Sendable, Equatable {
         case unsupportedSubagentType(String)
+        case graphCompilationFailed(String)
         case runInterrupted
         case runCancelled
         case runOutOfSteps(maxSteps: Int)
         case missingFullStoreOutput
     }
 
-    private static let compiledGraph: CompiledHiveGraph<ColonySchema> = {
-        do {
-            return try ColonyAgent.compile()
-        } catch {
-            preconditionFailure("ColonyDefaultSubagentRegistry failed to compile ColonyAgent graph: \(error)")
-        }
-    }()
+    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, any Error> = Result {
+        try ColonyAgent.compile()
+    }
 
     private let profile: ColonyProfile
     private let modelName: String
@@ -79,6 +76,12 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         }
 
         let delegatedPrompt = try await renderDelegatedPrompt(request)
+        let graph: CompiledHiveGraph<ColonySchema>
+        do {
+            graph = try Self.compiledGraphResult.get()
+        } catch {
+            throw RegistryError.graphCompilationFailed(String(describing: error))
+        }
 
         var configuration = ColonyAgentFactory.configuration(profile: profile, modelName: modelName)
         configuration.capabilities = subagentCapabilities(
@@ -112,7 +115,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             logger: logger,
             model: model
         )
-        let runtime = HiveRuntime(graph: Self.compiledGraph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
         let handle = await runtime.run(

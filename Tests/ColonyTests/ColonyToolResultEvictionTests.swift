@@ -102,7 +102,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
         tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-evict"),
         input: "trigger",
@@ -156,7 +156,7 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
         tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-evict-preview-budget"),
         input: "trigger",
@@ -211,7 +211,7 @@ func colonyToolEvictionPreviewTrimming_isDeterministic() async throws {
             tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID(threadID),
             input: "trigger",

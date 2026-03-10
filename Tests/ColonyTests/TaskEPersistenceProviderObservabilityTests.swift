@@ -83,6 +83,55 @@ private final class FixedModelClient: HiveModelClient, @unchecked Sendable {
     }
 }
 
+private final class SlowCancellableModelClient: HiveModelClient, @unchecked Sendable {
+    private let requestCounter = RequestCounter()
+    private let cancellationCounter = RequestCounter()
+    private let content: String
+    private let sleepNanoseconds: UInt64
+
+    init(content: String, sleepNanoseconds: UInt64) {
+        self.content = content
+        self.sleepNanoseconds = sleepNanoseconds
+    }
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        await requestCounter.increment()
+        do {
+            try await Task.sleep(nanoseconds: sleepNanoseconds)
+        } catch is CancellationError {
+            await cancellationCounter.increment()
+            throw CancellationError()
+        }
+
+        return HiveChatResponse(message: HiveChatMessage(id: UUID().uuidString, role: .assistant, content: content))
+    }
+
+    func snapshotRequestCount() async -> Int {
+        await requestCounter.value()
+    }
+
+    func snapshotCancellationCount() async -> Int {
+        await cancellationCounter.value()
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let response = try await complete(request)
+                    continuation.yield(.final(response))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+}
+
 private final class InterruptingOnceModelClient: HiveModelClient, @unchecked Sendable {
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         try await streamFinal(request)
@@ -409,6 +458,83 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
     let degraded = try await costClient.complete(request)
     #expect(degraded.message.content == "budget-exhausted")
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
+}
+
+@Test("Task E provider router applies rate admission atomically under concurrent requests")
+func taskE_providerRouterAtomicAdmissionUnderConcurrency() async throws {
+    let slowProvider = SlowCancellableModelClient(content: "ok", sleepNanoseconds: 200_000_000)
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "limited",
+                client: AnyHiveModelClient(slowProvider),
+                priority: 0,
+                maxRequestsPerMinute: 1,
+                usdPer1KTokens: 0.001
+            ),
+        ],
+        policy: ColonyProviderRouter.Policy(
+            maxAttemptsPerProvider: 1,
+            initialBackoffNanoseconds: 1,
+            maxBackoffNanoseconds: 1,
+            globalMaxRequestsPerMinute: nil,
+            costCeilingUSD: 10,
+            estimatedOutputToInputRatio: 0,
+            gracefulDegradation: .syntheticResponse("degraded")
+        ),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = HiveChatRequest(
+        model: "router-model",
+        messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
+        tools: []
+    )
+
+    let client = router.route(request, hints: nil)
+    async let first = client.complete(request)
+    async let second = client.complete(request)
+    let responses = try await [first, second]
+    let contents = Set(responses.map { $0.message.content })
+
+    #expect(contents == Set(["ok", "degraded"]))
+    #expect(await slowProvider.snapshotRequestCount() == 1)
+}
+
+@Test("Task E provider router stream cancels in-flight completion on termination")
+func taskE_providerRouterStreamCancelsInflightWork() async throws {
+    let slowProvider = SlowCancellableModelClient(content: "slow", sleepNanoseconds: 5_000_000_000)
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(id: "slow", client: AnyHiveModelClient(slowProvider), priority: 0),
+        ],
+        policy: ColonyProviderRouter.Policy(maxAttemptsPerProvider: 1, gracefulDegradation: .fail),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = HiveChatRequest(
+        model: "router-model",
+        messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
+        tools: []
+    )
+
+    let stream = router.route(request, hints: nil).stream(request)
+    let consumer = Task {
+        do {
+            for try await _ in stream {}
+        } catch {}
+    }
+
+    try await Task.sleep(nanoseconds: 50_000_000)
+    consumer.cancel()
+    _ = await consumer.result
+
+    let cancelledObserved = await waitUntil(timeoutNanoseconds: 1_000_000_000) {
+        await slowProvider.snapshotCancellationCount() > 0
+    }
+    #expect(cancelledObserved)
 }
 
 @Test("Task E observability emitter redacts sensitive payloads and harness writes durable run state")

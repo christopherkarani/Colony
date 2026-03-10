@@ -1,6 +1,6 @@
 # Release Policy
 
-Last updated: 2026-02-10
+Last updated: 2026-03-10
 
 ## Scope
 
@@ -26,13 +26,13 @@ Colony follows SemVer (`MAJOR.MINOR.PATCH`).
 
 Task F required removing the ad-hoc `../hive` dependency and enforcing pinned dependency sourcing for Hive.
 
-Assumption used on 2026-02-10:
+Assumption used on 2026-03-10:
 - Hive remote URL: `https://github.com/christopherkarani/Hive.git`
-- Pinned tag: `0.1.2`
-- Pinned revision: `3074a0e24d6ab9db1f454dc072fa5caba1461310`
+- Pinned tag: `0.1.5`
+- Pinned revision: `4b52f38d014bf5610a53069ec8af62b918c5d00d`
 
 Rationale:
-- `0.1.2` is the pinned stable semver tag used for reproducible builds.
+- `0.1.5` is the pinned stable semver tag used for reproducible builds.
 - Remote SwiftPM pinning removes local checkout drift and aligns dependency checks across developer machines and CI.
 
 ## Changelog and Upgrade Notes
