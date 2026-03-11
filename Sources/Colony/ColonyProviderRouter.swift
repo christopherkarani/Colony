@@ -109,23 +109,25 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         for provider in providers {
             let estimate = estimatedRequestCostUSD(for: request, provider: provider)
-            let eligibility = await state.checkEligibility(
+            let admission = await state.admitIfEligible(
                 provider: provider,
                 estimatedCostUSD: estimate,
                 policy: policy,
                 now: clock.now()
             )
 
-            guard eligibility.allowed else {
-                failures.append("\(provider.id):\(eligibility.reason)")
+            guard admission.eligibility.allowed else {
+                failures.append("\(provider.id):\(admission.eligibility.reason)")
                 continue
             }
 
             do {
                 let response = try await attemptProvider(provider, request: request)
-                await state.recordUsage(provider: provider, costUSD: estimate, now: clock.now())
                 return response
             } catch {
+                if let ticket = admission.ticket {
+                    await state.rollback(ticket: ticket)
+                }
                 failures.append("\(provider.id):\(String(describing: error))")
             }
         }
@@ -211,6 +213,13 @@ private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
 }
 
 private actor ColonyProviderBudgetState {
+    struct AdmissionTicket: Sendable {
+        let id: UUID
+        let providerID: String
+        let admittedAt: Date
+        let estimatedCostUSD: Double
+    }
+
     struct Eligibility: Sendable {
         let allowed: Bool
         let reason: String
@@ -220,39 +229,60 @@ private actor ColonyProviderBudgetState {
     private var globalRequestTimestamps: [Date] = []
     private var spentCostUSD: Double = 0
 
-    func checkEligibility(
+    func admitIfEligible(
         provider: ColonyProviderRouter.Provider,
         estimatedCostUSD: Double,
         policy: ColonyProviderRouter.Policy,
         now: Date
-    ) -> Eligibility {
+    ) -> (eligibility: Eligibility, ticket: AdmissionTicket?) {
         prune(now: now)
 
         if let globalLimit = policy.globalMaxRequestsPerMinute,
            globalLimit >= 0,
            globalRequestTimestamps.count >= globalLimit {
-            return Eligibility(allowed: false, reason: "global rate ceiling exceeded")
+            return (Eligibility(allowed: false, reason: "global rate ceiling exceeded"), nil)
         }
 
         if let providerLimit = provider.maxRequestsPerMinute,
            providerLimit >= 0,
            (requestTimestampsByProvider[provider.id]?.count ?? 0) >= providerLimit {
-            return Eligibility(allowed: false, reason: "provider rate ceiling exceeded")
+            return (Eligibility(allowed: false, reason: "provider rate ceiling exceeded"), nil)
         }
 
         if let ceiling = policy.costCeilingUSD,
            (spentCostUSD + estimatedCostUSD) > ceiling {
-            return Eligibility(allowed: false, reason: "cost ceiling exceeded")
+            return (Eligibility(allowed: false, reason: "cost ceiling exceeded"), nil)
         }
 
-        return Eligibility(allowed: true, reason: "eligible")
-    }
-
-    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: Double, now: Date) {
-        prune(now: now)
+        let ticket = AdmissionTicket(
+            id: UUID(),
+            providerID: provider.id,
+            admittedAt: now,
+            estimatedCostUSD: estimatedCostUSD
+        )
         globalRequestTimestamps.append(now)
         requestTimestampsByProvider[provider.id, default: []].append(now)
-        spentCostUSD += costUSD
+        spentCostUSD += estimatedCostUSD
+        return (Eligibility(allowed: true, reason: "eligible"), ticket)
+    }
+
+    func rollback(ticket: AdmissionTicket) {
+        if let index = globalRequestTimestamps.firstIndex(where: { $0 == ticket.admittedAt }) {
+            globalRequestTimestamps.remove(at: index)
+        }
+
+        if var providerEntries = requestTimestampsByProvider[ticket.providerID],
+           let index = providerEntries.firstIndex(where: { $0 == ticket.admittedAt })
+        {
+            providerEntries.remove(at: index)
+            if providerEntries.isEmpty {
+                requestTimestampsByProvider.removeValue(forKey: ticket.providerID)
+            } else {
+                requestTimestampsByProvider[ticket.providerID] = providerEntries
+            }
+        }
+
+        spentCostUSD = max(0, spentCostUSD - ticket.estimatedCostUSD)
     }
 
     private func prune(now: Date) {
