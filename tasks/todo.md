@@ -7,7 +7,7 @@
 - [x] Implement fixes with TDD (add/adjust tests first where gaps exist)
 - [x] Re-run targeted tests for each fix, then full test suite
 - [x] Ensure build compiles cleanly
-- [ ] Commit changes with detailed message
+- [x] Commit changes with detailed message
 - [ ] Push branch and open PR
 
 ## Review
