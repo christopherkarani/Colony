@@ -295,10 +295,10 @@ public enum ColonyAgent {
                     toolCount: tools.count
                 )
             }
-            // Our tokenizer is an approximation (chars/4) over the *combined* request payload. When we subtract
-            // tool-definition tokens and then bound messages independently, integer division rounding can carry
-            // and exceed the hard cap by ~1 token. Subtract an additional 1 token as conservative padding.
-            messageTokenLimit = max(1, hardLimit - toolTokenCount - 1)
+            // Our tokenizer is an approximation (chars/4) over the combined request payload.
+            // Keep conservative headroom so hard caps remain deterministic across rounding edges.
+            let hardCapPadding = 8
+            messageTokenLimit = max(1, hardLimit - toolTokenCount - hardCapPadding)
         } else {
             messageTokenLimit = nil
         }
@@ -553,10 +553,14 @@ public enum ColonyAgent {
                     input: input
                 )
 
+                let deniedCallReason: ColonyDeniedToolCallReason = (decision == .cancelled)
+                    ? .cancelledByUser
+                    : .rejectedByUser
                 return try toolDispatchPath(
                     input: input,
                     approvedCalls: approvedCalls,
                     deniedCalls: deniedCalls,
+                    deniedCallReason: deniedCallReason,
                     taskID: input.run.taskID
                 )
             }
@@ -605,6 +609,7 @@ public enum ColonyAgent {
             input: input,
             approvedCalls: approvedCalls,
             deniedCalls: deniedCalls,
+            deniedCallReason: .rejectedByUser,
             taskID: input.run.taskID
         )
     }
@@ -613,6 +618,7 @@ public enum ColonyAgent {
         input: HiveNodeInput<ColonySchema>,
         approvedCalls: [HiveToolCall],
         deniedCalls: [HiveToolCall],
+        deniedCallReason: ColonyDeniedToolCallReason,
         taskID: HiveTaskID
     ) throws -> HiveNodeOutput<ColonySchema> {
         var spawn: [HiveTaskSeed<ColonySchema>] = []
@@ -632,14 +638,17 @@ public enum ColonyAgent {
             let system = HiveChatMessage(
                 id: messageID,
                 role: .system,
-                content: "Tool execution rejected by user."
+                content: deniedCallReason == .cancelledByUser
+                    ? "Tool execution cancelled by user."
+                    : "Tool execution rejected by user."
             )
 
             let cancellations = deniedCalls.map { call in
-                HiveChatMessage(
+                let denialDescription = deniedCallReason == .cancelledByUser ? "cancelled" : "rejected"
+                return HiveChatMessage(
                     id: "tool:" + call.id,
                     role: .tool,
-                    content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.",
+                    content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was \(denialDescription) by the user.",
                     name: call.name,
                     toolCallID: call.id
                 )
@@ -990,7 +999,7 @@ public enum ColonyAgent {
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
-            content: "Note: conversation has been summarized. Full prior history is available at \(historyPath.rawValue)."
+            content: "Conversation summarized. Full prior history is available at \(historyPath.rawValue)."
         )
 
         return [summaryMessage] + tail
@@ -1201,7 +1210,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Tool result too large (tool_call_id: \(toolCall.id)).
+Tool Result too large (tool_call_id: \(toolCall.id)).
 Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
 
 Preview:
@@ -2771,3 +2780,7 @@ private struct ScratchUpdateArgs: Decodable, Sendable {
 private struct ScratchIDArgs: Decodable, Sendable {
     let id: String
 }
+    private enum ColonyDeniedToolCallReason {
+        case rejectedByUser
+        case cancelledByUser
+    }

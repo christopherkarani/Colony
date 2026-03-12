@@ -5,6 +5,8 @@ import ColonyCore
 public enum ColonyHarnessSessionError: Error, Sendable {
     case runAlreadyActive
     case noInterruptedRun
+    case runFailed(String)
+    case runStatePersistenceFailed(String)
 }
 
 public actor ColonyHarnessSession {
@@ -31,7 +33,7 @@ public actor ColonyHarnessSession {
     public func stream() -> AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> {
         let subscriberID = UUID()
         return AsyncThrowingStream { continuation in
-            Task { await self.addSubscriber(id: subscriberID, continuation: continuation) }
+            subscribers[subscriberID] = continuation
             continuation.onTermination = { _ in
                 Task { await self.removeSubscriber(id: subscriberID) }
             }
@@ -50,7 +52,7 @@ public actor ColonyHarnessSession {
         let handle = await runtime.sendUserMessage(input)
         let runID = handle.runID.rawValue
 
-        await emit(
+        try await emit(
             runID: runID,
             eventType: .runStarted,
             payload: .none
@@ -81,7 +83,7 @@ public actor ColonyHarnessSession {
 
         if decision == .rejected {
             for call in interruptedState.toolCalls {
-                await emit(
+                try await emit(
                     runID: interruptedState.runID,
                     eventType: .toolDenied,
                     payload: .toolDenied(
@@ -101,12 +103,12 @@ public actor ColonyHarnessSession {
         )
         let runID = handle.runID.rawValue
 
-        await emit(
+        try await emit(
             runID: runID,
             eventType: .runStarted,
             payload: .none
         )
-        await emit(
+        try await emit(
             runID: runID,
             eventType: .runResumed,
             payload: .none
@@ -163,9 +165,13 @@ public actor ColonyHarnessSession {
         eventPumpTask = Task {
             do {
                 for try await event in events {
-                    await self.processRuntimeEvent(event, runID: runID)
+                    try await self.processRuntimeEvent(event, runID: runID)
                 }
             } catch {
+                await self.handleRunFailure(
+                    runID: runID,
+                    error: ColonyHarnessSessionError.runFailed(String(describing: error))
+                )
                 await self.completeAttempt(attemptID: attemptID)
             }
         }
@@ -177,20 +183,25 @@ public actor ColonyHarnessSession {
 
             do {
                 let outcome = try await handle.outcome.value
-                await self.processOutcome(outcome, runID: runID)
+                try await self.processOutcome(outcome, runID: runID)
             } catch {
                 if self.stopRequested {
-                    await self.emit(runID: runID, eventType: .runCancelled, payload: .none)
+                    try? await self.emit(runID: runID, eventType: .runCancelled, payload: .none)
+                } else {
+                    await self.handleRunFailure(
+                        runID: runID,
+                        error: ColonyHarnessSessionError.runFailed(String(describing: error))
+                    )
                 }
                 self.lifecycleStateStorage = self.stopRequested ? .stopped : .idle
             }
         }
     }
 
-    private func processRuntimeEvent(_ event: HiveEvent, runID: UUID) async {
+    private func processRuntimeEvent(_ event: HiveEvent, runID: UUID) async throws {
         switch event.kind {
         case .modelToken(let text):
-            await emit(
+            try await emit(
                 runID: runID,
                 eventType: .assistantDelta,
                 payload: .assistantDelta(ColonyHarnessAssistantDeltaPayload(delta: text))
@@ -201,7 +212,7 @@ public actor ColonyHarnessSession {
                 return
             }
 
-            await emit(
+            try await emit(
                 runID: runID,
                 eventType: .toolResult,
                 payload: .toolResult(
@@ -218,19 +229,19 @@ public actor ColonyHarnessSession {
         }
     }
 
-    private func processOutcome(_ outcome: HiveRunOutcome<ColonySchema>, runID: UUID) async {
+    private func processOutcome(_ outcome: HiveRunOutcome<ColonySchema>, runID: UUID) async throws {
         switch outcome {
         case .finished:
             lifecycleStateStorage = stopRequested ? .stopped : .idle
-            await emit(runID: runID, eventType: .runFinished, payload: .none)
+            try await emit(runID: runID, eventType: .runFinished, payload: .none)
 
         case .outOfSteps:
             lifecycleStateStorage = stopRequested ? .stopped : .idle
-            await emit(runID: runID, eventType: .runFinished, payload: .none)
+            try await emit(runID: runID, eventType: .runFinished, payload: .none)
 
         case .cancelled:
             lifecycleStateStorage = .stopped
-            await emit(runID: runID, eventType: .runCancelled, payload: .none)
+            try await emit(runID: runID, eventType: .runCancelled, payload: .none)
 
         case .interrupted(let interruption):
             switch interruption.interrupt.payload {
@@ -243,7 +254,7 @@ public actor ColonyHarnessSession {
                 interruptionQueue.append(queuedInterruption)
                 lifecycleStateStorage = .interrupted
                 for toolCall in toolCalls {
-                    await emit(
+                    try await emit(
                         runID: runID,
                         eventType: .toolRequest,
                         payload: .toolRequest(
@@ -255,12 +266,16 @@ public actor ColonyHarnessSession {
                         )
                     )
                 }
-                await emit(runID: runID, eventType: .runInterrupted, payload: .none)
+                try await emit(runID: runID, eventType: .runInterrupted, payload: .none)
             }
         }
     }
 
-    private func emit(runID: UUID, eventType: ColonyHarnessEventType, payload: ColonyHarnessEventPayload) async {
+    private func emit(
+        runID: UUID,
+        eventType: ColonyHarnessEventType,
+        payload: ColonyHarnessEventPayload
+    ) async throws {
         sequenceCounter += 1
         let envelope = ColonyHarnessEventEnvelope(
             protocolVersion: .v1,
@@ -277,11 +292,30 @@ public actor ColonyHarnessSession {
         }
 
         if let runStateStore {
-            try? await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            do {
+                try await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            } catch {
+                throw ColonyHarnessSessionError.runStatePersistenceFailed(String(describing: error))
+            }
         }
 
         if let observabilityEmitter {
             await observabilityEmitter.emitHarnessEnvelope(envelope, threadID: runtime.threadID)
+        }
+    }
+
+    private func handleRunFailure(runID: UUID, error: any Error) async {
+        if let runStateStore {
+            try? await runStateStore.markFailed(
+                runID: runID,
+                sessionID: sessionID,
+                threadID: runtime.threadID,
+                lastEventSequence: sequenceCounter
+            )
+        }
+        lifecycleStateStorage = stopRequested ? .stopped : .idle
+        for continuation in subscribers.values {
+            continuation.finish(throwing: error)
         }
     }
 

@@ -7,6 +7,7 @@ public enum ColonyRunPhase: String, Codable, Sendable, Equatable {
     case interrupted
     case finished
     case cancelled
+    case failed
 }
 
 public struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
@@ -80,6 +81,27 @@ public actor ColonyDurableRunStateStore {
         )
 
         let stateURL = runDirectory.appendingPathComponent("state.json", isDirectory: false)
+        try ColonyPersistenceIO.writeJSON(snapshot, to: stateURL, encoder: encoder, fileManager: fileManager)
+    }
+
+    public func markFailed(
+        runID: UUID,
+        sessionID: ColonyHarnessSessionID,
+        threadID: HiveThreadID,
+        lastEventSequence: Int,
+        timestamp: Date = Date()
+    ) async throws {
+        let runDirectory = runDirectoryURL(runID: runID)
+        try ColonyPersistenceIO.ensureDirectoryExists(runDirectory, fileManager: fileManager)
+        let stateURL = runDirectory.appendingPathComponent("state.json", isDirectory: false)
+        let snapshot = ColonyRunStateSnapshot(
+            runID: runID,
+            sessionID: sessionID,
+            threadID: threadID.rawValue,
+            phase: .failed,
+            lastEventSequence: lastEventSequence,
+            updatedAt: timestamp
+        )
         try ColonyPersistenceIO.writeJSON(snapshot, to: stateURL, encoder: encoder, fileManager: fileManager)
     }
 

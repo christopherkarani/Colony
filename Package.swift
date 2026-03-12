@@ -23,7 +23,7 @@ let package = Package(
         // Local fallback: set COLONY_USE_LOCAL_HIVE_PATH=1 for offline/dev workflows.
         useLocalHivePath
             ? .package(path: ".deps/Hive/Sources/Hive")
-            : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.2"),
+            : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.5"),
     ],
     targets: [
         .target(

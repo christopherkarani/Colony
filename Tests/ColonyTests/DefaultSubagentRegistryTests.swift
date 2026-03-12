@@ -13,6 +13,8 @@ private struct NoopLogger: HiveLogger {
     func error(_ message: String, metadata: [String: String]) {}
 }
 
+private struct FailingGraphProviderError: Error, Sendable {}
+
 private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
@@ -273,7 +275,7 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-default-subagent-registry"),
         input: "parent secret: 123",
@@ -336,7 +338,7 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-default-subagent-registry-recursion"),
         input: "trigger",
@@ -354,6 +356,37 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
     let toolMessageContent = toolMessage?.content ?? ""
     #expect(toolMessageContent.contains("Error:") == true)
     #expect(toolMessageContent.contains("subagent[general-purpose] completed") == false)
+}
+
+@Test("Default subagent registry surfaces graph compilation failure without crashing")
+func defaultSubagentRegistry_surfacesGraphCompilationFailure() async throws {
+    let registry = ColonyDefaultSubagentRegistry(
+        profile: .onDevice4k,
+        modelName: "test-subagent-model",
+        model: AnyHiveModelClient(GeneralPurposeDelegatingModel()),
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        filesystem: nil,
+        graphProvider: { throw FailingGraphProviderError() }
+    )
+
+    do {
+        _ = try await registry.run(
+            ColonySubagentRequest(
+                prompt: "Summarize",
+                subagentType: "general-purpose"
+            )
+        )
+        Issue.record("Expected graph compilation failure to be surfaced.")
+    } catch let error as ColonyDefaultSubagentRegistry.RegistryError {
+        guard case .graphCompilationFailed(let description) = error else {
+            Issue.record("Expected graphCompilationFailed, received \(error)")
+            return
+        }
+        #expect(description.contains("FailingGraphProviderError") == true)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @Test("Default subagent registry inherits on-device budget posture (4k-safe) by default")

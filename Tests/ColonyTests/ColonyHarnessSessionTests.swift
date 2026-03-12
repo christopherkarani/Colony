@@ -93,6 +93,22 @@ private final class SlowStreamingModel: HiveModelClient, @unchecked Sendable {
     }
 }
 
+private enum FailingHarnessModelError: Error, Sendable {
+    case simulatedFailure
+}
+
+private final class FailingHarnessModel: HiveModelClient, @unchecked Sendable {
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        throw FailingHarnessModelError.simulatedFailure
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: FailingHarnessModelError.simulatedFailure)
+        }
+    }
+}
+
 private actor HarnessEventSink {
     private var events: [ColonyHarnessEventEnvelope] = []
 
@@ -102,6 +118,18 @@ private actor HarnessEventSink {
 
     func snapshot() -> [ColonyHarnessEventEnvelope] {
         events
+    }
+}
+
+private actor HarnessErrorSink {
+    private var error: Error?
+
+    func set(_ error: Error) {
+        self.error = error
+    }
+
+    func current() -> Error? {
+        error
     }
 }
 
@@ -120,6 +148,13 @@ private func waitUntil(
     }
 
     return await condition()
+}
+
+private func temporaryDirectory(_ suffix: String) throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("colony-harness-tests-\(suffix)-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
 }
 
 @Test("Harness protocol envelope contracts are Codable and preserve v1 payload shape")
@@ -308,5 +343,51 @@ func harnessSessionStopCancelsActiveRun() async throws {
     #expect(cancelledObserved)
 
     #expect(await session.lifecycleState == .stopped)
+    streamTask.cancel()
+}
+
+@Test("Harness session surfaces runtime failures to stream consumers and marks durable state as failed")
+func harnessSessionSurfacesRuntimeFailureAndMarksRunStateFailed() async throws {
+    let temp = try temporaryDirectory("failure")
+    let runStateStore = try ColonyDurableRunStateStore(baseURL: temp)
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        threadID: HiveThreadID("thread-harness-failure"),
+        modelName: "failing-model",
+        model: AnyHiveModelClient(FailingHarnessModel()),
+        clock: HarnessNoopClock(),
+        logger: HarnessNoopLogger(),
+        configure: { configuration in
+            configuration.toolApprovalPolicy = .never
+        }
+    )
+
+    let sessionID = ColonyHarnessSessionID(rawValue: "session-harness-failure")
+    let session = ColonyHarnessSession.create(
+        runtime: runtime,
+        sessionID: sessionID,
+        runStateStore: runStateStore
+    )
+
+    let stream = await session.stream()
+    let errorSink = HarnessErrorSink()
+    let streamTask = Task {
+        do {
+            for try await _ in stream {}
+        } catch {
+            await errorSink.set(error)
+        }
+    }
+
+    try await session.start(input: "start")
+
+    let observedFailure = await waitUntil {
+        guard let failure = await errorSink.current() else { return false }
+        return String(describing: failure).contains("runFailed")
+    }
+    #expect(observedFailure)
+
+    let latestState = try await runStateStore.latestRunState(sessionID: sessionID)
+    #expect(latestState?.phase == .failed)
+    #expect(await session.lifecycleState == .idle)
     streamTask.cancel()
 }
