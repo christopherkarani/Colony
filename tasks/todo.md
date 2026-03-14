@@ -6,8 +6,8 @@
 - [x] Prioritize concrete issues (P0-P2), then write/extend regression tests that fail on current behavior.
 - [x] Implement minimal production-grade fixes with protocol/type-safe APIs where beneficial.
 - [x] Re-run targeted tests, then full `swift test`, then `swift build` for regression safety.
-- [ ] Commit changes with detailed message.
-- [ ] Push branch and open PR with detailed summary.
+- [x] Commit changes with detailed message.
+- [x] Push branch and open PR with detailed summary.
 
 ## Review
 - Fixed build-blocking dependency pin by moving Hive from `0.1.2` to `0.1.5` and updating lock/resolution metadata.
