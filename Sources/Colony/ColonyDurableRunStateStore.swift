@@ -84,11 +84,24 @@ public actor ColonyDurableRunStateStore {
     }
 
     public func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
-        let stateURL = runDirectoryURL(runID: runID).appendingPathComponent("state.json", isDirectory: false)
+        let runDirectory = runDirectoryURL(runID: runID)
+        let stateURL = runDirectory.appendingPathComponent("state.json", isDirectory: false)
         guard fileManager.fileExists(atPath: stateURL.path) else {
-            return nil
+            return try await rebuildStateSnapshotFromEvents(runDirectory: runDirectory, runID: runID)
         }
-        return try ColonyPersistenceIO.readJSON(ColonyRunStateSnapshot.self, from: stateURL, decoder: decoder)
+        let snapshot = try ColonyPersistenceIO.readJSON(ColonyRunStateSnapshot.self, from: stateURL, decoder: decoder)
+        guard let recovered = try await rebuildStateSnapshotFromEvents(
+            runDirectory: runDirectory,
+            runID: runID,
+            minimumSequence: snapshot.lastEventSequence + 1,
+            fallbackThreadID: snapshot.threadID
+        ) else {
+            return snapshot
+        }
+
+        // The event log is ahead of the snapshot; repair by returning and persisting recovered state.
+        try ColonyPersistenceIO.writeJSON(recovered, to: stateURL, encoder: encoder, fileManager: fileManager)
+        return recovered
     }
 
     public func listRunStates(limit: Int? = nil) async throws -> [ColonyRunStateSnapshot] {
@@ -196,5 +209,48 @@ public actor ColonyDurableRunStateStore {
         case .assistantDelta, .toolRequest, .toolResult, .toolDenied:
             return fallback
         }
+    }
+
+    private func rebuildStateSnapshotFromEvents(
+        runDirectory: URL,
+        runID: UUID,
+        minimumSequence: Int = 1,
+        fallbackThreadID: String = "unknown"
+    ) async throws -> ColonyRunStateSnapshot? {
+        let eventsDirectory = runDirectory.appendingPathComponent("events", isDirectory: true)
+        guard fileManager.fileExists(atPath: eventsDirectory.path) else {
+            return nil
+        }
+
+        let files = try ColonyPersistenceIO.listFiles(in: eventsDirectory, fileManager: fileManager)
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        var latestEvent: ColonyHarnessEventEnvelope?
+        for file in files {
+            let event = try ColonyPersistenceIO.readJSON(ColonyHarnessEventEnvelope.self, from: file, decoder: decoder)
+            guard event.sequence >= minimumSequence else { continue }
+            latestEvent = event
+        }
+
+        guard let latestEvent else {
+            return nil
+        }
+
+        var currentPhase: ColonyRunPhase = .running
+        for file in files {
+            let event = try ColonyPersistenceIO.readJSON(ColonyHarnessEventEnvelope.self, from: file, decoder: decoder)
+            guard event.sequence <= latestEvent.sequence else { continue }
+            currentPhase = phase(for: event.eventType, fallback: currentPhase)
+        }
+
+        return ColonyRunStateSnapshot(
+            runID: runID,
+            sessionID: latestEvent.sessionID,
+            threadID: fallbackThreadID,
+            phase: currentPhase,
+            lastEventSequence: latestEvent.sequence,
+            updatedAt: latestEvent.timestamp
+        )
     }
 }

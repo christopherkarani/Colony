@@ -109,23 +109,26 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         for provider in providers {
             let estimate = estimatedRequestCostUSD(for: request, provider: provider)
-            let eligibility = await state.checkEligibility(
+            let reservation = await state.reserveIfEligible(
                 provider: provider,
                 estimatedCostUSD: estimate,
                 policy: policy,
                 now: clock.now()
             )
 
-            guard eligibility.allowed else {
-                failures.append("\(provider.id):\(eligibility.reason)")
+            guard case let .reserved(token) = reservation else {
+                if case let .denied(reason) = reservation {
+                    failures.append("\(provider.id):\(reason)")
+                }
                 continue
             }
 
             do {
                 let response = try await attemptProvider(provider, request: request)
-                await state.recordUsage(provider: provider, costUSD: estimate, now: clock.now())
+                await state.finalizeReservation(token, success: true, now: clock.now())
                 return response
             } catch {
+                await state.finalizeReservation(token, success: false, now: clock.now())
                 failures.append("\(provider.id):\(String(describing: error))")
             }
         }
@@ -211,48 +214,84 @@ private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
 }
 
 private actor ColonyProviderBudgetState {
-    struct Eligibility: Sendable {
-        let allowed: Bool
-        let reason: String
+    struct ReservationToken: Sendable {
+        let id: UUID
+        let providerID: String
+        let estimatedCostUSD: Double
+    }
+
+    enum ReservationResult: Sendable {
+        case reserved(ReservationToken)
+        case denied(String)
     }
 
     private var requestTimestampsByProvider: [String: [Date]] = [:]
     private var globalRequestTimestamps: [Date] = []
     private var spentCostUSD: Double = 0
+    private var pendingByID: [UUID: ReservationToken] = [:]
+    private var pendingCountByProvider: [String: Int] = [:]
+    private var pendingCostUSD: Double = 0
 
-    func checkEligibility(
+    func reserveIfEligible(
         provider: ColonyProviderRouter.Provider,
         estimatedCostUSD: Double,
         policy: ColonyProviderRouter.Policy,
         now: Date
-    ) -> Eligibility {
+    ) -> ReservationResult {
         prune(now: now)
 
+        let globalCount = globalRequestTimestamps.count + pendingByID.count
         if let globalLimit = policy.globalMaxRequestsPerMinute,
            globalLimit >= 0,
-           globalRequestTimestamps.count >= globalLimit {
-            return Eligibility(allowed: false, reason: "global rate ceiling exceeded")
+           globalCount >= globalLimit {
+            return .denied("global rate ceiling exceeded")
         }
 
+        let providerCount = (requestTimestampsByProvider[provider.id]?.count ?? 0)
+            + (pendingCountByProvider[provider.id] ?? 0)
         if let providerLimit = provider.maxRequestsPerMinute,
            providerLimit >= 0,
-           (requestTimestampsByProvider[provider.id]?.count ?? 0) >= providerLimit {
-            return Eligibility(allowed: false, reason: "provider rate ceiling exceeded")
+           providerCount >= providerLimit {
+            return .denied("provider rate ceiling exceeded")
         }
 
         if let ceiling = policy.costCeilingUSD,
-           (spentCostUSD + estimatedCostUSD) > ceiling {
-            return Eligibility(allowed: false, reason: "cost ceiling exceeded")
+           (spentCostUSD + pendingCostUSD + estimatedCostUSD) > ceiling {
+            return .denied("cost ceiling exceeded")
         }
 
-        return Eligibility(allowed: true, reason: "eligible")
+        let token = ReservationToken(id: UUID(), providerID: provider.id, estimatedCostUSD: estimatedCostUSD)
+        pendingByID[token.id] = token
+        pendingCountByProvider[provider.id, default: 0] += 1
+        pendingCostUSD += estimatedCostUSD
+        return .reserved(token)
     }
 
-    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: Double, now: Date) {
+    func finalizeReservation(_ token: ReservationToken, success: Bool, now: Date) {
         prune(now: now)
+
+        guard pendingByID.removeValue(forKey: token.id) != nil else {
+            return
+        }
+
+        pendingCostUSD -= token.estimatedCostUSD
+        if pendingCostUSD < 0 {
+            pendingCostUSD = 0
+        }
+
+        if let providerCount = pendingCountByProvider[token.providerID] {
+            let updated = max(0, providerCount - 1)
+            if updated == 0 {
+                pendingCountByProvider.removeValue(forKey: token.providerID)
+            } else {
+                pendingCountByProvider[token.providerID] = updated
+            }
+        }
+
+        guard success else { return }
         globalRequestTimestamps.append(now)
-        requestTimestampsByProvider[provider.id, default: []].append(now)
-        spentCostUSD += costUSD
+        requestTimestampsByProvider[token.providerID, default: []].append(now)
+        spentCostUSD += token.estimatedCostUSD
     }
 
     private func prune(now: Date) {

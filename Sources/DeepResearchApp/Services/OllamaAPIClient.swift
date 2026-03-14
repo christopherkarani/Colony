@@ -27,9 +27,12 @@ extension OllamaAPIError: LocalizedError {
 }
 
 struct OllamaAPIClient: Sendable {
+    private static let defaultBaseURL = URL(string: "http://localhost:11434")
+        ?? URL(fileURLWithPath: "/")
+
     let baseURL: URL
 
-    init(baseURL: URL = URL(string: "http://localhost:11434")!) {
+    init(baseURL: URL = Self.defaultBaseURL) {
         self.baseURL = baseURL
     }
 

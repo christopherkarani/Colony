@@ -5,19 +5,28 @@ import ColonyCore
 public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private enum RegistryError: Error, Sendable, Equatable {
         case unsupportedSubagentType(String)
+        case graphCompilationFailed(String)
         case runInterrupted
         case runCancelled
         case runOutOfSteps(maxSteps: Int)
         case missingFullStoreOutput
     }
 
-    private static let compiledGraph: CompiledHiveGraph<ColonySchema> = {
+    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error> = {
         do {
-            return try ColonyAgent.compile()
+            return .success(try ColonyAgent.compile())
         } catch {
-            preconditionFailure("ColonyDefaultSubagentRegistry failed to compile ColonyAgent graph: \(error)")
+            return .failure(error)
         }
     }()
+
+    private static func defaultGraphProvider() throws -> CompiledHiveGraph<ColonySchema> {
+        do {
+            return try compiledGraphResult.get()
+        } catch {
+            throw RegistryError.graphCompilationFailed(String(reflecting: error))
+        }
+    }
 
     private let profile: ColonyProfile
     private let modelName: String
@@ -25,6 +34,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private let clock: any HiveClock
     private let logger: any HiveLogger
     private let filesystem: (any ColonyFileSystemBackend)?
+    private let graphProvider: @Sendable () throws -> CompiledHiveGraph<ColonySchema>
 
     public init(
         modelName: String,
@@ -51,12 +61,33 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         logger: any HiveLogger,
         filesystem: (any ColonyFileSystemBackend)? = nil
     ) {
+        self.init(
+            profile: profile,
+            modelName: modelName,
+            model: model,
+            clock: clock,
+            logger: logger,
+            filesystem: filesystem,
+            graphProvider: Self.defaultGraphProvider
+        )
+    }
+
+    init(
+        profile: ColonyProfile,
+        modelName: String,
+        model: AnyHiveModelClient,
+        clock: any HiveClock,
+        logger: any HiveLogger,
+        filesystem: (any ColonyFileSystemBackend)? = nil,
+        graphProvider: @escaping @Sendable () throws -> CompiledHiveGraph<ColonySchema>
+    ) {
         self.profile = profile
         self.modelName = modelName
         self.model = model
         self.clock = clock
         self.logger = logger
         self.filesystem = filesystem
+        self.graphProvider = graphProvider
     }
 
     public func listSubagents() -> [ColonySubagentDescriptor] {
@@ -112,7 +143,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             logger: logger,
             model: model
         )
-        let runtime = HiveRuntime(graph: Self.compiledGraph, environment: environment)
+        let runtime = try HiveRuntime(graph: try graphProvider(), environment: environment)
 
         let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
         let handle = await runtime.run(

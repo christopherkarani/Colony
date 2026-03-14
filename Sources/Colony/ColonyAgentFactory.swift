@@ -103,7 +103,7 @@ public struct ColonyAgentFactory: Sendable {
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 3_200,
                     keepLastMessages: 8,
-                    historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                    historyPathPrefix: .conversationHistoryDefault
                 ),
                 requestHardTokenLimit: 4_000,
                 toolResultEvictionTokenLimit: 700,
@@ -120,7 +120,7 @@ public struct ColonyAgentFactory: Sendable {
             - Prefer single focused tool calls over batching unrelated operations.
             """
             config.scratchbookPolicy = ColonyScratchbookPolicy(
-                pathPrefix: try! ColonyVirtualPath("/scratchbook"),
+                pathPrefix: .scratchbookDefault,
                 viewTokenLimit: 700,
                 maxRenderedItems: 20,
                 autoCompact: true
@@ -137,7 +137,7 @@ public struct ColonyAgentFactory: Sendable {
                 summarizationPolicy: ColonySummarizationPolicy(
                     triggerTokens: 170_000,
                     keepLastMessages: 20,
-                    historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                    historyPathPrefix: .conversationHistoryDefault
                 ),
                 requestHardTokenLimit: nil,
                 toolResultEvictionTokenLimit: 20_000,
@@ -388,7 +388,7 @@ public struct ColonyAgentFactory: Sendable {
         )
 
         let graph = try ColonyAgent.compile()
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)
