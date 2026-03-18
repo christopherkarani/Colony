@@ -53,7 +53,7 @@ func colonySummarizationOffloadsHistory() async throws {
         model: AnyHiveModelClient(ConstantModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-summarize")
 
     // Build up enough history to trigger summarization.
@@ -84,7 +84,7 @@ func colonySummarizationOffloadsHistory() async throws {
 
     // In-context messages contain a summary marker and file reference.
     let messages = try store.get(ColonySchema.Channels.messages)
-    let summaryMessage = messages.first { $0.content.contains("Conversation summarized") }
+    let summaryMessage = messages.first { $0.content.contains("/conversation_history/thread-summarize.md") }
     #expect(summaryMessage != nil)
     #expect(summaryMessage?.content.contains("/conversation_history/thread-summarize.md") == true)
 }

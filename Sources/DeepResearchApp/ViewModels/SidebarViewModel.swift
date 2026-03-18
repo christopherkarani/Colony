@@ -26,10 +26,4 @@ final class SidebarViewModel {
         }
     }
 
-    func updateConversation(_ conversation: Conversation) {
-        store.save(conversation)
-        if let idx = conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversations[idx] = conversation
-        }
-    }
 }

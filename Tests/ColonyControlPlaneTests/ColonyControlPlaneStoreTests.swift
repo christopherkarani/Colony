@@ -172,3 +172,52 @@ func controlPlaneServiceOperations() async throws {
     )
     #expect(shared.token.rawValue == "share:session:service")
 }
+
+@Test("Control-plane service rejects session creation for unknown project")
+func controlPlaneServiceRejectsSessionCreationForUnknownProject() async throws {
+    let service = ColonyControlPlaneService(
+        projectStore: InMemoryColonyProjectStore(),
+        sessionStore: ColonySessionStore()
+    )
+
+    let missingProjectID = ColonyProjectID(rawValue: "project:missing")
+    await #expect(throws: ColonyControlPlaneServiceError.projectNotFound(missingProjectID)) {
+        _ = try await service.createSession(
+            ColonySessionCreateInput(
+                sessionID: ColonyProductSessionID(rawValue: "session:missing"),
+                projectID: missingProjectID
+            )
+        )
+    }
+}
+
+@Test("Control-plane service rejects fork into unknown target project")
+func controlPlaneServiceRejectsForkForUnknownTargetProject() async throws {
+    let service = ColonyControlPlaneService(
+        projectStore: InMemoryColonyProjectStore(),
+        sessionStore: ColonySessionStore()
+    )
+
+    let existingProjectID = ColonyProjectID(rawValue: "project:existing")
+    _ = try await service.createProject(
+        ColonyProjectCreateInput(projectID: existingProjectID, name: "Existing")
+    )
+
+    _ = try await service.createSession(
+        ColonySessionCreateInput(
+            sessionID: ColonyProductSessionID(rawValue: "session:source"),
+            projectID: existingProjectID
+        )
+    )
+
+    let missingProjectID = ColonyProjectID(rawValue: "project:missing")
+    await #expect(throws: ColonyControlPlaneServiceError.projectNotFound(missingProjectID)) {
+        _ = try await service.forkSession(
+            ColonySessionForkInput(
+                sourceSessionID: ColonyProductSessionID(rawValue: "session:source"),
+                newSessionID: ColonyProductSessionID(rawValue: "session:forked"),
+                projectID: missingProjectID
+            )
+        )
+    }
+}

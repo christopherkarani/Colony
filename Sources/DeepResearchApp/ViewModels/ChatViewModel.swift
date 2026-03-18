@@ -44,6 +44,8 @@ final class ChatViewModel {
     private var activeRuntimeConfiguration: RuntimeConfiguration?
     private var pendingRuntimeConfiguration: RuntimeConfiguration?
     private var isRunInFlight: Bool = false
+    private var activeConversationID: UUID?
+    private let conversationStore: any ConversationPersisting
 
     struct PendingToolApproval {
         let interruptID: HiveInterruptID
@@ -77,9 +79,14 @@ final class ChatViewModel {
         var providerDisplayName: String { selectedBackend.displayName }
     }
 
+    init(conversationStore: any ConversationPersisting = ConversationStore()) {
+        self.conversationStore = conversationStore
+    }
+
     // MARK: - Configuration
 
     func configure(with settingsVM: SettingsViewModel, conversationID: UUID) {
+        loadConversation(conversationID: conversationID)
         configure(settings: settingsVM.settings)
     }
 
@@ -172,6 +179,7 @@ final class ChatViewModel {
         let assistantMessage = ChatMessage.assistantPlaceholder()
         let assistantID = assistantMessage.id
         messages.append(assistantMessage)
+        persistConversation()
 
         isProcessing = true
         isRunInFlight = true
@@ -340,6 +348,7 @@ final class ChatViewModel {
                         toolCalls: toolCalls
                     )
                     isProcessing = false
+                    persistConversation()
                     // The loop exits here; user calls approveTools() which creates a new handle
                     return
                 }
@@ -351,6 +360,7 @@ final class ChatViewModel {
         isProcessing = false
         currentPhase = phase
         isRunInFlight = false
+        persistConversation()
         applyPendingRuntimeReconfigurationIfNeeded()
     }
 
@@ -401,6 +411,7 @@ final class ChatViewModel {
         Details: \(details)
         """
         setAssistantMessageContent(id: id, content: message)
+        persistConversation()
     }
 
     private func addToolCall(
@@ -422,6 +433,47 @@ final class ChatViewModel {
         guard let msgIndex = messages.firstIndex(where: { $0.id == messageID }) else { return }
         guard let tcIndex = messages[msgIndex].toolCalls.firstIndex(where: { $0.id == toolCallID }) else { return }
         messages[msgIndex].toolCalls[tcIndex].status = status
+    }
+
+    private func loadConversation(conversationID: UUID) {
+        guard activeConversationID != conversationID else { return }
+        activeConversationID = conversationID
+        conversationStore.load()
+
+        if let existing = conversationStore.conversation(id: conversationID) {
+            messages = existing.messages
+            return
+        }
+
+        messages = []
+        conversationStore.save(Conversation(id: conversationID))
+    }
+
+    private func persistConversation() {
+        guard let activeConversationID else { return }
+
+        let existing = conversationStore.conversation(id: activeConversationID)
+        var conversation = existing ?? Conversation(id: activeConversationID)
+        conversation.messages = messages
+        if conversation.title == "New Research",
+           let firstUserMessage = messages.first(where: { $0.role == .user })
+        {
+            conversation.title = inferredTitle(from: firstUserMessage.content)
+        }
+        conversationStore.save(conversation)
+    }
+
+    private func inferredTitle(from userInput: String) -> String {
+        let trimmed = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return "New Research"
+        }
+        let collapsed = trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        if collapsed.count <= 60 {
+            return collapsed
+        }
+        let cutoff = collapsed.index(collapsed.startIndex, offsetBy: 57)
+        return String(collapsed[..<cutoff]) + "..."
     }
 
     private func extractFinalAnswer(from output: HiveRunOutput<ColonySchema>) -> String? {

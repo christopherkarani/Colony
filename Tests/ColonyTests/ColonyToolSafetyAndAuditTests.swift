@@ -139,7 +139,7 @@ func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
         model: AnyHiveModelClient(SingleMutatingCallModel()),
         checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("tool-safety-never"),
@@ -181,7 +181,7 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
         model: AnyHiveModelClient(DualMutatingCallsModel()),
         checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("tool-safety-partial")
 
     let handle = await runtime.run(
@@ -362,7 +362,7 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
         model: AnyHiveModelClient(SingleMutatingCallModel()),
         checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("tool-audit-runtime")
 
     let handle = await runtime.run(

@@ -238,6 +238,10 @@ private final class SubagentPromptCaptureModel: HiveModelClient, @unchecked Send
     }
 }
 
+private enum FailingGraphProviderError: Error, Equatable {
+    case compileFailure
+}
+
 @Test("Default subagent registry runs general-purpose in an isolated runtime (single tool result + shared filesystem access only)")
 func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly() async throws {
     let graph = try ColonyAgent.compile()
@@ -273,7 +277,7 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-default-subagent-registry"),
         input: "parent secret: 123",
@@ -336,7 +340,7 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
         model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-default-subagent-registry-recursion"),
         input: "trigger",
@@ -461,6 +465,28 @@ func defaultSubagentRegistry_advertisesCompactorSubagentType() async throws {
 
     let names = registry.listSubagents().map(\.name)
     #expect(names.contains("compactor") == true)
+}
+
+@Test("Default subagent registry surfaces graph compile failures without crashing")
+func defaultSubagentRegistry_surfacesGraphCompilationFailure() async throws {
+    let registry = ColonyDefaultSubagentRegistry(
+        profile: .onDevice4k,
+        modelName: "test-subagent-model",
+        model: AnyHiveModelClient(GeneralPurposeDelegatingModel()),
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        filesystem: nil,
+        graphProvider: { throw FailingGraphProviderError.compileFailure }
+    )
+
+    await #expect(throws: FailingGraphProviderError.compileFailure) {
+        _ = try await registry.run(
+            ColonySubagentRequest(
+                prompt: "hello",
+                subagentType: "general-purpose"
+            )
+        )
+    }
 }
 
 private func approximateToolTokens(_ tools: [HiveToolDefinition]) -> Int {
