@@ -1,5 +1,7 @@
 @_exported import ColonyCore
 @_exported import HiveCore
+@_exported import Swarm
+@_exported import HiveSwarm
 
 /// Namespace for the Colony module version.
 public enum ColonyVersion {

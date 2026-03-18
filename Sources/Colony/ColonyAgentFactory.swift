@@ -289,6 +289,7 @@ public struct ColonyAgentFactory: Sendable {
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
+        swarmTools: SwarmToolBridge? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,
@@ -319,6 +320,17 @@ public struct ColonyAgentFactory: Sendable {
         }
 
         configure(&configuration)
+
+        // Merge Swarm tool risk-level overrides into the configuration so
+        // ColonyToolSafetyPolicyEngine can assess Swarm tools correctly.
+        if let swarmTools {
+            for (name, level) in swarmTools.riskLevelOverrides {
+                // Don't overwrite explicit user-provided overrides.
+                if configuration.toolRiskLevelOverrides[name] == nil {
+                    configuration.toolRiskLevelOverrides[name] = level
+                }
+            }
+        }
 
         let resolvedSubagents: (any ColonySubagentRegistry)? = {
             if let subagents { return subagents }
@@ -376,6 +388,33 @@ public struct ColonyAgentFactory: Sendable {
             defaultCheckpointStore = AnyHiveCheckpointStore(ColonyInMemoryCheckpointStore<ColonySchema>())
         }
 
+        // Compose Swarm tools with any externally-provided tool registry.
+        // Swarm tools are filtered by active capabilities before they are exposed
+        // to the runtime model request path.
+        let capabilityFilteredSwarmTools: AnyHiveToolRegistry? = {
+            guard let swarmTools else { return nil }
+            return AnyHiveToolRegistry(
+                CapabilityFilteredSwarmToolRegistry(
+                    base: swarmTools,
+                    activeCapabilities: configuration.capabilities
+                )
+            )
+        }()
+
+        // Compose capability-filtered Swarm tools with any externally-provided tool registry.
+        let resolvedTools: AnyHiveToolRegistry? = {
+            switch (tools, capabilityFilteredSwarmTools) {
+            case let (existing?, bridge?):
+                return AnyHiveToolRegistry(CompositeToolRegistry(primary: existing, secondary: bridge))
+            case let (nil, bridge?):
+                return bridge
+            case let (existing?, nil):
+                return existing
+            case (nil, nil):
+                return nil
+            }
+        }()
+
         let environment = HiveEnvironment<ColonySchema>(
             context: context,
             clock: clock,
@@ -383,7 +422,7 @@ public struct ColonyAgentFactory: Sendable {
             model: model,
             modelRouter: modelRouter,
             inferenceHints: inferenceHints,
-            tools: tools,
+            tools: resolvedTools,
             checkpointStore: defaultCheckpointStore
         )
 
@@ -399,5 +438,40 @@ public struct ColonyAgentFactory: Sendable {
             options: options
         )
         return ColonyRuntime(runControl: runControl)
+    }
+}
+
+/// Filters Swarm tools by active Colony capabilities.
+struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
+    let base: SwarmToolBridge
+    let activeCapabilities: ColonyCapabilities
+
+    func listTools() -> [HiveToolDefinition] {
+        base.listTools(filteredBy: activeCapabilities)
+    }
+
+    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+        try await base.invoke(call)
+    }
+}
+
+/// Merges two `HiveToolRegistry` implementations.
+/// Primary tools take precedence when names collide (deduplication happens in ColonyAgent).
+struct CompositeToolRegistry: HiveToolRegistry, Sendable {
+    let primary: AnyHiveToolRegistry
+    let secondary: AnyHiveToolRegistry
+
+    func listTools() -> [HiveToolDefinition] {
+        // Colony deduplication keeps the last definition by name.
+        // Listing secondary first preserves primary precedence under collisions.
+        secondary.listTools() + primary.listTools()
+    }
+
+    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+        let primaryNames = Set(primary.listTools().map(\.name))
+        if primaryNames.contains(call.name) {
+            return try await primary.invoke(call)
+        }
+        return try await secondary.invoke(call)
     }
 }

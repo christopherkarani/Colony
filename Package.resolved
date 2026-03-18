@@ -1,13 +1,13 @@
 {
-  "originHash" : "a9aed9c2ca306cd030d24aca15ab2a4feacffbce8953bbb23a9e6ff227049e0f",
+  "originHash" : "72790659670a6c62b753a403bc1e4ff8787745ee338cd085dd48159012154323",
   "pins" : [
     {
       "identity" : "conduit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Conduit",
       "state" : {
-        "revision" : "d91a2b6c4bdc947dd10459e36e7959035b2be691",
-        "version" : "0.3.3"
+        "revision" : "b7ccafa44c8bb19d0f74aeb45d9dbd05563a55c5",
+        "version" : "0.3.5"
       }
     },
     {
@@ -20,6 +20,15 @@
       }
     },
     {
+      "identity" : "swarm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Swarm.git",
+      "state" : {
+        "revision" : "cc6f345bc0d265d4c0dc66dde443634a6e9af2b5",
+        "version" : "0.3.4"
+      }
+    },
+    {
       "identity" : "swift-collections",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections.git",
@@ -29,12 +38,21 @@
       }
     },
     {
+      "identity" : "swift-jinja",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-jinja.git",
+      "state" : {
+        "revision" : "d81197f35f41445bc10e94600795e68c6f5e94b0",
+        "version" : "2.3.1"
+      }
+    },
+    {
       "identity" : "swift-log",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-log.git",
       "state" : {
-        "revision" : "2778fd4e5a12a8aaa30a3ee8285f4ce54c5f3181",
-        "version" : "1.9.1"
+        "revision" : "bbd81b6725ae874c69e9b8c8804d462356b55523",
+        "version" : "1.10.1"
       }
     },
     {
@@ -56,12 +74,21 @@
       }
     },
     {
+      "identity" : "swift-transformers",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-transformers",
+      "state" : {
+        "revision" : "573e5c9036c2f136b3a8a071da8e8907322403d0",
+        "version" : "1.1.6"
+      }
+    },
+    {
       "identity" : "usearch",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/unum-cloud/USearch.git",
       "state" : {
-        "revision" : "7306bb446be5f0f0c529ec8acdc57361cef8a8a7",
-        "version" : "2.23.0"
+        "revision" : "40d127f472e9073875566f0e9308c0302b89100a",
+        "version" : "2.24.0"
       }
     },
     {
@@ -69,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Wax.git",
       "state" : {
-        "revision" : "39066b6447f8aaa468db317ccffe7ed46d44ed2c",
-        "version" : "0.1.4"
+        "revision" : "aeb28ac8e7386c42bb229d5a1d23aea245e5f7bb",
+        "version" : "0.1.7"
       }
     }
   ],

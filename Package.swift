@@ -24,6 +24,8 @@ let package = Package(
         useLocalHivePath
             ? .package(path: ".deps/Hive/Sources/Hive")
             : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.2"),
+        // Swarm agent framework — @Tool macros, multi-agent orchestration, Wax memory, Conduit model backends.
+        .package(url: "https://github.com/christopherkarani/Swarm.git", from: "0.3.4"),
     ],
     targets: [
         .target(
@@ -38,6 +40,8 @@ let package = Package(
             dependencies: [
                 "ColonyCore",
                 .product(name: "HiveCore", package: "Hive"),
+                .product(name: "Swarm", package: "Swarm"),
+                .product(name: "HiveSwarm", package: "Swarm"),
             ],
             exclude: ["CLAUDE.md"]
         ),
