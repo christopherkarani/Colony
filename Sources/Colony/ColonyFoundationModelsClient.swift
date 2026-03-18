@@ -190,12 +190,12 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         case .compact:
             let toolList = tools
                 .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-                .map { tool in
+                .map { tool -> String in
                     let argsSummary = compactArgumentSummary(from: tool.parametersJSONSchema)
-                    if argsSummary.isEmpty {
-                        return "- \(tool.name)"
+                    if argsSummary.isEmpty || argsSummary == "(none)" {
+                        return "- \(tool.name): \(tool.description)"
                     }
-                    return "- \(tool.name)\n  args: \(argsSummary)"
+                    return "- \(tool.name): \(tool.description) | args: \(argsSummary)"
                 }
                 .joined(separator: "\n")
 
@@ -210,7 +210,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         case .verbose:
             let toolList = tools
                 .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-                .map { tool in
+                .map { tool -> String in
                     """
                     - \(tool.name): \(tool.description)
                       parameters_json_schema: \(tool.parametersJSONSchema)

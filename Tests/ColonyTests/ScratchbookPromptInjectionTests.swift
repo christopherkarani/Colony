@@ -114,7 +114,7 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
@@ -182,7 +182,7 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
@@ -226,7 +226,7 @@ func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
@@ -287,7 +287,7 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
@@ -353,7 +353,7 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
@@ -396,7 +396,7 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
             logger: NoopLogger(),
             model: AnyHiveModelClient(recordingModel)
         )
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         _ = try await (await runtime.run(
             threadID: HiveThreadID("thread-tools-section-\(includeToolsInPrompt)"),
             input: "hi",

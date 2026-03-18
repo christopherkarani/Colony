@@ -319,6 +319,23 @@ public struct ColonyAgentFactory: Sendable {
             }
         }
 
+        if filesystem != nil { configuration.capabilities.insert(.filesystem) }
+        if shell != nil {
+            configuration.capabilities.insert(.shell)
+            configuration.capabilities.insert(.shellSessions)
+        }
+        if git != nil { configuration.capabilities.insert(.git) }
+        if lsp != nil { configuration.capabilities.insert(.lsp) }
+        if applyPatch != nil { configuration.capabilities.insert(.applyPatch) }
+        if webSearch != nil { configuration.capabilities.insert(.webSearch) }
+        if codeSearch != nil { configuration.capabilities.insert(.codeSearch) }
+        if memory != nil { configuration.capabilities.insert(.memory) }
+        if mcp != nil { configuration.capabilities.insert(.mcp) }
+        if plugins != nil { configuration.capabilities.insert(.plugins) }
+        if let swarmTools {
+            configuration.capabilities.formUnion(swarmTools.requiredCapabilities)
+        }
+
         configure(&configuration)
 
         // Merge Swarm tool risk-level overrides into the configuration so
@@ -347,19 +364,29 @@ public struct ColonyAgentFactory: Sendable {
         }()
 
         // Ensure capability gating is consistent with configured backends.
-        var capabilities = configuration.capabilities
-        if filesystem != nil { capabilities.insert(.filesystem) } else { capabilities.remove(.filesystem) }
-        if shell != nil { capabilities.insert(.shell) } else { capabilities.remove(.shell) }
-        if shell != nil { capabilities.insert(.shellSessions) } else { capabilities.remove(.shellSessions) }
-        if git != nil { capabilities.insert(.git) } else { capabilities.remove(.git) }
-        if lsp != nil { capabilities.insert(.lsp) } else { capabilities.remove(.lsp) }
-        if applyPatch != nil { capabilities.insert(.applyPatch) } else { capabilities.remove(.applyPatch) }
-        if webSearch != nil { capabilities.insert(.webSearch) } else { capabilities.remove(.webSearch) }
-        if codeSearch != nil { capabilities.insert(.codeSearch) } else { capabilities.remove(.codeSearch) }
-        if memory != nil { capabilities.insert(.memory) } else { capabilities.remove(.memory) }
-        if mcp != nil { capabilities.insert(.mcp) } else { capabilities.remove(.mcp) }
-        if plugins != nil { capabilities.insert(.plugins) } else { capabilities.remove(.plugins) }
-        if resolvedSubagents != nil { capabilities.insert(.subagents) } else { capabilities.remove(.subagents) }
+        let requestedCapabilities = configuration.capabilities
+        let swarmCapabilities = swarmTools?.requiredCapabilities ?? []
+        var capabilities: ColonyCapabilities = []
+
+        func retainIfRequested(_ capability: ColonyCapabilities, available: Bool) {
+            guard requestedCapabilities.contains(capability), available else { return }
+            capabilities.insert(capability)
+        }
+
+        retainIfRequested(.planning, available: true)
+        retainIfRequested(.scratchbook, available: true)
+        retainIfRequested(.filesystem, available: filesystem != nil || swarmCapabilities.contains(.filesystem))
+        retainIfRequested(.shell, available: shell != nil || swarmCapabilities.contains(.shell))
+        retainIfRequested(.shellSessions, available: shell != nil || swarmCapabilities.contains(.shellSessions))
+        retainIfRequested(.git, available: git != nil || swarmCapabilities.contains(.git))
+        retainIfRequested(.lsp, available: lsp != nil || swarmCapabilities.contains(.lsp))
+        retainIfRequested(.applyPatch, available: applyPatch != nil || swarmCapabilities.contains(.applyPatch))
+        retainIfRequested(.webSearch, available: webSearch != nil || swarmCapabilities.contains(.webSearch))
+        retainIfRequested(.codeSearch, available: codeSearch != nil || swarmCapabilities.contains(.codeSearch))
+        retainIfRequested(.mcp, available: mcp != nil || swarmCapabilities.contains(.mcp))
+        retainIfRequested(.plugins, available: plugins != nil || swarmCapabilities.contains(.plugins))
+        retainIfRequested(.memory, available: memory != nil || swarmCapabilities.contains(.memory))
+        retainIfRequested(.subagents, available: resolvedSubagents != nil)
         configuration.capabilities = capabilities
 
         let context = ColonyContext(
@@ -427,7 +454,7 @@ public struct ColonyAgentFactory: Sendable {
         )
 
         let graph = try ColonyAgent.compile()
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)

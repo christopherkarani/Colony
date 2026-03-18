@@ -123,14 +123,16 @@ private final class ToolCaptureModel: HiveModelClient, @unchecked Sendable {
 /// (the @Tool macro would generate this in real code).
 private struct EchoTool: AnyJSONTool {
     var name: String { "echo" }
-    var schema: ToolSchema {
-        ToolSchema(
-            name: "echo",
-            description: "Echoes the input message back",
-            parameters: [
-                ToolParameter(name: "message", description: "The message to echo", type: .string, isRequired: true)
-            ]
-        )
+    var description: String { "Echoes the input message back" }
+    var parameters: [ToolParameter] {
+        [
+            ToolParameter(
+                name: "message",
+                description: "The message to echo",
+                type: .string,
+                isRequired: true
+            ),
+        ]
     }
 
     func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
@@ -139,6 +141,33 @@ private struct EchoTool: AnyJSONTool {
         }
         return .string("Echo: \(message)")
     }
+}
+
+private actor ContextOnlyMemory: Memory {
+    let fallbackContext: String
+
+    init(fallbackContext: String) {
+        self.fallbackContext = fallbackContext
+    }
+
+    var count: Int {
+        get async { 0 }
+    }
+
+    var isEmpty: Bool {
+        get async { true }
+    }
+
+    func add(_ message: MemoryMessage) async {}
+
+    func context(for query: String, tokenLimit: Int) async -> String {
+        guard !query.isEmpty, tokenLimit > 0 else { return "" }
+        return fallbackContext
+    }
+
+    func allMessages() async -> [MemoryMessage] { [] }
+
+    func clear() async {}
 }
 
 // MARK: - SwarmToolBridge Tests
@@ -198,6 +227,30 @@ func colonyFactoryFiltersSwarmToolAdvertisements() async throws {
 
     let seenNames = captureModel.seenToolNames()
     #expect(seenNames.contains("echo") == false)
+}
+
+@Test("ColonyAgentFactory advertises Swarm tools by default when capability is provided by bridge")
+func colonyFactoryAdvertisesSwarmToolAdvertisementsByDefault() async throws {
+    let bridge = try SwarmToolBridge(
+        tools: [EchoTool()],
+        capability: .plugins,
+        riskLevel: .readOnly
+    )
+    let captureModel = ToolCaptureModel()
+
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        profile: .cloud,
+        modelName: "test-model",
+        model: AnyHiveModelClient(captureModel),
+        swarmTools: bridge,
+        filesystem: ColonyInMemoryFileSystemBackend()
+    )
+
+    let handle = await runtime.sendUserMessage("hello")
+    _ = try await handle.outcome.value
+
+    let seenNames = captureModel.seenToolNames()
+    #expect(seenNames.contains("echo"))
 }
 
 @Test("SwarmToolBridge invokes tool and returns result")
@@ -267,30 +320,54 @@ func compositeToolRegistryPrecedenceIsAligned() async throws {
 
 @Test("SwarmMemoryAdapter remembers and recalls")
 func swarmMemoryAdapterRoundTrip() async throws {
-    let inMemory = InMemoryBackend()
-    let adapter = SwarmMemoryAdapter(inMemory)
+    let adapter = SwarmMemoryAdapter(
+        backend: InMemoryBackend(),
+        conversationID: "test-roundtrip"
+    )
 
     let rememberResult = try await adapter.remember(
         ColonyMemoryRememberRequest(content: "Swift is a programming language", tags: ["lang"])
     )
-    #expect(rememberResult.id.hasPrefix("swarm-mem-"))
+    #expect(UUID(uuidString: rememberResult.id) != nil)
 
     let recallResult = try await adapter.recall(
         ColonyMemoryRecallRequest(query: "Swift programming", limit: 5)
     )
     #expect(!recallResult.items.isEmpty)
     #expect(recallResult.items.first?.content.contains("Swift") == true)
+    #expect(recallResult.items.first?.tags == ["lang"])
 }
 
 @Test("SwarmMemoryAdapter returns empty on no match")
 func swarmMemoryAdapterEmptyRecall() async throws {
-    let inMemory = InMemoryBackend()
-    let adapter = SwarmMemoryAdapter(inMemory)
+    let adapter = SwarmMemoryAdapter(
+        backend: InMemoryBackend(),
+        conversationID: "test-empty"
+    )
+
+    _ = try await adapter.remember(
+        ColonyMemoryRememberRequest(content: "iOS and macOS development")
+    )
 
     let result = try await adapter.recall(
         ColonyMemoryRecallRequest(query: "nonexistent topic", limit: 5)
     )
     #expect(result.items.isEmpty)
+}
+
+@Test("SwarmMemoryAdapter falls back to contextual recall when memory has no local messages")
+func swarmMemoryAdapterFallsBackToContextWhenMessagesUnavailable() async throws {
+    let adapter = SwarmMemoryAdapter(
+        ContextOnlyMemory(fallbackContext: "[assistant]: Wax fallback context")
+    )
+
+    let result = try await adapter.recall(
+        ColonyMemoryRecallRequest(query: "wax fallback", limit: 3)
+    )
+
+    #expect(result.items.count == 1)
+    #expect(result.items.first?.content == "[assistant]: Wax fallback context")
+    #expect(result.items.first?.metadata["source"] == "swarm-memory")
 }
 
 // MARK: - SwarmSubagentAdapter Tests
@@ -300,14 +377,11 @@ private actor StubAgent: AgentRuntime {
     nonisolated let instructions: String = "Test agent"
     nonisolated let configuration: AgentConfiguration = .default
 
-    func run(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) async throws -> AgentResult {
-        let builder = AgentResult.Builder()
-        builder.start()
-        builder.setOutput("Handled: \(input)")
-        return builder.build()
+    func run(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) async throws -> AgentResult {
+        AgentResult(output: "Handled: \(input)")
     }
 
-    nonisolated func stream(_ input: String, session: (any Session)? = nil, hooks: (any RunHooks)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
+    nonisolated func stream(_ input: String, session: (any Session)? = nil, observer: (any AgentObserver)? = nil) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { $0.finish() }
     }
 
@@ -380,7 +454,7 @@ func swarmToolThroughColonyPipeline() async throws {
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("swarm-integration-test")
 
     let handle = await runtime.run(
@@ -448,7 +522,7 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("swarm-approval-test")
 
     let handle = await runtime.run(
@@ -490,6 +564,5 @@ func makeRuntimeWithSwarmTools() throws {
         filesystem: ColonyInMemoryFileSystemBackend()
     )
 
-    // Runtime should be successfully created
-    #expect(runtime != nil)
+    #expect(runtime.runControl.threadID.rawValue.hasPrefix("colony:"))
 }

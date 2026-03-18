@@ -81,6 +81,20 @@ public struct SwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
             }
         }
 
+        if !request.fileReferences.isEmpty {
+            let references = request.fileReferences.map { reference in
+                var components = ["Path: \(reference.path.rawValue)"]
+                if let offset = reference.offset {
+                    components.append("Offset: \(offset)")
+                }
+                if let limit = reference.limit {
+                    components.append("Limit: \(limit)")
+                }
+                return components.joined(separator: ", ")
+            }
+            sections.append("File references:\n" + references.joined(separator: "\n"))
+        }
+
         return sections.joined(separator: "\n\n")
     }
 }
