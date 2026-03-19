@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import HiveCore
+import ColonyCore
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -23,7 +24,13 @@ public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConv
     }
 }
 
-public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
+extension ColonyFoundationModelsClientError: LocalizedError {
+    public var errorDescription: String? {
+        description
+    }
+}
+
+public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityReportingModelClient, Sendable {
     public struct Configuration: Sendable {
         public enum ToolInstructionVerbosity: Sendable {
             case compact
@@ -58,6 +65,10 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
+    }
+
+    public var colonyModelCapabilities: ColonyModelCapabilities {
+        [.managedToolPrompting, .managedStructuredOutputs]
     }
 
     public func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
@@ -108,22 +119,36 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
     private func makeResponse(
         rawModelText: String,
-        toolsAllowed: Set<String>
+        toolsAllowed: Set<String>,
+        structuredOutput: HiveStructuredOutputFormat?
     ) throws -> HiveChatResponse {
         let parsed = try parseFinalAssistantOutput(
             raw: rawModelText,
             toolsAllowed: toolsAllowed
         )
+        let structuredPayload: HiveStructuredOutput? = if parsed.toolCalls.isEmpty,
+                                                         let structuredOutput
+        {
+            HiveStructuredOutput(format: structuredOutput, json: parsed.visibleText)
+        } else {
+            nil
+        }
         let message = HiveChatMessage(
             id: messageID(),
             role: .assistant,
             content: parsed.visibleText,
-            toolCalls: parsed.toolCalls
+            toolCalls: parsed.toolCalls,
+            structuredOutput: structuredPayload
         )
         return HiveChatResponse(message: message)
     }
 
-    private func makePrompt(from request: HiveChatRequest) -> (instructions: String?, prompt: String, toolsAllowed: Set<String>) {
+    private func makePrompt(from request: HiveChatRequest) -> (
+        instructions: String?,
+        prompt: String,
+        toolsAllowed: Set<String>,
+        structuredOutput: HiveStructuredOutputFormat?
+    ) {
         var systemParts: [String] = []
         var promptLines: [String] = []
 
@@ -166,6 +191,9 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         if let toolInstructions {
             instructionsParts.append(toolInstructions)
         }
+        if let structuredInstruction = makeStructuredOutputInstructions(format: request.structuredOutput) {
+            instructionsParts.append(structuredInstruction)
+        }
         if let additional = configuration.additionalInstructions,
            additional.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         {
@@ -174,7 +202,12 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
         let instructions = instructionsParts.isEmpty ? nil : instructionsParts.joined(separator: "\n\n")
         let prompt = promptLines.joined(separator: "\n\n")
-        return (instructions: instructions, prompt: prompt, toolsAllowed: toolsAllowed)
+        return (
+            instructions: instructions,
+            prompt: prompt,
+            toolsAllowed: toolsAllowed,
+            structuredOutput: request.structuredOutput
+        )
     }
 
     func makeToolInstructions(tools: [HiveToolDefinition]) -> String? {
@@ -184,12 +217,12 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         case .compact:
             let toolList = tools
                 .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-                .map { tool in
+                .map { tool -> String in
                     let argsSummary = compactArgumentSummary(from: tool.parametersJSONSchema)
-                    if argsSummary.isEmpty {
-                        return "- \(tool.name)"
+                    if argsSummary.isEmpty || argsSummary == "(none)" {
+                        return "- \(tool.name): \(tool.description)"
                     }
-                    return "- \(tool.name)\n  args: \(argsSummary)"
+                    return "- \(tool.name): \(tool.description) | args: \(argsSummary)"
                 }
                 .joined(separator: "\n")
 
@@ -204,7 +237,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         case .verbose:
             let toolList = tools
                 .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-                .map { tool in
+                .map { tool -> String in
                     """
                     - \(tool.name): \(tool.description)
                       parameters_json_schema: \(tool.parametersJSONSchema)
@@ -253,6 +286,21 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
     private func renderToolCallMarkup(from call: HiveToolCall) -> String {
         "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id))\",\"name\":\"\(jsonEscaped(call.name))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
+    }
+
+    private func makeStructuredOutputInstructions(format: HiveStructuredOutputFormat?) -> String? {
+        guard let format else { return nil }
+        switch format {
+        case .jsonObject:
+            return "Structured output:\n- Respond with valid JSON only.\n- Do not include markdown fences or explanatory prose."
+        case .jsonSchema(_, let schemaJSON):
+            return """
+            Structured output:
+            - Respond with valid JSON only.
+            - It must match this JSON schema exactly:
+            \(schemaJSON)
+            """
+        }
     }
 
     private func jsonEscaped(_ string: String) -> String {
@@ -427,7 +475,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
                         throw ColonyFoundationModelsClientError.foundationModelsUnavailable
                     }
 
-                    let (instructions, prompt, toolsAllowed) = makePrompt(from: request)
+                    let (instructions, prompt, toolsAllowed, structuredOutput) = makePrompt(from: request)
 
 
                     let session = makeSession(instructions: instructions)
@@ -465,7 +513,8 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
                     let response = try makeResponse(
                         rawModelText: lastRaw,
-                        toolsAllowed: toolsAllowed
+                        toolsAllowed: toolsAllowed,
+                        structuredOutput: structuredOutput
                     )
 
                     continuation.yield(.final(response))

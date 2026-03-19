@@ -76,3 +76,33 @@ func onDeviceRouter_requiresOnDeviceAndFailsWhenUnavailable() async throws {
     }
 }
 
+@Test("On-device router reports the selected on-device capabilities from inference hints")
+func onDeviceRouter_reportsSelectedOnDeviceCapabilities() {
+    let router = ColonyOnDeviceModelRouter(
+        onDevice: AnyHiveModelClient(FixedResponseModel(content: "on-device")),
+        fallback: AnyHiveModelClient(FixedResponseModel(content: "fallback")),
+        onDeviceCapabilities: [.managedToolPrompting],
+        fallbackCapabilities: []
+    )
+
+    let hints = HiveInferenceHints(
+        latencyTier: .interactive,
+        privacyRequired: true,
+        tokenBudget: nil,
+        networkState: .online
+    )
+
+    #expect(router.colonyModelCapabilities(hints: hints) == [.managedToolPrompting])
+}
+
+@Test("On-device router reports fallback capabilities when no hints are provided")
+func onDeviceRouter_reportsFallbackCapabilitiesWhenHintsMissing() {
+    let router = ColonyOnDeviceModelRouter(
+        onDevice: AnyHiveModelClient(FixedResponseModel(content: "on-device")),
+        fallback: AnyHiveModelClient(FixedResponseModel(content: "fallback")),
+        onDeviceCapabilities: [.managedToolPrompting],
+        fallbackCapabilities: [.nativeToolCalling]
+    )
+
+    #expect(router.colonyModelCapabilities(hints: nil) == [.nativeToolCalling])
+}

@@ -19,7 +19,8 @@ enum ResearchAssistantModelSelectionError: Error, Sendable, Equatable, CustomStr
 
 struct ResearchAssistantResolvedModel: Sendable {
     var selection: ResearchAssistantModelSelection
-    var client: AnyHiveModelClient
+    var client: any HiveModelClient
+    var capabilities: ColonyModelCapabilities
 }
 
 struct ResearchAssistantModelResolver: Sendable {
@@ -35,25 +36,29 @@ struct ResearchAssistantModelResolver: Sendable {
             if isFoundationAvailable() {
                 return ResearchAssistantResolvedModel(
                     selection: .foundation,
-                    client: AnyHiveModelClient(ColonyFoundationModelsClient())
+                    client: ColonyFoundationModelsClient(),
+                    capabilities: [.managedToolPrompting]
                 )
             }
             return ResearchAssistantResolvedModel(
                 selection: .mock,
-                client: AnyHiveModelClient(MockResearchModel())
+                client: MockResearchModel(),
+                capabilities: []
             )
         case .foundation:
             if isFoundationAvailable() {
                 return ResearchAssistantResolvedModel(
                     selection: .foundation,
-                    client: AnyHiveModelClient(ColonyFoundationModelsClient())
+                    client: ColonyFoundationModelsClient(),
+                    capabilities: [.managedToolPrompting]
                 )
             }
             throw ResearchAssistantModelSelectionError.foundationModeRequiresAvailableModel
         case .mock:
             return ResearchAssistantResolvedModel(
                 selection: .mock,
-                client: AnyHiveModelClient(MockResearchModel())
+                client: MockResearchModel(),
+                capabilities: []
             )
         }
     }
