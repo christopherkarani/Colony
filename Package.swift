@@ -4,6 +4,7 @@ import Foundation
 import PackageDescription
 
 let useLocalHivePath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_HIVE_PATH"] == "1"
+let useLocalSwarmPath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_SWARM_PATH"] == "1"
 
 let package = Package(
     name: "Colony",
@@ -22,24 +23,33 @@ let package = Package(
         // Default: remote pinned Hive dependency.
         // Local fallback: set COLONY_USE_LOCAL_HIVE_PATH=1 for offline/dev workflows.
         useLocalHivePath
-            ? .package(path: ".deps/Hive/Sources/Hive")
-            : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.2"),
+            ? .package(path: "../../Hive")
+            : .package(
+                url: "https://github.com/christopherkarani/Hive",
+                revision: "3bec1b2b8f2c3b2f24765656e83f31c27b9ff4f2"
+            ),
+        // Swarm agent framework — @Tool macros, multi-agent orchestration, Wax memory, Conduit model backends.
+        useLocalSwarmPath
+            ? .package(path: "../Swarm")
+            : .package(
+                url: "https://github.com/christopherkarani/Swarm.git",
+                exact: "0.4.0"
+            ),
     ],
     targets: [
         .target(
             name: "ColonyCore",
             dependencies: [
                 .product(name: "HiveCore", package: "Hive"),
-            ],
-            exclude: ["CLAUDE.md"]
+            ]
         ),
         .target(
             name: "Colony",
             dependencies: [
                 "ColonyCore",
                 .product(name: "HiveCore", package: "Hive"),
-            ],
-            exclude: ["CLAUDE.md"]
+                .product(name: "Swarm", package: "Swarm"),
+            ]
         ),
         .target(
             name: "ColonyControlPlane",
@@ -51,23 +61,16 @@ let package = Package(
         ),
         .executableTarget(
             name: "ColonyResearchAssistantExample",
-            dependencies: ["Colony"],
-            exclude: ["CLAUDE.md"],
+            dependencies: ["Colony"]
         ),
         .executableTarget(
             name: "DeepResearchApp",
             dependencies: ["Colony"],
-            path: "Sources/DeepResearchApp",
-            exclude: [
-                "Models/CLAUDE.md",
-                "ViewModels/CLAUDE.md",
-                "Views/CLAUDE.md",
-            ]
+            path: "Sources/DeepResearchApp"
         ),
         .testTarget(
             name: "ColonyTests",
-            dependencies: ["Colony"],
-            exclude: ["CLAUDE.md"]
+            dependencies: ["Colony"]
         ),
         .testTarget(
             name: "ColonyExecutionHardeningTests",

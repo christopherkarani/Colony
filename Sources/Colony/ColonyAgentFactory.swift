@@ -19,16 +19,16 @@ public enum ColonyLane: String, Sendable, CaseIterable {
 
 public struct ColonyLaneConfigurationPreset: Sendable {
     public var requiredCapabilities: ColonyCapabilities
-    public var includeToolListInSystemPrompt: Bool?
+    public var toolPromptStrategy: ColonyToolPromptStrategy?
     public var additionalSystemPrompt: String?
 
     public init(
         requiredCapabilities: ColonyCapabilities = [],
-        includeToolListInSystemPrompt: Bool? = nil,
+        toolPromptStrategy: ColonyToolPromptStrategy? = nil,
         additionalSystemPrompt: String? = nil
     ) {
         self.requiredCapabilities = requiredCapabilities
-        self.includeToolListInSystemPrompt = includeToolListInSystemPrompt
+        self.toolPromptStrategy = toolPromptStrategy
         self.additionalSystemPrompt = additionalSystemPrompt
     }
 }
@@ -125,7 +125,7 @@ public struct ColonyAgentFactory: Sendable {
                 maxRenderedItems: 20,
                 autoCompact: true
             )
-            config.includeToolListInSystemPrompt = false
+            config.toolPromptStrategy = .automatic
             return config
 
         case .cloud:
@@ -144,7 +144,7 @@ public struct ColonyAgentFactory: Sendable {
                 systemPromptMemoryTokenLimit: nil,
                 systemPromptSkillsTokenLimit: nil
             )
-            config.includeToolListInSystemPrompt = true
+            config.toolPromptStrategy = .automatic
             return config
         }
     }
@@ -219,21 +219,18 @@ public struct ColonyAgentFactory: Sendable {
         case .coding:
             return ColonyLaneConfigurationPreset(
                 requiredCapabilities: [.planning, .filesystem, .shell, .shellSessions, .git, .lsp, .applyPatch],
-                includeToolListInSystemPrompt: true,
                 additionalSystemPrompt: "Coding lane: prioritize deterministic edits, precise diffs, and compile-safe changes."
             )
 
         case .research:
             return ColonyLaneConfigurationPreset(
                 requiredCapabilities: [.planning, .webSearch, .codeSearch, .mcp],
-                includeToolListInSystemPrompt: true,
                 additionalSystemPrompt: "Research lane: gather evidence, compare alternatives, and surface concise findings."
             )
 
         case .memory:
             return ColonyLaneConfigurationPreset(
                 requiredCapabilities: [.planning, .memory],
-                includeToolListInSystemPrompt: true,
                 additionalSystemPrompt: "Memory lane: use `wax_recall`/`wax_remember` tools to preserve and retrieve durable context."
             )
         }
@@ -245,8 +242,8 @@ public struct ColonyAgentFactory: Sendable {
     ) {
         configuration.capabilities.formUnion(preset.requiredCapabilities)
 
-        if let includeToolListInSystemPrompt = preset.includeToolListInSystemPrompt {
-            configuration.includeToolListInSystemPrompt = includeToolListInSystemPrompt
+        if let toolPromptStrategy = preset.toolPromptStrategy {
+            configuration.toolPromptStrategy = toolPromptStrategy
         }
 
         if let additional = preset.additionalSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -285,10 +282,12 @@ public struct ColonyAgentFactory: Sendable {
         modelName: String,
         lane: ColonyLane? = nil,
         intent: String? = nil,
-        model: AnyHiveModelClient? = nil,
+        model: (any HiveModelClient)? = nil,
+        modelCapabilities: ColonyModelCapabilities? = nil,
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
+        swarmTools: SwarmToolBridge? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,
@@ -308,6 +307,8 @@ public struct ColonyAgentFactory: Sendable {
         configureRunOptions: @Sendable (inout HiveRunOptions) -> Void = { _ in }
     ) throws -> ColonyRuntime {
         var configuration = Self.configuration(profile: profile, modelName: modelName)
+        let resolvedModel = model.map { AnyHiveModelClient(ExistentialHiveModelClient(base: $0)) }
+        let resolvedModelCapabilities = modelCapabilities ?? Self.inferredModelCapabilities(from: model)
 
         if let lane {
             Self.applyConfigurationPreset(Self.configurationPreset(for: lane), to: &configuration)
@@ -318,16 +319,49 @@ public struct ColonyAgentFactory: Sendable {
             }
         }
 
+        if filesystem != nil { configuration.capabilities.insert(.filesystem) }
+        if shell != nil {
+            configuration.capabilities.insert(.shell)
+            configuration.capabilities.insert(.shellSessions)
+        }
+        if git != nil { configuration.capabilities.insert(.git) }
+        if lsp != nil { configuration.capabilities.insert(.lsp) }
+        if applyPatch != nil { configuration.capabilities.insert(.applyPatch) }
+        if webSearch != nil { configuration.capabilities.insert(.webSearch) }
+        if codeSearch != nil { configuration.capabilities.insert(.codeSearch) }
+        if memory != nil { configuration.capabilities.insert(.memory) }
+        if mcp != nil { configuration.capabilities.insert(.mcp) }
+        if plugins != nil { configuration.capabilities.insert(.plugins) }
+        if let swarmTools {
+            configuration.capabilities.formUnion(swarmTools.requiredCapabilities)
+        }
+
         configure(&configuration)
+
+        // Merge Swarm tool risk-level overrides into the configuration so
+        // ColonyToolSafetyPolicyEngine can assess Swarm tools correctly.
+        if let swarmTools {
+            for (name, level) in swarmTools.riskLevelOverrides {
+                // Don't overwrite explicit user-provided overrides.
+                if configuration.toolRiskLevelOverrides[name] == nil {
+                    configuration.toolRiskLevelOverrides[name] = level
+                }
+            }
+            for (name, metadata) in swarmTools.toolPolicyMetadataByName {
+                if configuration.toolPolicyMetadataByName[name] == nil {
+                    configuration.toolPolicyMetadataByName[name] = metadata
+                }
+            }
+        }
 
         let resolvedSubagents: (any ColonySubagentRegistry)? = {
             if let subagents { return subagents }
             guard configuration.capabilities.contains(.subagents) else { return nil }
-            guard let model else { return nil }
+            guard let resolvedModel else { return nil }
             return ColonyDefaultSubagentRegistry(
                 profile: profile,
                 modelName: modelName,
-                model: model,
+                model: resolvedModel,
                 clock: clock,
                 logger: logger,
                 filesystem: filesystem
@@ -335,23 +369,34 @@ public struct ColonyAgentFactory: Sendable {
         }()
 
         // Ensure capability gating is consistent with configured backends.
-        var capabilities = configuration.capabilities
-        if filesystem != nil { capabilities.insert(.filesystem) } else { capabilities.remove(.filesystem) }
-        if shell != nil { capabilities.insert(.shell) } else { capabilities.remove(.shell) }
-        if shell != nil { capabilities.insert(.shellSessions) } else { capabilities.remove(.shellSessions) }
-        if git != nil { capabilities.insert(.git) } else { capabilities.remove(.git) }
-        if lsp != nil { capabilities.insert(.lsp) } else { capabilities.remove(.lsp) }
-        if applyPatch != nil { capabilities.insert(.applyPatch) } else { capabilities.remove(.applyPatch) }
-        if webSearch != nil { capabilities.insert(.webSearch) } else { capabilities.remove(.webSearch) }
-        if codeSearch != nil { capabilities.insert(.codeSearch) } else { capabilities.remove(.codeSearch) }
-        if memory != nil { capabilities.insert(.memory) } else { capabilities.remove(.memory) }
-        if mcp != nil { capabilities.insert(.mcp) } else { capabilities.remove(.mcp) }
-        if plugins != nil { capabilities.insert(.plugins) } else { capabilities.remove(.plugins) }
-        if resolvedSubagents != nil { capabilities.insert(.subagents) } else { capabilities.remove(.subagents) }
+        let requestedCapabilities = configuration.capabilities
+        let swarmCapabilities = swarmTools?.requiredCapabilities ?? []
+        var capabilities: ColonyCapabilities = []
+
+        func retainIfRequested(_ capability: ColonyCapabilities, available: Bool) {
+            guard requestedCapabilities.contains(capability), available else { return }
+            capabilities.insert(capability)
+        }
+
+        retainIfRequested(.planning, available: true)
+        retainIfRequested(.scratchbook, available: true)
+        retainIfRequested(.filesystem, available: filesystem != nil || swarmCapabilities.contains(.filesystem))
+        retainIfRequested(.shell, available: shell != nil || swarmCapabilities.contains(.shell))
+        retainIfRequested(.shellSessions, available: shell != nil || swarmCapabilities.contains(.shellSessions))
+        retainIfRequested(.git, available: git != nil || swarmCapabilities.contains(.git))
+        retainIfRequested(.lsp, available: lsp != nil || swarmCapabilities.contains(.lsp))
+        retainIfRequested(.applyPatch, available: applyPatch != nil || swarmCapabilities.contains(.applyPatch))
+        retainIfRequested(.webSearch, available: webSearch != nil || swarmCapabilities.contains(.webSearch))
+        retainIfRequested(.codeSearch, available: codeSearch != nil || swarmCapabilities.contains(.codeSearch))
+        retainIfRequested(.mcp, available: mcp != nil || swarmCapabilities.contains(.mcp))
+        retainIfRequested(.plugins, available: plugins != nil || swarmCapabilities.contains(.plugins))
+        retainIfRequested(.memory, available: memory != nil || swarmCapabilities.contains(.memory))
+        retainIfRequested(.subagents, available: resolvedSubagents != nil)
         configuration.capabilities = capabilities
 
         let context = ColonyContext(
             configuration: configuration,
+            modelCapabilities: resolvedModelCapabilities,
             filesystem: filesystem,
             shell: shell,
             git: git,
@@ -376,19 +421,46 @@ public struct ColonyAgentFactory: Sendable {
             defaultCheckpointStore = AnyHiveCheckpointStore(ColonyInMemoryCheckpointStore<ColonySchema>())
         }
 
+        // Compose Swarm tools with any externally-provided tool registry.
+        // Swarm tools are filtered by active capabilities before they are exposed
+        // to the runtime model request path.
+        let capabilityFilteredSwarmTools: AnyHiveToolRegistry? = {
+            guard let swarmTools else { return nil }
+            return AnyHiveToolRegistry(
+                CapabilityFilteredSwarmToolRegistry(
+                    base: swarmTools,
+                    activeCapabilities: configuration.capabilities
+                )
+            )
+        }()
+
+        // Compose capability-filtered Swarm tools with any externally-provided tool registry.
+        let resolvedTools: AnyHiveToolRegistry? = {
+            switch (tools, capabilityFilteredSwarmTools) {
+            case let (existing?, bridge?):
+                return AnyHiveToolRegistry(CompositeToolRegistry(primary: existing, secondary: bridge))
+            case let (nil, bridge?):
+                return bridge
+            case let (existing?, nil):
+                return existing
+            case (nil, nil):
+                return nil
+            }
+        }()
+
         let environment = HiveEnvironment<ColonySchema>(
             context: context,
             clock: clock,
             logger: logger,
-            model: model,
+            model: resolvedModel,
             modelRouter: modelRouter,
             inferenceHints: inferenceHints,
-            tools: tools,
+            tools: resolvedTools,
             checkpointStore: defaultCheckpointStore
         )
 
         let graph = try ColonyAgent.compile()
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)
@@ -399,5 +471,59 @@ public struct ColonyAgentFactory: Sendable {
             options: options
         )
         return ColonyRuntime(runControl: runControl)
+    }
+
+    private static func inferredModelCapabilities(from model: (any HiveModelClient)?) -> ColonyModelCapabilities {
+        guard let reporting = model as? ColonyCapabilityReportingModelClient else {
+            return []
+        }
+        return reporting.colonyModelCapabilities
+    }
+}
+
+private struct ExistentialHiveModelClient: HiveModelClient, Sendable {
+    let base: any HiveModelClient
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        try await base.complete(request)
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        base.stream(request)
+    }
+}
+
+/// Filters Swarm tools by active Colony capabilities.
+struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
+    let base: SwarmToolBridge
+    let activeCapabilities: ColonyCapabilities
+
+    func listTools() -> [HiveToolDefinition] {
+        base.listTools(filteredBy: activeCapabilities)
+    }
+
+    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+        try await base.invoke(call)
+    }
+}
+
+/// Merges two `HiveToolRegistry` implementations.
+/// Primary tools take precedence when names collide (deduplication happens in ColonyAgent).
+struct CompositeToolRegistry: HiveToolRegistry, Sendable {
+    let primary: AnyHiveToolRegistry
+    let secondary: AnyHiveToolRegistry
+
+    func listTools() -> [HiveToolDefinition] {
+        // Colony deduplication keeps the last definition by name.
+        // Listing secondary first preserves primary precedence under collisions.
+        secondary.listTools() + primary.listTools()
+    }
+
+    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+        let primaryNames = Set(primary.listTools().map(\.name))
+        if primaryNames.contains(call.name) {
+            return try await primary.invoke(call)
+        }
+        return try await secondary.invoke(call)
     }
 }

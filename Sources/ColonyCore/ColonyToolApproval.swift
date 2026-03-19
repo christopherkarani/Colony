@@ -1,6 +1,7 @@
 public enum ColonyPerToolApprovalDecision: String, Codable, Sendable, Equatable {
     case approved
     case rejected
+    case cancelled
 }
 
 public struct ColonyPerToolApproval: Codable, Sendable, Equatable {
@@ -21,6 +22,7 @@ public struct ColonyPerToolApproval: Codable, Sendable, Equatable {
 public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
     case approved
     case rejected
+    case cancelled
     case perTool([ColonyPerToolApproval])
 
     public static func perTool(_ decisions: [String: ColonyPerToolApprovalDecision]) -> ColonyToolApprovalDecision {
@@ -36,6 +38,8 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
             return .approved
         case .rejected:
             return .rejected
+        case .cancelled:
+            return .cancelled
         case .perTool(let decisions):
             return decisions.last(where: { $0.toolCallID == toolCallID })?.decision
         }
@@ -49,6 +53,7 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
     private enum Kind: String, Codable {
         case approved
         case rejected
+        case cancelled
         case perTool = "per_tool"
     }
 
@@ -63,6 +68,9 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
             case Kind.rejected.rawValue:
                 self = .rejected
                 return
+            case Kind.cancelled.rawValue:
+                self = .cancelled
+                return
             default:
                 break
             }
@@ -75,6 +83,8 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
             self = .approved
         case .rejected:
             self = .rejected
+        case .cancelled:
+            self = .cancelled
         case .perTool:
             self = .perTool(try container.decode([ColonyPerToolApproval].self, forKey: .decisions))
         }
@@ -88,6 +98,9 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
         case .rejected:
             var single = encoder.singleValueContainer()
             try single.encode(Kind.rejected.rawValue)
+        case .cancelled:
+            var single = encoder.singleValueContainer()
+            try single.encode(Kind.cancelled.rawValue)
         case .perTool(let decisions):
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(Kind.perTool, forKey: .kind)

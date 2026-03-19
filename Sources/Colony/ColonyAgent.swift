@@ -114,6 +114,7 @@ public enum ColonySchema: HiveSchema {
 
 public struct ColonyContext: Sendable {
     public let configuration: ColonyConfiguration
+    public let modelCapabilities: ColonyModelCapabilities
     public let filesystem: (any ColonyFileSystemBackend)?
     public let shell: (any ColonyShellBackend)?
     public let git: (any ColonyGitBackend)?
@@ -129,6 +130,7 @@ public struct ColonyContext: Sendable {
 
     public init(
         configuration: ColonyConfiguration,
+        modelCapabilities: ColonyModelCapabilities = [],
         filesystem: (any ColonyFileSystemBackend)?,
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,
@@ -143,6 +145,7 @@ public struct ColonyContext: Sendable {
         tokenizer: any ColonyTokenizer = ColonyApproximateTokenizer()
     ) {
         self.configuration = configuration
+        self.modelCapabilities = modelCapabilities
         self.filesystem = filesystem
         self.shell = shell
         self.git = git
@@ -269,14 +272,21 @@ public enum ColonyAgent {
             scratchbook = nil
         }
 
-        let toolsForPrompt = input.context.configuration.includeToolListInSystemPrompt ? tools : []
-        let systemPrompt = ColonyPrompts.systemPrompt(
+        let modelCapabilities = resolvedModelCapabilities(for: input)
+        let includeToolsInSystemPrompt = input.context.configuration.toolPromptStrategy.includesToolList(for: modelCapabilities)
+        let toolsForPrompt = includeToolsInSystemPrompt ? tools : []
+        var systemPrompt = ColonyPrompts.systemPrompt(
             additional: input.context.configuration.additionalSystemPrompt,
             memory: memory,
             skills: skills,
             scratchbook: scratchbook,
             availableTools: toolsForPrompt
         )
+        if let structuredOutput = input.context.configuration.structuredOutput,
+           modelCapabilities.handlesStructuredOutputsWithoutSystemPrompt == false
+        {
+            systemPrompt += "\n\n" + structuredOutputInstruction(for: structuredOutput)
+        }
         let systemMessage = HiveChatMessage(
             id: "system:colony",
             role: .system,
@@ -312,7 +322,8 @@ public enum ColonyAgent {
         let request = HiveChatRequest(
             model: input.context.configuration.modelName,
             messages: requestMessages,
-            tools: tools
+            tools: tools,
+            structuredOutput: input.context.configuration.structuredOutput
         )
 
         let modelClient: AnyHiveModelClient
@@ -365,6 +376,13 @@ public enum ColonyAgent {
         return HiveNodeOutput(writes: writes)
     }
 
+    private static func resolvedModelCapabilities(for input: HiveNodeInput<ColonySchema>) -> ColonyModelCapabilities {
+        if let router = input.environment.modelRouter as? ColonyCapabilityReportingModelRouter {
+            return router.colonyModelCapabilities(hints: input.environment.inferenceHints)
+        }
+        return input.context.modelCapabilities
+    }
+
     private static func toolDefinitionTokenCount(
         _ tools: [HiveToolDefinition],
         tokenizer: any ColonyTokenizer
@@ -407,12 +425,12 @@ public enum ColonyAgent {
         var keptConversation = conversationMessages
         var requestMessages = [boundedSystemMessage] + keptConversation
 
-        while keptConversation.isEmpty == false, tokenizer.countTokens(requestMessages) > tokenLimit {
+        while keptConversation.isEmpty == false, requestTokenCount(requestMessages, tokenizer: tokenizer) > tokenLimit {
             keptConversation.removeFirst()
             requestMessages = [boundedSystemMessage] + keptConversation
         }
 
-        if tokenizer.countTokens(requestMessages) <= tokenLimit {
+        if requestTokenCount(requestMessages, tokenizer: tokenizer) <= tokenLimit {
             return requestMessages
         }
 
@@ -424,7 +442,7 @@ public enum ColonyAgent {
         tokenLimit: Int,
         tokenizer: any ColonyTokenizer
     ) -> HiveChatMessage {
-        if tokenizer.countTokens([systemMessage]) <= tokenLimit {
+        if requestTokenCount([systemMessage], tokenizer: tokenizer) <= tokenLimit {
             return systemMessage
         }
 
@@ -435,7 +453,7 @@ public enum ColonyAgent {
         while low < high {
             let mid = (low + high + 1) / 2
             let candidate = systemMessageWithTrimmedContent(systemMessage, maxCharacters: mid)
-            if tokenizer.countTokens([candidate]) <= tokenLimit {
+            if requestTokenCount([candidate], tokenizer: tokenizer) <= tokenLimit {
                 low = mid
             } else {
                 high = mid - 1
@@ -457,8 +475,28 @@ public enum ColonyAgent {
             name: systemMessage.name,
             toolCallID: systemMessage.toolCallID,
             toolCalls: systemMessage.toolCalls,
+            structuredOutput: systemMessage.structuredOutput,
             op: systemMessage.op
         )
+    }
+
+    private static func requestTokenCount(
+        _ messages: [HiveChatMessage],
+        tokenizer: any ColonyTokenizer
+    ) -> Int {
+        tokenizer.countTokens(messages) + (messages.count * 3)
+    }
+
+    private static func structuredOutputInstruction(for format: HiveStructuredOutputFormat) -> String {
+        switch format {
+        case .jsonObject:
+            return "Respond with valid JSON only. Do not include markdown fences or explanatory prose."
+        case .jsonSchema(_, let schemaJSON):
+            return """
+            Respond with valid JSON only. It must match this JSON schema exactly:
+            \(schemaJSON)
+            """
+        }
     }
 
     private static func routeAfterModel(_ store: HiveStoreView<ColonySchema>) -> HiveNext {
@@ -476,6 +514,7 @@ public enum ColonyAgent {
         let safety = ColonyToolSafetyPolicyEngine(
             approvalPolicy: input.context.configuration.toolApprovalPolicy,
             riskLevelOverrides: input.context.configuration.toolRiskLevelOverrides,
+            toolPolicyMetadataByName: input.context.configuration.toolPolicyMetadataByName,
             mandatoryApprovalRiskLevels: input.context.configuration.mandatoryApprovalRiskLevels,
             defaultRiskLevel: input.context.configuration.defaultToolRiskLevel
         )
@@ -520,19 +559,25 @@ public enum ColonyAgent {
             if let resume = input.run.resume, case let .toolApproval(decision) = resume.payload {
                 var approvedIDs = preApprovedIDs
                 var deniedIDs = preDeniedIDs
+                var cancelledIDs: Set<String> = []
                 approvedIDs.reserveCapacity(calls.count)
                 deniedIDs.reserveCapacity(calls.count)
+                cancelledIDs.reserveCapacity(calls.count)
 
                 for call in approvalRequiredCalls {
-                    if decision.decision(forToolCallID: call.id) == .approved {
+                    switch decision.decision(forToolCallID: call.id) {
+                    case .approved:
                         approvedIDs.insert(call.id)
-                    } else {
+                    case .cancelled:
+                        cancelledIDs.insert(call.id)
+                    case .rejected, .none:
                         deniedIDs.insert(call.id)
                     }
                 }
 
                 let approvedCalls = calls.filter { approvedIDs.contains($0.id) }
-                let deniedCalls = calls.filter { deniedIDs.contains($0.id) }
+                let rejectedCalls = calls.filter { deniedIDs.contains($0.id) }
+                let cancelledCalls = calls.filter { cancelledIDs.contains($0.id) }
 
                 try await recordToolAuditEvents(
                     calls: calls.filter { approvedIDs.contains($0.id) && approvalRequiredIDs.contains($0.id) == false },
@@ -547,7 +592,7 @@ public enum ColonyAgent {
                     input: input
                 )
                 try await recordToolAuditEvents(
-                    calls: deniedCalls,
+                    calls: rejectedCalls + cancelledCalls,
                     decision: .userDenied,
                     assessmentsByCallID: assessmentsByCallID,
                     input: input
@@ -556,7 +601,8 @@ public enum ColonyAgent {
                 return try toolDispatchPath(
                     input: input,
                     approvedCalls: approvedCalls,
-                    deniedCalls: deniedCalls,
+                    rejectedCalls: rejectedCalls,
+                    cancelledCalls: cancelledCalls,
                     taskID: input.run.taskID
                 )
             }
@@ -604,7 +650,8 @@ public enum ColonyAgent {
         return try toolDispatchPath(
             input: input,
             approvedCalls: approvedCalls,
-            deniedCalls: deniedCalls,
+            rejectedCalls: deniedCalls,
+            cancelledCalls: [],
             taskID: input.run.taskID
         )
     }
@@ -612,7 +659,8 @@ public enum ColonyAgent {
     private static func toolDispatchPath(
         input: HiveNodeInput<ColonySchema>,
         approvedCalls: [HiveToolCall],
-        deniedCalls: [HiveToolCall],
+        rejectedCalls: [HiveToolCall],
+        cancelledCalls: [HiveToolCall],
         taskID: HiveTaskID
     ) throws -> HiveNodeOutput<ColonySchema> {
         var spawn: [HiveTaskSeed<ColonySchema>] = []
@@ -627,15 +675,14 @@ public enum ColonyAgent {
             AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, []),
         ]
 
-        if deniedCalls.isEmpty == false {
-            let messageID = ColonyMessageID.systemMessageID(taskID: taskID)
-            let system = HiveChatMessage(
-                id: messageID,
+        if rejectedCalls.isEmpty == false {
+            let rejectedSystem = HiveChatMessage(
+                id: ColonyMessageID.systemMessageID(taskID: taskID),
                 role: .system,
                 content: "Tool execution rejected by user."
             )
 
-            let cancellations = deniedCalls.map { call in
+            let rejections = rejectedCalls.map { call in
                 HiveChatMessage(
                     id: "tool:" + call.id,
                     role: .tool,
@@ -645,7 +692,28 @@ public enum ColonyAgent {
                 )
             }
             writes.append(
-                AnyHiveWrite(ColonySchema.Channels.messages, [system] + cancellations)
+                AnyHiveWrite(ColonySchema.Channels.messages, [rejectedSystem] + rejections)
+            )
+        }
+
+        if cancelledCalls.isEmpty == false {
+            let cancelledSystem = HiveChatMessage(
+                id: ColonyMessageID.systemMessageID(taskID: taskID) + ":cancelled",
+                role: .system,
+                content: "Tool execution cancelled by user."
+            )
+
+            let cancellations = cancelledCalls.map { call in
+                HiveChatMessage(
+                    id: "tool:" + call.id + ":cancelled",
+                    role: .tool,
+                    content: "Tool call \(call.name) with id \(call.id) was cancelled by the user.",
+                    name: call.name,
+                    toolCallID: call.id
+                )
+            }
+            writes.append(
+                AnyHiveWrite(ColonySchema.Channels.messages, [cancelledSystem] + cancellations)
             )
         }
 
@@ -990,7 +1058,7 @@ public enum ColonyAgent {
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
-            content: "Note: conversation has been summarized. Full prior history is available at \(historyPath.rawValue)."
+            content: "Conversation summarized. Full prior history is available at \(historyPath.rawValue)."
         )
 
         return [summaryMessage] + tail
@@ -1201,7 +1269,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Tool result too large (tool_call_id: \(toolCall.id)).
+Result too large to inline (tool_call_id: \(toolCall.id)).
 Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
 
 Preview:
@@ -1374,6 +1442,7 @@ enum ColonyMessages {
                         name: message.name,
                         toolCallID: message.toolCallID,
                         toolCalls: message.toolCalls,
+                        structuredOutput: message.structuredOutput,
                         op: nil
                     )
                     idsToDelete.remove(message.id)
@@ -1385,6 +1454,7 @@ enum ColonyMessages {
                         name: message.name,
                         toolCallID: message.toolCallID,
                         toolCalls: message.toolCalls,
+                        structuredOutput: message.structuredOutput,
                         op: nil
                     )
                     merged.append(normalized)
@@ -1405,6 +1475,7 @@ enum ColonyMessages {
                 name: message.name,
                 toolCallID: message.toolCallID,
                 toolCalls: message.toolCalls,
+                structuredOutput: message.structuredOutput,
                 op: nil
             )
         }
@@ -1418,7 +1489,8 @@ enum ColonyMessages {
             id: ColonyMessageID.assistantMessageID(taskID: taskID),
             role: .assistant,
             content: message.content,
-            toolCalls: message.toolCalls
+            toolCalls: message.toolCalls,
+            structuredOutput: message.structuredOutput
         )
     }
 }

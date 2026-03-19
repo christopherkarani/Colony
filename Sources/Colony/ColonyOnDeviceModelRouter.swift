@@ -1,5 +1,6 @@
 import Foundation
 import HiveCore
+import ColonyCore
 
 public enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvertible {
     case onDeviceRequiredButUnavailable
@@ -12,7 +13,7 @@ public enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvert
     }
 }
 
-public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
+public struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReportingModelRouter, Sendable {
     public enum PrivacyBehavior: Sendable {
         /// Prefer on-device, but allow fallback when unavailable.
         case preferOnDevice
@@ -39,11 +40,15 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
     public init(
         onDevice: AnyHiveModelClient?,
         fallback: AnyHiveModelClient,
+        onDeviceCapabilities: ColonyModelCapabilities = [],
+        fallbackCapabilities: ColonyModelCapabilities = [],
         policy: Policy = Policy(),
         isOnDeviceAvailable: @escaping @Sendable () -> Bool = { true }
     ) {
         self.onDevice = onDevice
         self.fallback = fallback
+        self.onDeviceCapabilities = onDeviceCapabilities
+        self.fallbackCapabilities = fallbackCapabilities
         self.policy = policy
         self.isOnDeviceAvailable = isOnDeviceAvailable
     }
@@ -57,6 +62,7 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
         self.init(
             onDevice: AnyHiveModelClient(foundationModels),
             fallback: fallback,
+            onDeviceCapabilities: foundationModels.colonyModelCapabilities,
             policy: policy,
             isOnDeviceAvailable: { ColonyFoundationModelsClient.isAvailable }
         )
@@ -95,12 +101,43 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
         return fallback
     }
 
+    public func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
+        guard let hints else { return fallbackCapabilities }
+
+        let wantsOnDevice: Bool = {
+            if hints.privacyRequired {
+                return true
+            }
+
+            switch hints.networkState {
+            case .offline:
+                return policy.preferOnDeviceWhenOffline
+            case .metered:
+                return policy.preferOnDeviceWhenMetered
+            case .online:
+                return false
+            }
+        }()
+
+        guard wantsOnDevice else {
+            return fallbackCapabilities
+        }
+
+        if onDevice != nil, isOnDeviceAvailable() {
+            return onDeviceCapabilities
+        }
+
+        return fallbackCapabilities
+    }
+
     // MARK: - Private
 
     private let onDevice: AnyHiveModelClient?
     private let fallback: AnyHiveModelClient
     private let policy: Policy
     private let isOnDeviceAvailable: @Sendable () -> Bool
+    private let onDeviceCapabilities: ColonyModelCapabilities
+    private let fallbackCapabilities: ColonyModelCapabilities
 }
 
 private struct ColonyFailingModelClient: HiveModelClient, Sendable {
@@ -116,4 +153,3 @@ private struct ColonyFailingModelClient: HiveModelClient, Sendable {
         }
     }
 }
-

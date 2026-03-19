@@ -121,6 +121,53 @@ private final class DualMutatingCallsModel: HiveModelClient, @unchecked Sendable
     }
 }
 
+@Test("Tool metadata can force approval and preserve retry and durability policy")
+func toolMetadataCanForceApprovalAndCarryPolicy() {
+    let engine = ColonyToolSafetyPolicyEngine(
+        approvalPolicy: .never,
+        toolPolicyMetadataByName: [
+            "safe_read": ColonyToolPolicyMetadata(
+                riskLevel: .readOnly,
+                approvalDisposition: .always,
+                retryDisposition: .safeToRetry,
+                resultDurability: .checkpointed
+            )
+        ]
+    )
+
+    let assessment = engine.assess(toolCalls: [
+        HiveToolCall(id: "safe-read-1", name: "safe_read", argumentsJSON: "{}")
+    ])
+
+    #expect(assessment.count == 1)
+    #expect(assessment.first?.requiresApproval == true)
+    #expect(assessment.first?.reason == .toolMetadataAlways)
+    #expect(assessment.first?.retryDisposition == .safeToRetry)
+    #expect(assessment.first?.resultDurability == .checkpointed)
+}
+
+@Test("Tool metadata can suppress policy-only approval when explicitly never")
+func toolMetadataCanSuppressPolicyApproval() {
+    let engine = ColonyToolSafetyPolicyEngine(
+        approvalPolicy: .always,
+        toolPolicyMetadataByName: [
+            "safe_read": ColonyToolPolicyMetadata(
+                riskLevel: .readOnly,
+                approvalDisposition: .never
+            )
+        ],
+        mandatoryApprovalRiskLevels: [.mutation, .execution, .network]
+    )
+
+    let assessment = engine.assess(toolCalls: [
+        HiveToolCall(id: "safe-read-2", name: "safe_read", argumentsJSON: "{}")
+    ])
+
+    #expect(assessment.count == 1)
+    #expect(assessment.first?.requiresApproval == false)
+    #expect(assessment.first?.approvalDisposition == .never)
+}
+
 @Test("Mutating tools require approval even when toolApprovalPolicy is never")
 func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
     let graph = try ColonyAgent.compile()
@@ -139,7 +186,7 @@ func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
         model: AnyHiveModelClient(SingleMutatingCallModel()),
         checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("tool-safety-never"),
@@ -181,7 +228,7 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
         model: AnyHiveModelClient(DualMutatingCallsModel()),
         checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("tool-safety-partial")
 
     let handle = await runtime.run(
@@ -362,7 +409,7 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
         model: AnyHiveModelClient(SingleMutatingCallModel()),
         checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("tool-audit-runtime")
 
     let handle = await runtime.run(

@@ -32,16 +32,28 @@ struct InsightsExtractor: Sendable {
     func extract(from markdownReport: String) async throws -> ResearchInsights {
         let session = LanguageModelSession()
         let prompt = """
-        Analyze this research report and extract structured insights. \
-        Identify the key topics, any statistics or numeric data mentioned, \
-        and assess the overall confidence level (low, medium, or high) \
-        based on source quality and consistency of findings.
+        Analyze this research report and return only valid JSON matching this schema:
+        {
+          "summary": "1-2 sentence summary",
+          "keyTopics": ["topic 1", "topic 2"],
+          "statistics": [
+            { "label": "stat label", "value": 0, "unit": "unit" }
+          ],
+          "confidenceLevel": "low|medium|high"
+        }
+
+        Rules:
+        - Return JSON only. Do not wrap it in Markdown.
+        - Use an empty array when no statistics are present.
+        - Keep `keyTopics` to at most 8 items.
+        - `confidenceLevel` must be one of: low, medium, high.
 
         Report:
         \(markdownReport)
         """
-        let response = try await session.respond(to: prompt, generating: ResearchInsights.self)
-        return response.content
+        let response = try await session.respond(to: prompt)
+        let payload = try extractJSONObject(from: response.content)
+        return try JSONDecoder().decode(ResearchInsights.self, from: Data(payload.utf8))
     }
     #endif
 
@@ -56,4 +68,29 @@ struct InsightsExtractor: Sendable {
         return false
         #endif
     }
+
+    #if canImport(FoundationModels)
+    @available(macOS 26.0, iOS 26.0, visionOS 26.0, *)
+    private func extractJSONObject(from content: String) throws -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.first == "{", trimmed.last == "}" {
+            return trimmed
+        }
+
+        if let fencedRange = trimmed.range(of: #"```json\s*(\{[\s\S]*\})\s*```"#, options: .regularExpression) {
+            let fenced = String(trimmed[fencedRange])
+            return fenced
+                .replacingOccurrences(of: #"^```json\s*"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"\s*```$"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard let start = trimmed.firstIndex(of: "{"),
+              let end = trimmed.lastIndex(of: "}")
+        else {
+            throw ExtractionError.unavailable
+        }
+        return String(trimmed[start...end])
+    }
+    #endif
 }

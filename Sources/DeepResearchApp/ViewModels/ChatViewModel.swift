@@ -105,9 +105,9 @@ final class ChatViewModel {
     }
 
     private func applyRuntimeConfiguration(_ configuration: RuntimeConfiguration) {
-        let client: AnyHiveModelClient
+        let resolvedModel: ModelProviderFactory.ResolvedModel
         do {
-            client = try ModelProviderFactory.makeClient(configuration: configuration.provider)
+            resolvedModel = try ModelProviderFactory.makeResolvedModel(configuration: configuration.provider)
         } catch {
             self.error = "Failed to create model client: \(describe(error))"
             return
@@ -126,7 +126,8 @@ final class ChatViewModel {
             runtime = try ColonyAgentFactory().makeRuntime(
                 profile: profile,
                 modelName: configuration.selectedModelName,
-                model: client,
+                model: resolvedModel.client,
+                modelCapabilities: resolvedModel.capabilities,
                 tools: tavilyRegistry,
                 configure: { config in
                     config.capabilities = [.planning, .scratchbook]

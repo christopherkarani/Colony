@@ -19,10 +19,11 @@ public enum ColonyProviderRouterError: Error, Sendable, CustomStringConvertible,
     }
 }
 
-public struct ColonyProviderRouter: HiveModelRouter, Sendable {
+public struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingModelRouter, Sendable {
     public struct Provider: Sendable {
         public let id: String
         public let client: AnyHiveModelClient
+        public let capabilities: ColonyModelCapabilities
         public let priority: Int
         public let maxRequestsPerMinute: Int?
         public let usdPer1KTokens: Double?
@@ -30,12 +31,14 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
         public init(
             id: String,
             client: AnyHiveModelClient,
+            capabilities: ColonyModelCapabilities = [],
             priority: Int = 0,
             maxRequestsPerMinute: Int? = nil,
             usdPer1KTokens: Double? = nil
         ) {
             self.id = id
             self.client = client
+            self.capabilities = capabilities
             self.priority = priority
             self.maxRequestsPerMinute = maxRequestsPerMinute
             self.usdPer1KTokens = usdPer1KTokens
@@ -97,6 +100,14 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
     public func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         AnyHiveModelClient(ColonyProviderRoutingClient(router: self, hints: hints))
+    }
+
+    public func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
+        _ = hints
+        guard let first = providers.first else { return [] }
+        return providers.dropFirst().reduce(first.capabilities) { partial, provider in
+            partial.intersection(provider.capabilities)
+        }
     }
 
     fileprivate func complete(request: HiveChatRequest, hints: HiveInferenceHints?) async throws -> HiveChatResponse {

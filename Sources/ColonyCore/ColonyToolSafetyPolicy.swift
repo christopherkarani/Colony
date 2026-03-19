@@ -29,8 +29,47 @@ public enum ColonyToolRiskLevel: String, Codable, Sendable, CaseIterable, Compar
 
 public enum ColonyToolApprovalRequirementReason: String, Codable, Sendable, Equatable {
     case mandatoryRiskLevel = "mandatory_risk_level"
+    case toolMetadataAlways = "tool_metadata_always"
     case policyAlways = "policy_always"
     case policyNotAllowListed = "policy_not_allow_listed"
+}
+
+public enum ColonyToolApprovalDisposition: String, Codable, Sendable, Equatable {
+    case automatic
+    case always
+    case never
+}
+
+public enum ColonyToolRetryDisposition: String, Codable, Sendable, Equatable {
+    case inherit
+    case never
+    case safeToRetry
+    case approvalGated
+}
+
+public enum ColonyToolResultDurability: String, Codable, Sendable, Equatable {
+    case transient
+    case checkpointed
+    case durable
+}
+
+public struct ColonyToolPolicyMetadata: Codable, Sendable, Equatable {
+    public var riskLevel: ColonyToolRiskLevel?
+    public var approvalDisposition: ColonyToolApprovalDisposition
+    public var retryDisposition: ColonyToolRetryDisposition
+    public var resultDurability: ColonyToolResultDurability
+
+    public init(
+        riskLevel: ColonyToolRiskLevel? = nil,
+        approvalDisposition: ColonyToolApprovalDisposition = .automatic,
+        retryDisposition: ColonyToolRetryDisposition = .inherit,
+        resultDurability: ColonyToolResultDurability = .transient
+    ) {
+        self.riskLevel = riskLevel
+        self.approvalDisposition = approvalDisposition
+        self.retryDisposition = retryDisposition
+        self.resultDurability = resultDurability
+    }
 }
 
 public struct ColonyToolSafetyAssessment: Sendable, Equatable {
@@ -39,36 +78,48 @@ public struct ColonyToolSafetyAssessment: Sendable, Equatable {
     public var riskLevel: ColonyToolRiskLevel
     public var requiresApproval: Bool
     public var reason: ColonyToolApprovalRequirementReason?
+    public var approvalDisposition: ColonyToolApprovalDisposition
+    public var retryDisposition: ColonyToolRetryDisposition
+    public var resultDurability: ColonyToolResultDurability
 
     public init(
         toolCallID: String,
         toolName: String,
         riskLevel: ColonyToolRiskLevel,
         requiresApproval: Bool,
-        reason: ColonyToolApprovalRequirementReason?
+        reason: ColonyToolApprovalRequirementReason?,
+        approvalDisposition: ColonyToolApprovalDisposition = .automatic,
+        retryDisposition: ColonyToolRetryDisposition = .inherit,
+        resultDurability: ColonyToolResultDurability = .transient
     ) {
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.riskLevel = riskLevel
         self.requiresApproval = requiresApproval
         self.reason = reason
+        self.approvalDisposition = approvalDisposition
+        self.retryDisposition = retryDisposition
+        self.resultDurability = resultDurability
     }
 }
 
 public struct ColonyToolSafetyPolicyEngine: Sendable {
     public var approvalPolicy: ColonyToolApprovalPolicy
     public var riskLevelOverrides: [String: ColonyToolRiskLevel]
+    public var toolPolicyMetadataByName: [String: ColonyToolPolicyMetadata]
     public var mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel>
     public var defaultRiskLevel: ColonyToolRiskLevel
 
     public init(
         approvalPolicy: ColonyToolApprovalPolicy,
         riskLevelOverrides: [String: ColonyToolRiskLevel] = [:],
+        toolPolicyMetadataByName: [String: ColonyToolPolicyMetadata] = [:],
         mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel> = [.mutation, .execution, .network],
         defaultRiskLevel: ColonyToolRiskLevel = .readOnly
     ) {
         self.approvalPolicy = approvalPolicy
         self.riskLevelOverrides = riskLevelOverrides
+        self.toolPolicyMetadataByName = toolPolicyMetadataByName
         self.mandatoryApprovalRiskLevels = mandatoryApprovalRiskLevels
         self.defaultRiskLevel = defaultRiskLevel
     }
@@ -76,6 +127,9 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
     public func riskLevel(for toolName: String) -> ColonyToolRiskLevel {
         if let override = riskLevelOverrides[toolName] {
             return override
+        }
+        if let metadataRiskLevel = toolPolicyMetadataByName[toolName]?.riskLevel {
+            return metadataRiskLevel
         }
         if let builtIn = Self.defaultRiskLevelForToolName[toolName] {
             return builtIn
@@ -86,6 +140,20 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
     public func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
         toolCalls.map { call in
             let riskLevel = riskLevel(for: call.name)
+            let metadata = toolPolicyMetadataByName[call.name] ?? ColonyToolPolicyMetadata()
+
+            if metadata.approvalDisposition == .always {
+                return ColonyToolSafetyAssessment(
+                    toolCallID: call.id,
+                    toolName: call.name,
+                    riskLevel: riskLevel,
+                    requiresApproval: true,
+                    reason: .toolMetadataAlways,
+                    approvalDisposition: metadata.approvalDisposition,
+                    retryDisposition: metadata.retryDisposition,
+                    resultDurability: metadata.resultDurability
+                )
+            }
 
             if mandatoryApprovalRiskLevels.contains(riskLevel) {
                 return ColonyToolSafetyAssessment(
@@ -93,11 +161,15 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
                     toolName: call.name,
                     riskLevel: riskLevel,
                     requiresApproval: true,
-                    reason: .mandatoryRiskLevel
+                    reason: .mandatoryRiskLevel,
+                    approvalDisposition: metadata.approvalDisposition,
+                    retryDisposition: metadata.retryDisposition,
+                    resultDurability: metadata.resultDurability
                 )
             }
 
-            if approvalPolicy.requiresApproval(for: call.name) {
+            let policyRequiresApproval = approvalPolicy.requiresApproval(for: call.name)
+            if policyRequiresApproval, metadata.approvalDisposition != .never {
                 let reason: ColonyToolApprovalRequirementReason = {
                     switch approvalPolicy {
                     case .always:
@@ -114,7 +186,10 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
                     toolName: call.name,
                     riskLevel: riskLevel,
                     requiresApproval: true,
-                    reason: reason
+                    reason: reason,
+                    approvalDisposition: metadata.approvalDisposition,
+                    retryDisposition: metadata.retryDisposition,
+                    resultDurability: metadata.resultDurability
                 )
             }
 
@@ -123,7 +198,10 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
                 toolName: call.name,
                 riskLevel: riskLevel,
                 requiresApproval: false,
-                reason: nil
+                reason: nil,
+                approvalDisposition: metadata.approvalDisposition,
+                retryDisposition: metadata.retryDisposition,
+                resultDurability: metadata.resultDurability
             )
         }
     }

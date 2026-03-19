@@ -1,13 +1,17 @@
 import Foundation
 import Colony
 
-struct OllamaModelClient: HiveModelClient, Sendable {
+struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient, Sendable {
     let apiClient: OllamaAPIClient
     let modelName: String
 
     init(apiClient: OllamaAPIClient = OllamaAPIClient(), modelName: String) {
         self.apiClient = apiClient
         self.modelName = modelName
+    }
+
+    var colonyModelCapabilities: ColonyModelCapabilities {
+        [.nativeToolCalling]
     }
 
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {

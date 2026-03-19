@@ -79,7 +79,7 @@ public actor ColonyHarnessSession {
         stopRequested = false
         lifecycleStateStorage = .running
 
-        if decision == .rejected {
+        if decision == .rejected || decision == .cancelled {
             for call in interruptedState.toolCalls {
                 await emit(
                     runID: interruptedState.runID,
@@ -88,7 +88,7 @@ public actor ColonyHarnessSession {
                         ColonyHarnessToolDeniedPayload(
                             toolCallID: call.id,
                             toolName: call.name,
-                            reason: "rejected"
+                            reason: decision == .cancelled ? "cancelled" : "rejected"
                         )
                     )
                 )

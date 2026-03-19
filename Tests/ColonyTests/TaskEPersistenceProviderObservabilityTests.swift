@@ -411,6 +411,31 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
 }
 
+@Test("Task E provider router reports only capabilities shared across providers")
+func taskE_providerRouterReportsSharedCapabilities() {
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "native",
+                client: AnyHiveModelClient(FixedModelClient(content: "n1")),
+                capabilities: [.nativeToolCalling]
+            ),
+            ColonyProviderRouter.Provider(
+                id: "native-managed",
+                client: AnyHiveModelClient(FixedModelClient(content: "n2")),
+                capabilities: [.nativeToolCalling, .managedToolPrompting]
+            ),
+            ColonyProviderRouter.Provider(
+                id: "unknown",
+                client: AnyHiveModelClient(FixedModelClient(content: "n3")),
+                capabilities: []
+            ),
+        ]
+    )
+
+    #expect(router.colonyModelCapabilities(hints: nil).isEmpty)
+}
+
 @Test("Task E observability emitter redacts sensitive payloads and harness writes durable run state")
 func taskE_observabilityRedactionAndHarnessIntegration() async throws {
     let temp = try temporaryDirectory("obs")
