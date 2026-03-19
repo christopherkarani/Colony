@@ -1,15 +1,15 @@
 <div align="center">
 
-# 🐜 Colony
+# Colony
 
-**Local-first AI Agent Runtime for Swift**
+**Local-first AI agent runtime for Swift**
 
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
 [![iOS 26+](https://img.shields.io/badge/iOS-26+-blue.svg)](https://developer.apple.com/ios/)
 [![macOS 26+](https://img.shields.io/badge/macOS-26+-blue.svg)](https://developer.apple.com/macos/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-*Build powerful, safe, and efficient AI agents that run entirely on-device with Apple's Foundation Models*
+*Build local-first agents in Swift with guardrails, approval flows, and on-device Foundation Models support.*
 
 [Features](#features) • [Quick Start](#quick-start) • [Architecture](#architecture) • [Examples](#examples) • [Documentation](#documentation)
 
@@ -17,11 +17,11 @@
 
 ---
 
-## ✨ Why Colony?
+## Why Colony
 
-Colony is a **Deep Agents-style runtime** built from the ground up for local-first AI agent execution. Unlike cloud-dependent solutions, Colony runs entirely on your user's device using Apple's on-device Foundation Models—**no API keys, no network latency, no privacy concerns**.
+Colony is a local-first runtime for AI agents. It is built around on-device execution, explicit tool capabilities, and human approval paths for risky work.
 
-### 🚀 What Makes Colony Different
+### What stands out
 
 | Feature | Colony | Other Agents |
 |---------|--------|--------------|
@@ -33,19 +33,19 @@ Colony is a **Deep Agents-style runtime** built from the ground up for local-fir
 
 ---
 
-## 🎯 Features
+## Features
 
-### 🔐 Safety by Design
-- **Capability-gated tools** — Tools only available when explicitly enabled
-- **Human-in-the-loop approval** — Approve, reject, or cancel risky tool calls
-- **Isolated subagents** — Delegate to sandboxed runtime instances
+### Safety by design
+- **Capability-gated tools:** tools are only available when explicitly enabled.
+- **Human approval:** approve, reject, or cancel risky tool calls.
+- **Isolated subagents:** delegation happens through separate runtime instances.
 
-### ⚡ Optimized for On-Device
-- **Smart context management** — 4k token budget with automatic compaction
-- **Intelligent summarization** — Offloads old context to `/conversation_history`
-- **Large result eviction** — Auto-offloads big outputs to `/large_tool_results`
+### On-device defaults
+- **Context management:** a 4k token budget with automatic compaction.
+- **Summarization:** older context can be offloaded to `/conversation_history`.
+- **Large result eviction:** big outputs can be moved to `/large_tool_results`.
 
-### 🛠️ Built-in Tool Families
+### Built-in tool families
 ```swift
 📁 Filesystem    → ls, read_file, write_file, edit_file, glob, grep
 📝 Planning      → write_todos, read_todos  
@@ -54,7 +54,7 @@ Colony is a **Deep Agents-style runtime** built from the ground up for local-fir
 👥 Subagents     → task (isolated delegation)
 ```
 
-### 📊 Two Profiles, Infinite Flexibility
+### Profiles
 
 ```swift
 // Strict 4k budget for on-device Foundation Models
@@ -66,7 +66,7 @@ profile: .cloud
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
