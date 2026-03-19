@@ -53,7 +53,7 @@ func colonySummarizationOffloadsHistory() async throws {
         model: AnyHiveModelClient(ConstantModel())
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-summarize")
 
     // Build up enough history to trigger summarization.
