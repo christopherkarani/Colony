@@ -9,10 +9,10 @@ public protocol ColonyTokenizer: Sendable {
 /// Notes:
 /// - This is an approximation intended for compaction thresholds, not billing.
 /// - Uses a conservative 4 chars/token heuristic to avoid oversending context.
-public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
-    public init() {}
+package struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
+    package init() {}
 
-    public func countTokens(_ messages: [ColonyChatMessage]) -> Int {
+    package func countTokens(_ messages: [ColonyChatMessage]) -> Int {
         let chars = messages.reduce(into: 0) { partial, message in
             partial += message.content.count
             partial += message.name?.count ?? 0

@@ -1,8 +1,33 @@
 import Foundation
 import ColonyCore
 
+/// Type-safe observability event name with autocomplete for standard events.
+public struct ColonyEventName: Hashable, Codable, Sendable,
+                                ExpressibleByStringLiteral,
+                                CustomStringConvertible {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { self.init(value) }
+    public var description: String { rawValue }
+}
+
+extension ColonyEventName {
+    public static let runStarted: ColonyEventName = "run.started"
+    public static let runFinished: ColonyEventName = "run.finished"
+    public static let runInterrupted: ColonyEventName = "run.interrupted"
+    public static let runResumed: ColonyEventName = "run.resumed"
+    public static let runCancelled: ColonyEventName = "run.cancelled"
+    public static let toolInvoked: ColonyEventName = "tool.invoked"
+    public static let toolApprovalRequired: ColonyEventName = "tool.approval_required"
+    public static let toolApprovalDecided: ColonyEventName = "tool.approval_decided"
+    public static let modelRequestSent: ColonyEventName = "model.request_sent"
+    public static let modelResponseReceived: ColonyEventName = "model.response_received"
+    public static let compactionTriggered: ColonyEventName = "compaction.triggered"
+    public static let checkpointCreated: ColonyEventName = "checkpoint.created"
+}
+
 public struct ColonyObservabilityEvent: Codable, Sendable, Equatable {
-    public let name: String
+    public let name: ColonyEventName
     public let timestamp: Date
     public let runID: UUID?
     public let sessionID: String?
@@ -10,7 +35,7 @@ public struct ColonyObservabilityEvent: Codable, Sendable, Equatable {
     public let attributes: [String: String]
 
     public init(
-        name: String,
+        name: ColonyEventName,
         timestamp: Date,
         runID: UUID? = nil,
         sessionID: String? = nil,
@@ -30,16 +55,16 @@ public protocol ColonyObservabilitySink: Sendable {
     func emit(_ event: ColonyObservabilityEvent) async
 }
 
-public actor ColonyInMemoryObservabilitySink: ColonyObservabilitySink {
+package actor ColonyInMemoryObservabilitySink: ColonyObservabilitySink {
     private var eventsStorage: [ColonyObservabilityEvent] = []
 
-    public init() {}
+    package init() {}
 
-    public func emit(_ event: ColonyObservabilityEvent) async {
+    package func emit(_ event: ColonyObservabilityEvent) async {
         eventsStorage.append(event)
     }
 
-    public func events() -> [ColonyObservabilityEvent] {
+    package func events() -> [ColonyObservabilityEvent] {
         eventsStorage
     }
 }
@@ -83,7 +108,7 @@ public actor ColonyObservabilityEmitter {
         }
 
         let event = ColonyObservabilityEvent(
-            name: "colony.harness.\(envelope.eventType.rawValue)",
+            name: ColonyEventName("colony.harness.\(envelope.eventType.rawValue)"),
             timestamp: envelope.timestamp,
             runID: envelope.runID,
             sessionID: envelope.sessionID.rawValue,

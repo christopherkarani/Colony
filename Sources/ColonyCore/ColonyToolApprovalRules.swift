@@ -74,20 +74,20 @@ public protocol ColonyToolApprovalRuleStore: Sendable {
     func resolveDecision(forToolName toolName: String, consumeOneShot: Bool) async throws -> ColonyMatchedToolApprovalRule?
 }
 
-public actor ColonyInMemoryToolApprovalRuleStore: ColonyToolApprovalRuleStore {
+package actor ColonyInMemoryToolApprovalRuleStore: ColonyToolApprovalRuleStore {
     private var rulesByID: [String: ColonyToolApprovalRule] = [:]
 
-    public init(rules: [ColonyToolApprovalRule] = []) {
+    package init(rules: [ColonyToolApprovalRule] = []) {
         for rule in rules {
             rulesByID[rule.id] = rule
         }
     }
 
-    public func listRules() async throws -> [ColonyToolApprovalRule] {
+    package func listRules() async throws -> [ColonyToolApprovalRule] {
         rulesByID.values.sorted(by: ruleOrder)
     }
 
-    public func upsertRule(_ rule: ColonyToolApprovalRule) async throws {
+    package func upsertRule(_ rule: ColonyToolApprovalRule) async throws {
         rulesByID[rule.id] = ColonyToolApprovalRule(
             id: rule.id,
             pattern: rule.pattern,
@@ -97,11 +97,11 @@ public actor ColonyInMemoryToolApprovalRuleStore: ColonyToolApprovalRuleStore {
         )
     }
 
-    public func removeRule(id: String) async throws {
+    package func removeRule(id: String) async throws {
         rulesByID.removeValue(forKey: id)
     }
 
-    public func resolveDecision(forToolName toolName: String, consumeOneShot: Bool) async throws -> ColonyMatchedToolApprovalRule? {
+    package func resolveDecision(forToolName toolName: String, consumeOneShot: Bool) async throws -> ColonyMatchedToolApprovalRule? {
         guard let matched = rulesByID.values
             .sorted(by: ruleOrder)
             .first(where: { $0.pattern.matches(toolName: toolName) })

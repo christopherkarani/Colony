@@ -113,12 +113,12 @@ public protocol ColonyImmutableToolAuditLogStore: Sendable {
     func records() async throws -> [ColonySignedToolAuditRecord]
 }
 
-public actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
+package actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
     private var storage: [ColonySignedToolAuditRecord] = []
 
-    public init() {}
+    package init() {}
 
-    public func append(_ record: ColonySignedToolAuditRecord) async throws {
+    package func append(_ record: ColonySignedToolAuditRecord) async throws {
         let expectedSequence = (storage.last?.payload.sequence ?? 0) + 1
         guard record.payload.sequence == expectedSequence else {
             throw ColonyToolAuditError.invalidSequence(expected: expectedSequence, actual: record.payload.sequence)
@@ -135,7 +135,7 @@ public actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
         storage.append(record)
     }
 
-    public func records() async throws -> [ColonySignedToolAuditRecord] {
+    package func records() async throws -> [ColonySignedToolAuditRecord] {
         storage
     }
 }

@@ -1,11 +1,11 @@
 import Foundation
 
-public actor ColonySessionStore {
+package actor ColonySessionStore {
     private var records: [ColonyProductSessionID: ColonyProductSessionRecord] = [:]
 
-    public init() {}
+    package init() {}
 
-    public func createSession(_ input: ColonySessionCreateInput) throws -> ColonyProductSessionRecord {
+    package func createSession(_ input: ColonySessionCreateInput) throws -> ColonyProductSessionRecord {
         let sessionID = input.sessionID ?? ColonyProductSessionID(rawValue: "session:" + UUID().uuidString.lowercased())
         guard records[sessionID] == nil else {
             throw ColonySessionStoreError.duplicateSessionID(sessionID)
@@ -48,11 +48,11 @@ public actor ColonySessionStore {
         return record
     }
 
-    public func getSession(id: ColonyProductSessionID) -> ColonyProductSessionRecord? {
+    package func getSession(id: ColonyProductSessionID) -> ColonyProductSessionRecord? {
         records[id]
     }
 
-    public func listSessions(projectID: ColonyProjectID? = nil) -> [ColonyProductSessionRecord] {
+    package func listSessions(projectID: ColonyProjectID? = nil) -> [ColonyProductSessionRecord] {
         let values = records.values.filter { record in
             guard let projectID else { return true }
             return record.projectID == projectID
@@ -65,11 +65,11 @@ public actor ColonySessionStore {
         }
     }
 
-    public func deleteSession(id: ColonyProductSessionID) -> Bool {
+    package func deleteSession(id: ColonyProductSessionID) -> Bool {
         records.removeValue(forKey: id) != nil
     }
 
-    public func forkSession(_ input: ColonySessionForkInput) throws -> ColonyProductSessionRecord {
+    package func forkSession(_ input: ColonySessionForkInput) throws -> ColonyProductSessionRecord {
         guard let source = records[input.sourceSessionID] else {
             throw ColonySessionStoreError.sessionNotFound(input.sourceSessionID)
         }
@@ -95,7 +95,7 @@ public actor ColonySessionStore {
         return record
     }
 
-    public func revertSession(sessionID: ColonyProductSessionID) throws -> ColonyProductSessionRecord {
+    package func revertSession(sessionID: ColonyProductSessionID) throws -> ColonyProductSessionRecord {
         guard var session = records[sessionID] else {
             throw ColonySessionStoreError.sessionNotFound(sessionID)
         }
@@ -113,7 +113,7 @@ public actor ColonySessionStore {
         return session
     }
 
-    public func shareSession(_ input: ColonySessionShareInput) throws -> ColonyProductSessionShareRecord {
+    package func shareSession(_ input: ColonySessionShareInput) throws -> ColonyProductSessionShareRecord {
         guard var session = records[input.sessionID] else {
             throw ColonySessionStoreError.sessionNotFound(input.sessionID)
         }

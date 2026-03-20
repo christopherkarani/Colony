@@ -107,14 +107,14 @@ public protocol ColonyFileSystemBackend: Sendable {
     func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch]
 }
 
-public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
+package actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
     private var files: [ColonyVirtualPath: String]
 
-    public init(files: [ColonyVirtualPath: String] = [:]) {
+    package init(files: [ColonyVirtualPath: String] = [:]) {
         self.files = files
     }
 
-    public func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo] {
+    package func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo] {
         let prefix = path.rawValue == "/" ? "/" : (path.rawValue + "/")
         var directories: Set<String> = []
         var results: [ColonyFileInfo] = []
@@ -150,21 +150,21 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
         return results
     }
 
-    public func read(at path: ColonyVirtualPath) async throws -> String {
+    package func read(at path: ColonyVirtualPath) async throws -> String {
         guard let content = files[path] else {
             throw ColonyFileSystemError.notFound(path)
         }
         return content
     }
 
-    public func write(at path: ColonyVirtualPath, content: String) async throws {
+    package func write(at path: ColonyVirtualPath, content: String) async throws {
         if files[path] != nil {
             throw ColonyFileSystemError.alreadyExists(path)
         }
         files[path] = content
     }
 
-    public func edit(
+    package func edit(
         at path: ColonyVirtualPath,
         oldString: String,
         newString: String,
@@ -193,14 +193,14 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
         return replaceAll ? occurrences : 1
     }
 
-    public func glob(pattern: String) async throws -> [ColonyVirtualPath] {
+    package func glob(pattern: String) async throws -> [ColonyVirtualPath] {
         let matches = files.keys
             .filter { Self.matchesGlob(pattern: pattern, path: $0.rawValue) }
             .sorted { $0.rawValue.utf8.lexicographicallyPrecedes($1.rawValue.utf8) }
         return matches
     }
 
-    public func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch] {
+    package func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch] {
         guard pattern.isEmpty == false else { return [] }
         var matches: [ColonyGrepMatch] = []
 

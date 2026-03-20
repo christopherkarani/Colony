@@ -7,12 +7,12 @@ public protocol ColonyProjectStore: Sendable {
     func deleteProject(id: ColonyProjectID) async -> Bool
 }
 
-public actor InMemoryColonyProjectStore: ColonyProjectStore {
+package actor InMemoryColonyProjectStore: ColonyProjectStore {
     private var records: [ColonyProjectID: ColonyProjectRecord] = [:]
 
-    public init() {}
+    package init() {}
 
-    public func createProject(_ input: ColonyProjectCreateInput) throws -> ColonyProjectRecord {
+    package func createProject(_ input: ColonyProjectCreateInput) throws -> ColonyProjectRecord {
         let projectID = input.projectID ?? ColonyProjectID(rawValue: "project:" + UUID().uuidString.lowercased())
         guard records[projectID] == nil else {
             throw ColonyProjectStoreError.duplicateProjectID(projectID)
@@ -30,11 +30,11 @@ public actor InMemoryColonyProjectStore: ColonyProjectStore {
         return record
     }
 
-    public func getProject(id: ColonyProjectID) -> ColonyProjectRecord? {
+    package func getProject(id: ColonyProjectID) -> ColonyProjectRecord? {
         records[id]
     }
 
-    public func listProjects() -> [ColonyProjectRecord] {
+    package func listProjects() -> [ColonyProjectRecord] {
         records.values.sorted { lhs, rhs in
             if lhs.createdAt == rhs.createdAt {
                 return lhs.projectID.rawValue < rhs.projectID.rawValue
@@ -43,7 +43,7 @@ public actor InMemoryColonyProjectStore: ColonyProjectStore {
         }
     }
 
-    public func deleteProject(id: ColonyProjectID) -> Bool {
+    package func deleteProject(id: ColonyProjectID) -> Bool {
         records.removeValue(forKey: id) != nil
     }
 }

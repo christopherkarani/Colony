@@ -69,7 +69,7 @@ public protocol ColonyMemoryBackend: Sendable {
     func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult
 }
 
-public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
+package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
     private struct StoredMemory: Sendable {
         var id: String
         var content: String
@@ -80,7 +80,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
     private var nextID: UInt64
     private var items: [StoredMemory]
 
-    public init(
+    package init(
         nextID: UInt64 = 1,
         items: [ColonyMemoryItem] = []
     ) {
@@ -96,7 +96,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         }
     }
 
-    public func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
+    package func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
         let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let limit = min(100, max(1, request.limit ?? 5))
 
@@ -130,7 +130,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         return ColonyMemoryRecallResult(items: recallItems)
     }
 
-    public func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
+    package func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
         let id = "mem-" + String(nextID)
         nextID += 1
 
