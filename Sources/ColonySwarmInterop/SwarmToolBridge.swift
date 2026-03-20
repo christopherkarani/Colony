@@ -1,6 +1,7 @@
 import Foundation
 import HiveCore
 import ColonyCore
+import Colony
 import Swarm
 
 @available(*, deprecated, renamed: "ColonySwarmToolRegistration")
@@ -64,7 +65,7 @@ public typealias SwarmToolBridge = ColonySwarmToolBridge
 ///     swarmTools: bridge
 /// ))
 /// ```
-public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
+public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry, Sendable {
     /// The underlying Swarm tool registry that handles conversion and execution.
     private let registry: ColonySwarmToolRegistry
 

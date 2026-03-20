@@ -19,6 +19,7 @@ let package = Package(
     products: [
         .library(name: "Colony", targets: ["Colony"]),
         .library(name: "ColonyCore", targets: ["ColonyCore"]),
+        .library(name: "ColonySwarmInterop", targets: ["ColonySwarmInterop"]),
         .library(name: "ColonyControlPlane", targets: ["ColonyControlPlane"]),
         .executable(name: "ColonyResearchAssistantExample", targets: ["ColonyResearchAssistantExample"]),
         .executable(name: "DeepResearchApp", targets: ["DeepResearchApp"]),
@@ -80,6 +81,15 @@ let package = Package(
             ]
         ),
         .target(
+            name: "ColonySwarmInterop",
+            dependencies: [
+                "Colony",
+                "ColonyCore",
+                .product(name: "HiveCore", package: "Hive"),
+                .product(name: "Swarm", package: "Swarm"),
+            ]
+        ),
+        .target(
             name: "ColonyControlPlane",
             dependencies: [
                 "Colony",
@@ -100,6 +110,7 @@ let package = Package(
             name: "ColonyTests",
             dependencies: [
                 "Colony",
+                "ColonySwarmInterop",
                 .product(name: "Swarm", package: "Swarm"),
                 .product(name: "Membrane", package: "Membrane"),
             ]

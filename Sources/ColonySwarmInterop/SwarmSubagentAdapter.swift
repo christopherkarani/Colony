@@ -1,5 +1,6 @@
 import Foundation
 import ColonyCore
+import Colony
 import Swarm
 
 /// Adapts Swarm's `AgentRuntime`-based agents to Colony's `ColonySubagentRegistry`.

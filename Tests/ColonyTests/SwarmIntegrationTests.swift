@@ -1,4 +1,5 @@
 import ColonyCore
+import ColonySwarmInterop
 import Foundation
 import HiveCore
 import Swarm

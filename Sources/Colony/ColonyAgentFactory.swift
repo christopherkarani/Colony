@@ -349,7 +349,7 @@ package struct ColonyAgentFactory: Sendable {
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
-        swarmTools: ColonySwarmToolBridge? = nil,
+        swarmTools: (any ColonySwarmToolBridging)? = nil,
         membrane: MembraneEnvironment? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
@@ -728,7 +728,7 @@ private struct ExistentialHiveModelClient: HiveModelClient, Sendable {
 
 /// Filters Swarm tools by active Colony capabilities.
 struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
-    let base: ColonySwarmToolBridge
+    let base: any ColonySwarmToolBridging
     let activeCapabilities: ColonyRuntimeCapabilities
 
     func listTools() -> [HiveToolDefinition] {
