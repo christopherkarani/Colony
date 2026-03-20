@@ -210,7 +210,7 @@ func taskE_durableCheckpointStoreIntegratesWithBootstrap() async throws {
         model: AnyHiveModelClient(InterruptingOnceModelClient()),
         durableCheckpointStoreURL: directory,
         configure: { configuration in
-            configuration.toolApprovalPolicy = .always
+            configuration.safety.toolApprovalPolicy = .always
         }
     )
 
@@ -284,8 +284,8 @@ func taskE_artifactStoreRetentionAndRedaction() async throws {
         retentionPolicy: ColonyArtifactRetentionPolicy(maxArtifacts: 2, maxAge: nil)
     )
 
-    let threadID = HiveThreadID("thread-task-e-artifact")
-    let runID = HiveRunID(UUID(uuidString: "6511EC8B-1CA8-4D0E-83A4-7537CA6E76C8")!)
+    let threadID = ColonyThreadID("thread-task-e-artifact")
+    let runID = UUID(uuidString: "6511EC8B-1CA8-4D0E-83A4-7537CA6E76C8")!
     let base = Date(timeIntervalSince1970: 1_700_000_500)
 
     let first = try await store.put(
@@ -451,7 +451,7 @@ func taskE_observabilityRedactionAndHarnessIntegration() async throws {
         modelName: "streaming-test-model",
         model: AnyHiveModelClient(FixedModelClient(content: "done", token: "api_key=top_secret")),
         configure: { configuration in
-            configuration.toolApprovalPolicy = .never
+            configuration.safety.toolApprovalPolicy = .never
         }
     )
 

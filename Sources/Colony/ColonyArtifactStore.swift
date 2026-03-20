@@ -1,5 +1,22 @@
 import Foundation
-import HiveCore
+import ColonyCore
+
+/// Type-safe artifact kind with autocomplete for standard kinds.
+public struct ColonyArtifactKind: Hashable, Codable, Sendable,
+                                   ExpressibleByStringLiteral,
+                                   CustomStringConvertible {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { self.init(value) }
+    public var description: String { rawValue }
+}
+
+extension ColonyArtifactKind {
+    public static let conversationHistory: ColonyArtifactKind = "conversation_history"
+    public static let largeToolResult: ColonyArtifactKind = "large_tool_result"
+    public static let checkpoint: ColonyArtifactKind = "checkpoint"
+    public static let summary: ColonyArtifactKind = "summary"
+}
 
 public struct ColonyArtifactRetentionPolicy: Sendable {
     public var maxArtifacts: Int?
@@ -12,22 +29,22 @@ public struct ColonyArtifactRetentionPolicy: Sendable {
 }
 
 public struct ColonyArtifactRecord: Codable, Sendable, Equatable {
-    public let id: String
-    public let threadID: String
+    public let id: ColonyArtifactID
+    public let threadID: ColonyThreadID
     public let runID: UUID?
-    public let kind: String
+    public let kind: ColonyArtifactKind
     public let createdAt: Date
     public let redacted: Bool
     public let metadata: [String: String]
 
     public init(
-        id: String,
-        threadID: String,
+        id: ColonyArtifactID = ColonyArtifactID(UUID().uuidString),
+        threadID: ColonyThreadID,
         runID: UUID?,
-        kind: String,
-        createdAt: Date,
-        redacted: Bool,
-        metadata: [String: String]
+        kind: ColonyArtifactKind,
+        createdAt: Date = Date(),
+        redacted: Bool = true,
+        metadata: [String: String] = [:]
     ) {
         self.id = id
         self.threadID = threadID
@@ -77,9 +94,9 @@ public actor ColonyArtifactStore {
 
     @discardableResult
     public func put(
-        threadID: HiveThreadID,
-        runID: HiveRunID?,
-        kind: String,
+        threadID: ColonyThreadID,
+        runID: UUID?,
+        kind: ColonyArtifactKind,
         content: String,
         metadata: [String: String] = [:],
         redact: Bool = true,
@@ -90,9 +107,9 @@ public actor ColonyArtifactStore {
         let cleanedContent = redact ? redactionPolicy.redactInlineSecrets(in: content) : content
 
         let record = ColonyArtifactRecord(
-            id: artifactID,
-            threadID: threadID.rawValue,
-            runID: runID?.rawValue,
+            id: ColonyArtifactID(artifactID),
+            threadID: threadID,
+            runID: runID,
             kind: kind,
             createdAt: createdAt,
             redacted: redact,
@@ -108,9 +125,9 @@ public actor ColonyArtifactStore {
     }
 
     public func list(
-        threadID: HiveThreadID? = nil,
-        runID: HiveRunID? = nil,
-        kind: String? = nil,
+        threadID: ColonyThreadID? = nil,
+        runID: UUID? = nil,
+        kind: ColonyArtifactKind? = nil,
         limit: Int? = nil
     ) async throws -> [ColonyArtifactRecord] {
         if let limit, limit <= 0 {
@@ -120,8 +137,8 @@ public actor ColonyArtifactStore {
         let artifacts = try loadStoredArtifacts()
             .map(\.record)
             .filter { record in
-                if let threadID, record.threadID != threadID.rawValue { return false }
-                if let runID, record.runID != runID.rawValue { return false }
+                if let threadID, record.threadID != threadID { return false }
+                if let runID, record.runID != runID { return false }
                 if let kind, record.kind != kind { return false }
                 return true
             }
@@ -129,7 +146,7 @@ public actor ColonyArtifactStore {
                 if lhs.createdAt != rhs.createdAt {
                     return lhs.createdAt > rhs.createdAt
                 }
-                return lhs.id > rhs.id
+                return lhs.id.rawValue > rhs.id.rawValue
             }
 
         if let limit {
@@ -139,8 +156,8 @@ public actor ColonyArtifactStore {
         return artifacts
     }
 
-    public func readContent(id: String) async throws -> String? {
-        let url = artifactURLForID(id)
+    public func readContent(id: ColonyArtifactID) async throws -> String? {
+        let url = artifactURLForID(id.rawValue)
         guard fileManager.fileExists(atPath: url.path) else {
             return nil
         }
@@ -155,10 +172,10 @@ public actor ColonyArtifactStore {
                 if lhs.record.createdAt != rhs.record.createdAt {
                     return lhs.record.createdAt < rhs.record.createdAt
                 }
-                return lhs.record.id < rhs.record.id
+                return lhs.record.id.rawValue < rhs.record.id.rawValue
             }
 
-        var removeIDs: Set<String> = []
+        var removeIDs: Set<ColonyArtifactID> = []
 
         if let maxAge = retentionPolicy.maxAge {
             let threshold = now.addingTimeInterval(-maxAge)
@@ -177,12 +194,12 @@ public actor ColonyArtifactStore {
             }
         }
 
-        let removed = Array(removeIDs).sorted()
+        let removed = Array(removeIDs).sorted { $0.rawValue < $1.rawValue }
         for id in removed {
-            try? fileManager.removeItem(at: artifactURLForID(id))
+            try? fileManager.removeItem(at: artifactURLForID(id.rawValue))
         }
 
-        return removed
+        return removed.map(\.rawValue)
     }
 
     private func loadStoredArtifacts() throws -> [StoredArtifact] {

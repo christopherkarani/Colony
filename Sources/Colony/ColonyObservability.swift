@@ -30,16 +30,16 @@ public struct ColonyObservabilityEvent: Codable, Sendable, Equatable {
     public let name: ColonyEventName
     public let timestamp: Date
     public let runID: UUID?
-    public let sessionID: String?
-    public let threadID: String?
+    public let sessionID: ColonyHarnessSessionID?
+    public let threadID: ColonyThreadID?
     public let attributes: [String: String]
 
     public init(
         name: ColonyEventName,
         timestamp: Date,
         runID: UUID? = nil,
-        sessionID: String? = nil,
-        threadID: String? = nil,
+        sessionID: ColonyHarnessSessionID? = nil,
+        threadID: ColonyThreadID? = nil,
         attributes: [String: String] = [:]
     ) {
         self.name = name
@@ -111,8 +111,8 @@ public actor ColonyObservabilityEmitter {
             name: ColonyEventName("colony.harness.\(envelope.eventType.rawValue)"),
             timestamp: envelope.timestamp,
             runID: envelope.runID,
-            sessionID: envelope.sessionID.rawValue,
-            threadID: threadID.rawValue,
+            sessionID: envelope.sessionID,
+            threadID: threadID,
             attributes: attributes
         )
 
