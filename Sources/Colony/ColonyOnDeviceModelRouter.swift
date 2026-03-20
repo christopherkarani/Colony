@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvertible {
+package enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvertible {
     case onDeviceRequiredButUnavailable
 
     public var description: String {
@@ -13,20 +13,20 @@ public enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvert
     }
 }
 
-public struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReportingModelRouter, Sendable {
-    public enum PrivacyBehavior: Sendable {
+package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReportingHiveModelRouter, Sendable {
+    package enum PrivacyBehavior: Sendable {
         /// Prefer on-device, but allow fallback when unavailable.
         case preferOnDevice
         /// Require on-device; when unavailable, the routed model client fails deterministically.
         case requireOnDevice
     }
 
-    public struct Policy: Sendable {
-        public var privacyBehavior: PrivacyBehavior
-        public var preferOnDeviceWhenOffline: Bool
-        public var preferOnDeviceWhenMetered: Bool
+    package struct Policy: Sendable {
+        package var privacyBehavior: PrivacyBehavior
+        package var preferOnDeviceWhenOffline: Bool
+        package var preferOnDeviceWhenMetered: Bool
 
-        public init(
+        package init(
             privacyBehavior: PrivacyBehavior = .preferOnDevice,
             preferOnDeviceWhenOffline: Bool = true,
             preferOnDeviceWhenMetered: Bool = true
@@ -37,7 +37,7 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReport
         }
     }
 
-    public init(
+    package init(
         onDevice: AnyHiveModelClient?,
         fallback: AnyHiveModelClient,
         onDeviceCapabilities: ColonyModelCapabilities = [],
@@ -54,13 +54,15 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReport
     }
 
     /// Convenience initializer that wires `ColonyFoundationModelsClient` as the on-device model.
-    public init(
+    package init(
         fallback: AnyHiveModelClient,
         policy: Policy = Policy(),
         foundationModels: ColonyFoundationModelsClient = ColonyFoundationModelsClient()
     ) {
         self.init(
-            onDevice: AnyHiveModelClient(foundationModels),
+            onDevice: AnyHiveModelClient(
+                ColonyHiveModelClientAdapter(base: AnyColonyModelClient(foundationModels))
+            ),
             fallback: fallback,
             onDeviceCapabilities: foundationModels.colonyModelCapabilities,
             policy: policy,
@@ -68,7 +70,7 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReport
         )
     }
 
-    public func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+    package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         guard let hints else { return fallback }
 
         let wantsOnDevice: Bool = {
@@ -101,7 +103,7 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReport
         return fallback
     }
 
-    public func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
+    package func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
         guard let hints else { return fallbackCapabilities }
 
         let wantsOnDevice: Bool = {

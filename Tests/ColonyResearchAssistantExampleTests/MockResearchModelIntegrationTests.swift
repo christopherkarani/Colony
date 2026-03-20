@@ -11,42 +11,43 @@ func mockResearchModelCompletesTaskLoop() async throws {
     )
 
     let factory = ColonyAgentFactory()
-    let runtime = try factory.makeRuntime(
+    let runtime = try factory.makeRuntime(.init(
         profile: .onDevice4k,
         modelName: "test-model",
-        model: AnyHiveModelClient(MockResearchModel()),
-        filesystem: fs,
+        model: ColonyModel(client: MockResearchModel()),
+        services: ColonyRuntimeServices(filesystem: fs),
         configure: { config in
             config.capabilities = [.planning, .filesystem, .subagents]
             config.toolApprovalPolicy = .never
+            config.mandatoryApprovalRiskLevels = []
             config.summarizationPolicy = nil
             config.toolResultEvictionTokenLimit = nil
         }
-    )
+    ))
 
-    let handle = await runtime.runControl.start(.init(input: "Research this repository architecture."))
+    let handle = await runtime.sendUserMessage("Research this repository architecture.")
     let outcome = try await handle.outcome.value
 
-    guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
+    guard case let .finished(transcript, _) = outcome else {
         #expect(Bool(false))
         return
     }
 
-    let finalAnswer = try store.get(ColonySchema.Channels.finalAnswer) ?? ""
+    let finalAnswer = transcript.finalAnswer ?? ""
     #expect(finalAnswer.isEmpty == false)
     #expect(finalAnswer.contains("MOCK_RESEARCH_SUMMARY"))
     #expect(finalAnswer.contains("MOCK_SUBAGENT_FINDINGS"))
     #expect(finalAnswer.contains("Subagent registry not configured.") == false)
 
-    let messages = try store.get(ColonySchema.Channels.messages)
+    let messages = transcript.messages
     guard let assistantTaskMessage = messages.first(where: { message in
-        message.role == .assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })
+        message.role == .assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInTool.task.rawValue })
     }) else {
         #expect(Bool(false))
         return
     }
 
-    guard let taskCallID = assistantTaskMessage.toolCalls.first(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })?.id else {
+    guard let taskCallID = assistantTaskMessage.toolCalls.first(where: { $0.name == ColonyBuiltInTool.task.rawValue })?.id else {
         #expect(Bool(false))
         return
     }

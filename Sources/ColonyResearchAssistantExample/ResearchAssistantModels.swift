@@ -19,8 +19,7 @@ enum ResearchAssistantModelSelectionError: Error, Sendable, Equatable, CustomStr
 
 struct ResearchAssistantResolvedModel: Sendable {
     var selection: ResearchAssistantModelSelection
-    var client: any HiveModelClient
-    var capabilities: ColonyModelCapabilities
+    var model: ColonyModel
 }
 
 struct ResearchAssistantModelResolver: Sendable {
@@ -36,43 +35,39 @@ struct ResearchAssistantModelResolver: Sendable {
             if isFoundationAvailable() {
                 return ResearchAssistantResolvedModel(
                     selection: .foundation,
-                    client: ColonyFoundationModelsClient(),
-                    capabilities: [.managedToolPrompting]
+                    model: .foundationModels()
                 )
             }
             return ResearchAssistantResolvedModel(
                 selection: .mock,
-                client: MockResearchModel(),
-                capabilities: []
+                model: ColonyModel(client: MockResearchModel())
             )
         case .foundation:
             if isFoundationAvailable() {
                 return ResearchAssistantResolvedModel(
                     selection: .foundation,
-                    client: ColonyFoundationModelsClient(),
-                    capabilities: [.managedToolPrompting]
+                    model: .foundationModels()
                 )
             }
             throw ResearchAssistantModelSelectionError.foundationModeRequiresAvailableModel
         case .mock:
             return ResearchAssistantResolvedModel(
                 selection: .mock,
-                client: MockResearchModel(),
-                capabilities: []
+                model: ColonyModel(client: MockResearchModel())
             )
         }
     }
 }
 
-final class MockResearchModel: HiveModelClient, @unchecked Sendable {
+final class MockResearchModel: ColonyModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var toolCallCounter: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: ColonyModelRequest) async throws -> ColonyModelResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
         let response = makeResponse(for: request)
         return AsyncThrowingStream { continuation in
             continuation.yield(.final(response))
@@ -80,10 +75,10 @@ final class MockResearchModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func makeResponse(for request: HiveChatRequest) -> HiveChatResponse {
+    private func makeResponse(for request: ColonyModelRequest) -> ColonyModelResponse {
         if isSubagentRequest(request) {
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return ColonyModelResponse(
+                message: ColonyChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
                     content: makeSubagentFindings(for: latestUserPrompt(in: request)),
@@ -95,8 +90,8 @@ final class MockResearchModel: HiveModelClient, @unchecked Sendable {
         if request.messages.contains(where: { message in
             message.role == .system && message.content.contains("Tool execution rejected by user.")
         }) {
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return ColonyModelResponse(
+                message: ColonyChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\nTool execution was rejected by the user; no additional evidence was collected.",
@@ -106,8 +101,8 @@ final class MockResearchModel: HiveModelClient, @unchecked Sendable {
         }
 
         guard let latest = latestNonSystemMessage(in: request) else {
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return ColonyModelResponse(
+                message: ColonyChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\nNo user input was provided.",
@@ -128,14 +123,14 @@ Return:
 3. Open risks or unknowns.
 """
 
-            let call = HiveToolCall(
+            let call = ColonyToolCall(
                 id: nextToolCallID(),
-                name: ColonyBuiltInToolDefinitions.taskName,
+                name: ColonyBuiltInTool.task.rawValue,
                 argumentsJSON: #"{"prompt":"\#(jsonEscaped(delegatedPrompt))","subagent_type":"general-purpose"}"#
             )
 
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return ColonyModelResponse(
+                message: ColonyChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
                     content: "Delegating research to a focused subagent.",
@@ -146,8 +141,8 @@ Return:
         case .tool:
             let synthesized = latest.content.trimmingCharacters(in: .whitespacesAndNewlines)
             let body = synthesized.isEmpty ? "(subagent returned no content)" : synthesized
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return ColonyModelResponse(
+                message: ColonyChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\n\(body)",
@@ -156,8 +151,8 @@ Return:
             )
 
         case .assistant, .system:
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return ColonyModelResponse(
+                message: ColonyChatMessage(
                     id: UUID().uuidString,
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\nWaiting for user research prompt.",
@@ -174,19 +169,19 @@ Return:
         return "mock-task-\(toolCallCounter)"
     }
 
-    private func latestNonSystemMessage(in request: HiveChatRequest) -> HiveChatMessage? {
-        request.messages.last(where: { $0.role != .system && $0.op == nil })
+    private func latestNonSystemMessage(in request: ColonyModelRequest) -> ColonyChatMessage? {
+        request.messages.last(where: { $0.role != .system && $0.operation == nil })
     }
 
-    private func latestUserPrompt(in request: HiveChatRequest) -> String {
-        request.messages.last(where: { $0.role == .user && $0.op == nil })?.content ?? "unspecified request"
+    private func latestUserPrompt(in request: ColonyModelRequest) -> String {
+        request.messages.last(where: { $0.role == .user && $0.operation == nil })?.content ?? "unspecified request"
     }
 
-    private func isSubagentRequest(_ request: HiveChatRequest) -> Bool {
+    private func isSubagentRequest(_ request: ColonyModelRequest) -> Bool {
         let hasSubagentMarker = request.messages.contains(where: { message in
             message.role == .system && message.content.contains("Subagent mode")
         })
-        let hasTaskTool = request.tools.contains(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })
+        let hasTaskTool = request.tools.contains(where: { $0.name == ColonyBuiltInTool.task.rawValue })
         return hasSubagentMarker || hasTaskTool == false
     }
 

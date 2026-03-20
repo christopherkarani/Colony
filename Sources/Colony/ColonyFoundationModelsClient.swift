@@ -7,7 +7,7 @@ import ColonyCore
 import FoundationModels
 #endif
 
-public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConvertible {
+package enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConvertible {
     case foundationModelsUnavailable
     case generationFailed(String)
     case invalidToolCallFormat(String)
@@ -25,34 +25,13 @@ public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConv
 }
 
 extension ColonyFoundationModelsClientError: LocalizedError {
-    public var errorDescription: String? {
+    package var errorDescription: String? {
         description
     }
 }
 
-public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityReportingModelClient, Sendable {
-    public struct Configuration: Sendable {
-        public enum ToolInstructionVerbosity: Sendable {
-            case compact
-            case verbose
-        }
-
-        public var additionalInstructions: String?
-        public var prewarmSession: Bool
-        public var toolInstructionVerbosity: ToolInstructionVerbosity
-
-        public init(
-            additionalInstructions: String? = nil,
-            prewarmSession: Bool = false,
-            toolInstructionVerbosity: ToolInstructionVerbosity = .compact
-        ) {
-            self.additionalInstructions = additionalInstructions
-            self.prewarmSession = prewarmSession
-            self.toolInstructionVerbosity = toolInstructionVerbosity
-        }
-    }
-
-    public static var isAvailable: Bool {
+package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapabilityReportingModelClient, Sendable {
+    package static var isAvailable: Bool {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
@@ -63,19 +42,19 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
         #endif
     }
 
-    public init(configuration: Configuration = Configuration()) {
+    package init(configuration: ColonyFoundationModelConfiguration = ColonyFoundationModelConfiguration()) {
         self.configuration = configuration
     }
 
-    public var colonyModelCapabilities: ColonyModelCapabilities {
+    package var colonyModelCapabilities: ColonyModelCapabilities {
         [.managedToolPrompting, .managedStructuredOutputs]
     }
 
-    public func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    package func complete(_ request: ColonyModelRequest) async throws -> ColonyModelResponse {
         try await streamFinal(request)
     }
 
-    public func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    package func stream(_ request: ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             return streamAvailable(request)
@@ -89,12 +68,12 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
 
     // MARK: - Private
 
-    private let configuration: Configuration
+    private let configuration: ColonyFoundationModelConfiguration
 
     private static let toolCallOpenTag = "<tool_call>"
     private static let toolCallCloseTag = "</tool_call>"
 
-    private func streamUnavailable() -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    private func streamUnavailable() -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish(throwing: ColonyFoundationModelsClientError.foundationModelsUnavailable)
         }
@@ -120,34 +99,34 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
     private func makeResponse(
         rawModelText: String,
         toolsAllowed: Set<String>,
-        structuredOutput: HiveStructuredOutputFormat?
-    ) throws -> HiveChatResponse {
+        structuredOutput: ColonyStructuredOutput?
+    ) throws -> ColonyModelResponse {
         let parsed = try parseFinalAssistantOutput(
             raw: rawModelText,
             toolsAllowed: toolsAllowed
         )
-        let structuredPayload: HiveStructuredOutput? = if parsed.toolCalls.isEmpty,
+        let structuredPayload: ColonyStructuredOutputPayload? = if parsed.toolCalls.isEmpty,
                                                          let structuredOutput
         {
-            HiveStructuredOutput(format: structuredOutput, json: parsed.visibleText)
+            ColonyStructuredOutputPayload(format: structuredOutput, json: parsed.visibleText)
         } else {
             nil
         }
-        let message = HiveChatMessage(
+        let message = ColonyChatMessage(
             id: messageID(),
             role: .assistant,
             content: parsed.visibleText,
             toolCalls: parsed.toolCalls,
             structuredOutput: structuredPayload
         )
-        return HiveChatResponse(message: message)
+        return ColonyModelResponse(message: message)
     }
 
-    private func makePrompt(from request: HiveChatRequest) -> (
+    private func makePrompt(from request: ColonyModelRequest) -> (
         instructions: String?,
         prompt: String,
         toolsAllowed: Set<String>,
-        structuredOutput: HiveStructuredOutputFormat?
+        structuredOutput: ColonyStructuredOutput?
     ) {
         var systemParts: [String] = []
         var promptLines: [String] = []
@@ -156,7 +135,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
         let toolInstructions = makeToolInstructions(tools: request.tools)
 
         for message in request.messages {
-            guard message.op == nil else { continue }
+            guard message.operation == nil else { continue }
 
             switch message.role {
             case .system:
@@ -210,7 +189,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
         )
     }
 
-    func makeToolInstructions(tools: [HiveToolDefinition]) -> String? {
+    func makeToolInstructions(tools: [ColonyToolDefinition]) -> String? {
         guard tools.isEmpty == false else { return nil }
 
         switch configuration.toolInstructionVerbosity {
@@ -284,11 +263,11 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
         return summary
     }
 
-    private func renderToolCallMarkup(from call: HiveToolCall) -> String {
+    private func renderToolCallMarkup(from call: ColonyToolCall) -> String {
         "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id))\",\"name\":\"\(jsonEscaped(call.name))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
     }
 
-    private func makeStructuredOutputInstructions(format: HiveStructuredOutputFormat?) -> String? {
+    private func makeStructuredOutputInstructions(format: ColonyStructuredOutput?) -> String? {
         guard let format else { return nil }
         switch format {
         case .jsonObject:
@@ -328,7 +307,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
 
     private struct ParsedAssistantOutput: Sendable {
         let visibleText: String
-        let toolCalls: [HiveToolCall]
+        let toolCalls: [ColonyToolCall]
     }
 
     private func parseFinalAssistantOutput(
@@ -337,7 +316,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
     ) throws -> ParsedAssistantOutput {
         let parsed = parseToolCallBlocks(raw: raw, requireClosedTags: true)
 
-        var toolCalls: [HiveToolCall] = []
+        var toolCalls: [ColonyToolCall] = []
         toolCalls.reserveCapacity(parsed.blocks.count)
 
         for (index, innerJSON) in parsed.blocks.enumerated() {
@@ -398,7 +377,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
         _ innerJSON: String,
         index: Int,
         toolsAllowed: Set<String>
-    ) throws -> HiveToolCall {
+    ) throws -> ColonyToolCall {
         if innerJSON == "__UNTERMINATED__" {
             throw ColonyFoundationModelsClientError.invalidToolCallFormat("Unterminated \(Self.toolCallOpenTag) block.")
         }
@@ -448,7 +427,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
             }
         }
 
-        return HiveToolCall(
+        return ColonyToolCall(
             id: id ?? toolCallID(name: name, argumentsJSON: argumentsJSON, index: index),
             name: name,
             argumentsJSON: argumentsJSON
@@ -467,7 +446,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, ColonyCapabilityRep
 
     #if canImport(FoundationModels)
     @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
-    private func streamAvailable(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    private func streamAvailable(_ request: ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {

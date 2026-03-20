@@ -1,13 +1,22 @@
 {
-  "originHash" : "28adc2c89af6feaeb560d7c28e059206eb1f6ff50aee316dfabf758a767a9e86",
+  "originHash" : "f91065a2d51f9069090b8ba8b788b204caf59743d8d855ef20fbe723a77678ca",
   "pins" : [
     {
       "identity" : "conduit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Conduit",
       "state" : {
-        "revision" : "b7ccafa44c8bb19d0f74aeb45d9dbd05563a55c5",
-        "version" : "0.3.5"
+        "revision" : "61a1b70ae3cdcba7d186b5165d8a946e4a615191",
+        "version" : "0.3.10"
+      }
+    },
+    {
+      "identity" : "contextcore",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/ContextCore.git",
+      "state" : {
+        "revision" : "96713f7f11abf29ef9f8f5ed52e32324883351b5",
+        "version" : "0.1.0"
       }
     },
     {
@@ -29,12 +38,39 @@
       }
     },
     {
+      "identity" : "hive",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Hive",
+      "state" : {
+        "revision" : "2172b53796151d3d03e6e53bd0e9f1587be25017",
+        "version" : "0.1.8"
+      }
+    },
+    {
+      "identity" : "membrane",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Membrane.git",
+      "state" : {
+        "revision" : "29a24a82913ac20fee1ead8999ef16de5bfa423c",
+        "version" : "0.1.2"
+      }
+    },
+    {
       "identity" : "metalanns",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/MetalANNS.git",
       "state" : {
         "revision" : "ea4586fff3f89fd655529927688aa910a85ed641",
         "version" : "0.1.3"
+      }
+    },
+    {
+      "identity" : "swarm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Swarm.git",
+      "state" : {
+        "revision" : "03ab9651464f81c5c65dfd9654ffc9c5c4605572",
+        "version" : "0.4.6"
       }
     },
     {
@@ -146,6 +182,15 @@
       }
     },
     {
+      "identity" : "swiftsoup",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/scinfu/SwiftSoup.git",
+      "state" : {
+        "revision" : "fd541c4b3fa7dcec2e7cfe049505b6e4382cd66b",
+        "version" : "2.13.2"
+      }
+    },
+    {
       "identity" : "usearch",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/unum-cloud/USearch.git",
@@ -159,8 +204,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Wax.git",
       "state" : {
-        "revision" : "5e64ac8b158b91c7509d5834934a2c37dfafa993",
-        "version" : "0.1.18"
+        "revision" : "08ee2ecb63ea0429d57f7191091689ed21f32831",
+        "version" : "0.1.19"
       }
     }
   ],

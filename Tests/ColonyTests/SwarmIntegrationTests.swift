@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -288,7 +289,7 @@ func swarmToolBridgeInvokesTool() async throws {
         riskLevel: .readOnly
     )
 
-    let call = HiveToolCall(id: "test-1", name: "echo", argumentsJSON: #"{"message":"hello world"}"#)
+    let call = ColonyToolCall(id: "test-1", name: "echo", argumentsJSON: #"{"message":"hello world"}"#)
     let result = try await bridge.invoke(call)
     #expect(result.content.contains("Echo: hello world"))
 }
@@ -342,7 +343,7 @@ func compositeToolRegistryPrecedenceIsAligned() async throws {
     )
     let composite = CompositeToolRegistry(
         primary: AnyHiveToolRegistry(PrimaryEchoRegistry()),
-        secondary: AnyHiveToolRegistry(bridge)
+        secondary: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge)))
     )
 
     var dedupedByName: [String: HiveToolDefinition] = [:]
@@ -492,7 +493,7 @@ func swarmToolThroughColonyPipeline() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(bridge),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -560,7 +561,7 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(bridge),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -622,7 +623,7 @@ func swarmToolRequiresApprovalForExplicitMetadata() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(bridge),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 

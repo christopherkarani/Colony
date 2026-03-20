@@ -1,5 +1,3 @@
-import HiveCore
-
 public enum ColonyToolRiskLevel: String, Codable, Sendable, CaseIterable, Comparable {
     case readOnly = "read_only"
     case stateMutation = "state_mutation"
@@ -137,7 +135,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
         return defaultRiskLevel
     }
 
-    public func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
+    public func assess(toolCalls: [ColonyToolCall]) -> [ColonyToolSafetyAssessment] {
         toolCalls.map { call in
             let riskLevel = riskLevel(for: call.name)
             let metadata = toolPolicyMetadataByName[call.name] ?? ColonyToolPolicyMetadata()

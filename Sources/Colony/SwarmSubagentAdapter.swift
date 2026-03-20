@@ -24,11 +24,12 @@ import Swarm
 ///     ("researcher", researcher, "Researches topics using web search"),
 /// ])
 ///
-/// let runtime = try ColonyAgentFactory().makeRuntime(
+/// let bootstrap = ColonyBootstrap()
+/// let runtime = try await bootstrap.makeRuntime(options: .init(
 ///     profile: .cloud,
 ///     modelName: "gpt-4",
 ///     subagents: adapter
-/// )
+/// ))
 /// ```
 public struct SwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
     private let agents: [(name: String, agent: any AgentRuntime, description: String)]

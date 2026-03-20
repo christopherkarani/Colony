@@ -22,11 +22,12 @@ import Swarm
 /// let adapter = SwarmMemoryAdapter(backend: InMemoryBackend(), conversationID: "test")
 ///
 /// // Use with Colony runtime
-/// let runtime = try ColonyAgentFactory().makeRuntime(
+/// let bootstrap = ColonyBootstrap()
+/// let runtime = try await bootstrap.makeRuntime(options: .init(
 ///     profile: .cloud,
 ///     modelName: "gpt-4",
 ///     memory: adapter
-/// )
+/// ))
 /// ```
 public struct SwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
     private let memory: any Memory

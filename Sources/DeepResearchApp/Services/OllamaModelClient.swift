@@ -1,7 +1,7 @@
 import Foundation
 import Colony
 
-struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient, Sendable {
+struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClient, Sendable {
     let apiClient: OllamaAPIClient
     let modelName: String
 
@@ -14,11 +14,11 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
         [.nativeToolCalling]
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: ColonyModelRequest) async throws -> ColonyModelResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
         let ollamaMessages = request.messages.compactMap { convertMessage($0) }
         let ollamaTools: [OllamaToolDef]? = request.tools.isEmpty ? nil : request.tools.map { convertToolDefinition($0) }
         let model = request.model.isEmpty ? modelName : request.model
@@ -53,13 +53,13 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
 
                         if chunk.done {
                             let hiveToolCalls = accumulatedToolCalls.map { convertToolCall($0) }
-                            let message = HiveChatMessage(
+                            let message = ColonyChatMessage(
                                 id: UUID().uuidString,
                                 role: .assistant,
                                 content: accumulatedContent,
                                 toolCalls: hiveToolCalls
                             )
-                            let response = HiveChatResponse(message: message)
+                            let response = ColonyModelResponse(message: message)
                             continuation.yield(.final(response))
                             continuation.finish()
                             return
@@ -67,13 +67,13 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
                     }
 
                     // If we exit the loop without a done chunk, emit final with what we have.
-                    let message = HiveChatMessage(
+                    let message = ColonyChatMessage(
                         id: UUID().uuidString,
                         role: .assistant,
                         content: accumulatedContent,
                         toolCalls: accumulatedToolCalls.map { convertToolCall($0) }
                     )
-                    let response = HiveChatResponse(message: message)
+                    let response = ColonyModelResponse(message: message)
                     continuation.yield(.final(response))
                     continuation.finish()
                 } catch {
@@ -89,8 +89,8 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
 
     // MARK: - Conversion Helpers
 
-    private func convertMessage(_ message: HiveChatMessage) -> OllamaChatMessage? {
-        guard message.op == nil else { return nil }
+    private func convertMessage(_ message: ColonyChatMessage) -> OllamaChatMessage? {
+        guard message.operation == nil else { return nil }
 
         let role: String
         switch message.role {
@@ -128,7 +128,7 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
         )
     }
 
-    private func convertToolDefinition(_ tool: HiveToolDefinition) -> OllamaToolDef {
+    private func convertToolDefinition(_ tool: ColonyToolDefinition) -> OllamaToolDef {
         OllamaToolDef(
             function: OllamaToolFunction(
                 name: tool.name,
@@ -138,7 +138,7 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
         )
     }
 
-    private func convertToolCall(_ wrapper: OllamaToolCallWrapper) -> HiveToolCall {
+    private func convertToolCall(_ wrapper: OllamaToolCallWrapper) -> ColonyToolCall {
         let argumentsJSON: String
         if let data = try? JSONSerialization.data(
             withJSONObject: wrapper.function.arguments.mapValues { encodeJSONValue($0) },
@@ -149,7 +149,7 @@ struct OllamaModelClient: HiveModelClient, ColonyCapabilityReportingModelClient,
             argumentsJSON = "{}"
         }
 
-        return HiveToolCall(
+        return ColonyToolCall(
             id: UUID().uuidString,
             name: wrapper.function.name,
             argumentsJSON: argumentsJSON

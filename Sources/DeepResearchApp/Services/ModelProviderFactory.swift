@@ -19,8 +19,7 @@ extension ModelProviderError: LocalizedError {
 
 enum ModelProviderFactory {
     struct ResolvedModel: Sendable {
-        let client: any HiveModelClient
-        let capabilities: ColonyModelCapabilities
+        let model: ColonyModel
     }
 
     struct Configuration: Equatable, Sendable {
@@ -53,10 +52,8 @@ enum ModelProviderFactory {
     static func makeResolvedModel(configuration: Configuration) throws -> ResolvedModel {
         switch configuration.backend {
         case .foundationModels:
-            let client = ColonyFoundationModelsClient()
             return ResolvedModel(
-                client: client,
-                capabilities: client.colonyModelCapabilities
+                model: .foundationModels()
             )
 
         case .ollama:
@@ -72,8 +69,10 @@ enum ModelProviderFactory {
                 modelName: configuration.selectedOllamaModel
             )
             return ResolvedModel(
-                client: ollamaClient,
-                capabilities: ollamaClient.colonyModelCapabilities
+                model: ColonyModel(
+                    client: ollamaClient,
+                    capabilities: ollamaClient.colonyModelCapabilities
+                )
             )
         }
     }

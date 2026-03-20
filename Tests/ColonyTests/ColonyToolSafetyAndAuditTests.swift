@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -136,7 +137,7 @@ func toolMetadataCanForceApprovalAndCarryPolicy() {
     )
 
     let assessment = engine.assess(toolCalls: [
-        HiveToolCall(id: "safe-read-1", name: "safe_read", argumentsJSON: "{}")
+        ColonyToolCall(id: "safe-read-1", name: "safe_read", argumentsJSON: "{}")
     ])
 
     #expect(assessment.count == 1)
@@ -160,7 +161,7 @@ func toolMetadataCanSuppressPolicyApproval() {
     )
 
     let assessment = engine.assess(toolCalls: [
-        HiveToolCall(id: "safe-read-2", name: "safe_read", argumentsJSON: "{}")
+        ColonyToolCall(id: "safe-read-2", name: "safe_read", argumentsJSON: "{}")
     ])
 
     #expect(assessment.count == 1)

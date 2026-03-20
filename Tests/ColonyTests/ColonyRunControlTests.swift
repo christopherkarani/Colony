@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 import Colony
 
@@ -13,7 +14,7 @@ struct ColonyRunControlTests {
             filesystem: filesystem
         )
 
-        let startHandle = await runtime.runControl.start(.init(input: "Write /note.md"))
+        let startHandle = await runtime.runControl.startRaw(input: "Write /note.md")
         let startEvents = await collectEvents(startHandle.events)
         #expect(startEvents.allSatisfy { event in event.id.runID == startHandle.runID })
         #expect(startEvents.allSatisfy { event in event.id.attemptID == startHandle.attemptID })
@@ -31,8 +32,9 @@ struct ColonyRunControlTests {
         let correlatedInterruptID = try #require(eventInterruptID)
         #expect(correlatedInterruptID == interruption.interrupt.id)
 
-        let resumeHandle = await runtime.runControl.resume(
-            .init(interruptID: interruption.interrupt.id, decision: .approved)
+        let resumeHandle = await runtime.runControl.resumeRaw(
+            interruptID: interruption.interrupt.id,
+            decision: .approved
         )
         #expect(resumeHandle.attemptID != startHandle.attemptID)
 
@@ -57,7 +59,7 @@ struct ColonyRunControlTests {
             model: AnyHiveModelClient(ScriptedApprovalModel())
         )
 
-        let startHandle = await runtime.runControl.start(.init(input: "Write /note.md"))
+        let startHandle = await runtime.runControl.startRaw(input: "Write /note.md")
         let startOutcome = try await startHandle.outcome.value
         guard case let .interrupted(interruption) = startOutcome else {
             Issue.record("Expected interrupted outcome before stale resume assertion.")
@@ -65,8 +67,9 @@ struct ColonyRunControlTests {
         }
 
         let staleInterruptID = HiveInterruptID("stale-interrupt-id")
-        let staleHandle = await runtime.runControl.resume(
-            .init(interruptID: staleInterruptID, decision: .approved)
+        let staleHandle = await runtime.runControl.resumeRaw(
+            interruptID: staleInterruptID,
+            decision: .approved
         )
 
         do {
@@ -90,11 +93,9 @@ struct ColonyRunControlTests {
             model: AnyHiveModelClient(ScriptedApprovalModel())
         )
 
-        let startHandle = await runtime.runControl.start(
-            .init(
-                input: "Write /note.md",
-                optionsOverride: HiveRunOptions(checkpointPolicy: .onInterrupt)
-            )
+        let startHandle = await runtime.runControl.startRaw(
+            input: "Write /note.md",
+            optionsOverride: HiveRunOptions(checkpointPolicy: .onInterrupt)
         )
         let startOutcome = try await startHandle.outcome.value
         guard case let .interrupted(interruption) = startOutcome else {
@@ -107,21 +108,17 @@ struct ColonyRunControlTests {
             maxConcurrentTasks: 4,
             checkpointPolicy: .everyStep
         )
-        let firstResume = await runtime.runControl.resume(
-            .init(
-                interruptID: interruption.interrupt.id,
-                decision: .approved,
-                optionsOverride: completionOptions
-            )
+        let firstResume = await runtime.runControl.resumeRaw(
+            interruptID: interruption.interrupt.id,
+            decision: .approved,
+            optionsOverride: completionOptions
         )
         _ = try await firstResume.outcome.value
 
-        let duplicateResume = await runtime.runControl.resume(
-            .init(
-                interruptID: interruption.interrupt.id,
-                decision: .approved,
-                optionsOverride: completionOptions
-            )
+        let duplicateResume = await runtime.runControl.resumeRaw(
+            interruptID: interruption.interrupt.id,
+            decision: .approved,
+            optionsOverride: completionOptions
         )
 
         do {
@@ -146,15 +143,16 @@ struct ColonyRunControlTests {
             filesystem: filesystem
         )
 
-        let startHandle = await runtime.runControl.start(.init(input: "Write /note.md"))
+        let startHandle = await runtime.runControl.startRaw(input: "Write /note.md")
         let startOutcome = try await startHandle.outcome.value
         guard case let .interrupted(interruption) = startOutcome else {
             Issue.record("Expected interrupted outcome before cancelled resume assertion.")
             return
         }
 
-        let resumeHandle = await runtime.runControl.resume(
-            .init(interruptID: interruption.interrupt.id, decision: .cancelled)
+        let resumeHandle = await runtime.runControl.resumeRaw(
+            interruptID: interruption.interrupt.id,
+            decision: .cancelled
         )
         let resumedOutcome = try await resumeHandle.outcome.value
         guard case let .finished(output, _) = resumedOutcome,

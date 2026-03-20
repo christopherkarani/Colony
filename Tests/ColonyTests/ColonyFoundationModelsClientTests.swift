@@ -1,13 +1,13 @@
 import Testing
 @testable import Colony
 
-private let sampleTools: [HiveToolDefinition] = [
-    HiveToolDefinition(
+private let sampleTools: [ColonyToolDefinition] = [
+    ColonyToolDefinition(
         name: "tool_alpha",
         description: "Alpha tool description.",
         parametersJSONSchema: #"{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}"#
     ),
-    HiveToolDefinition(
+    ColonyToolDefinition(
         name: "tool_beta",
         description: "Beta tool description.",
         parametersJSONSchema: #"{"type":"object","properties":{"count":{"type":"integer"}}}"#
@@ -16,7 +16,7 @@ private let sampleTools: [HiveToolDefinition] = [
 
 @Test("FoundationModels configuration defaults to compact tool instructions")
 func foundationModelsConfig_defaultsToCompactToolInstructions() {
-    let config = ColonyFoundationModelsClient.Configuration()
+    let config = ColonyFoundationModelConfiguration()
     #expect(config.toolInstructionVerbosity == .compact)
 }
 

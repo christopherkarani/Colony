@@ -18,6 +18,7 @@ Rules:
     ) -> String {
         systemPrompt(
             additional: additional,
+            membrane: nil,
             memory: nil,
             skills: nil,
             scratchbook: nil,
@@ -27,12 +28,14 @@ Rules:
 
     public static func systemPrompt(
         additional: String?,
+        membrane: String?,
         memory: String?,
         skills: String?,
         availableTools: [HiveToolDefinition]
     ) -> String {
         systemPrompt(
             additional: additional,
+            membrane: membrane,
             memory: memory,
             skills: skills,
             scratchbook: nil,
@@ -42,6 +45,7 @@ Rules:
 
     public static func systemPrompt(
         additional: String?,
+        membrane: String?,
         memory: String?,
         skills: String?,
         scratchbook: String?,
@@ -57,6 +61,10 @@ Rules:
         // agent state survives while reference material is shed first.
         if let scratchbook, scratchbook.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             sections.append("Scratchbook:\n" + scratchbook)
+        }
+
+        if let membrane, membrane.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            sections.append("Membrane Context:\n" + membrane)
         }
 
         if let memory, memory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {

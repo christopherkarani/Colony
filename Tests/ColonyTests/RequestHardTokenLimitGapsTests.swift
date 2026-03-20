@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -158,4 +159,3 @@ func defaultSubagentRuntime_inheritsOnDeviceHard4kRequestCap() async throws {
     let requestTokenCount = ColonyApproximateTokenizer().countTokens(request.messages)
     #expect(requestTokenCount <= 4_000)
 }
-

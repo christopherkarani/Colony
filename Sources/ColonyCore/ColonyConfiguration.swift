@@ -1,9 +1,7 @@
-import HiveCore
-
 public struct ColonyConfiguration: Sendable {
     public var capabilities: ColonyCapabilities
     public var modelName: String
-    public var structuredOutput: HiveStructuredOutputFormat?
+    public var structuredOutput: ColonyStructuredOutput?
     public var toolApprovalPolicy: ColonyToolApprovalPolicy
     public var toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)?
     public var toolRiskLevelOverrides: [String: ColonyToolRiskLevel]
@@ -26,7 +24,7 @@ public struct ColonyConfiguration: Sendable {
     public init(
         capabilities: ColonyCapabilities = .default,
         modelName: String,
-        structuredOutput: HiveStructuredOutputFormat? = nil,
+        structuredOutput: ColonyStructuredOutput? = nil,
         toolApprovalPolicy: ColonyToolApprovalPolicy = .allowList(["ls", "read_file", "glob", "grep", "read_todos", "write_todos"]),
         toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)? = nil,
         toolRiskLevelOverrides: [String: ColonyToolRiskLevel] = [:],

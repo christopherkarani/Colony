@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -13,7 +14,7 @@ private struct NoopLogger: HiveLogger {
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class RecordingRequestModel: HiveModelClient, ColonyCapabilityReportingModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: HiveModelClient, ColonyCapabilityReportingHiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [HiveChatRequest] = []
     private let capabilities: ColonyModelCapabilities
@@ -533,7 +534,7 @@ func factory_infersDirectModelCapabilitiesForAutomaticToolPromptStrategy() async
         }
     )
 
-    _ = try await (await runtime.runControl.start(.init(input: "hi"))).outcome.value
+    _ = try await (await runtime.runControl.startRaw(input: "hi")).outcome.value
 
     guard let request = recordingModel.recordedRequests().last else {
         #expect(Bool(false))
@@ -575,7 +576,7 @@ func automaticToolPromptStrategy_usesRoutedModelCapabilities() async throws {
         }
     )
 
-    _ = try await (await runtime.runControl.start(.init(input: "hi"))).outcome.value
+    _ = try await (await runtime.runControl.startRaw(input: "hi")).outcome.value
 
     guard let request = onDeviceModel.recordedRequests().last else {
         #expect(Bool(false))
@@ -602,7 +603,7 @@ func structuredOutputPrompting_isInjectedForModelsWithoutStructuredOutputCapabil
         }
     )
 
-    _ = try await (await runtime.runControl.start(.init(input: "return json"))).outcome.value
+    _ = try await (await runtime.runControl.startRaw(input: "return json")).outcome.value
 
     guard let request = recordingModel.recordedRequests().last else {
         #expect(Bool(false))
@@ -629,7 +630,7 @@ func structuredOutputPrompting_isOmittedForWrappedManagedStructuredOutputModels(
         }
     )
 
-    _ = try await (await runtime.runControl.start(.init(input: "return json"))).outcome.value
+    _ = try await (await runtime.runControl.startRaw(input: "return json")).outcome.value
 
     guard let request = recordingModel.recordedRequests().last else {
         #expect(Bool(false))

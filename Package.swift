@@ -3,8 +3,12 @@
 import Foundation
 import PackageDescription
 
-let useLocalHivePath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_HIVE_PATH"] == "1"
-let useLocalSwarmPath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_SWARM_PATH"] == "1"
+let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+let useLocalAllDeps = ProcessInfo.processInfo.environment["AISTACK_USE_LOCAL_DEPS"] == "1"
+let useLocalHivePath = useLocalAllDeps || ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_HIVE_PATH"] == "1"
+let useLocalSwarmPath = useLocalAllDeps || ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_SWARM_PATH"] == "1"
+let useLocalMembranePath = useLocalAllDeps || ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_MEMBRANE_PATH"] == "1"
+let useLocalConduitPath = useLocalAllDeps || ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_CONDUIT_PATH"] == "1"
 
 let package = Package(
     name: "Colony",
@@ -23,17 +27,49 @@ let package = Package(
         // Default: remote pinned Hive dependency.
         // Local fallback: set COLONY_USE_LOCAL_HIVE_PATH=1 for offline/dev workflows.
         useLocalHivePath
-            ? .package(path: "../../Hive")
+            ? .package(path: packageRoot.appendingPathComponent("../Hive").path)
             : .package(
                 url: "https://github.com/christopherkarani/Hive",
-                revision: "3bec1b2b8f2c3b2f24765656e83f31c27b9ff4f2"
+                exact: "0.1.8"
             ),
         // Swarm agent framework — @Tool macros, multi-agent orchestration, Wax memory, Conduit model backends.
         useLocalSwarmPath
-            ? .package(path: "../Swarm")
+            ? .package(
+                path: packageRoot.appendingPathComponent("../Swarm").path,
+                traits: [
+                    .trait(name: "membrane"),
+                ]
+            )
             : .package(
                 url: "https://github.com/christopherkarani/Swarm.git",
-                exact: "0.4.0"
+                exact: "0.4.6",
+                traits: [
+                    .trait(name: "membrane"),
+                ]
+            ),
+        useLocalMembranePath
+            ? .package(path: packageRoot.appendingPathComponent("../Membrane").path)
+            : .package(
+                url: "https://github.com/christopherkarani/Membrane.git",
+                exact: "0.1.2"
+            ),
+        useLocalConduitPath
+            ? .package(
+                path: packageRoot.appendingPathComponent("../Conduit").path,
+                traits: [
+                    .trait(name: "OpenAI"),
+                    .trait(name: "OpenRouter"),
+                    .trait(name: "Anthropic"),
+                ]
+            )
+            : .package(
+                url: "https://github.com/christopherkarani/Conduit",
+                exact: "0.3.10",
+                traits: [
+                    .trait(name: "OpenAI"),
+                    .trait(name: "OpenRouter"),
+                    .trait(name: "Anthropic"),
+                ]
             ),
     ],
     targets: [
@@ -48,7 +84,11 @@ let package = Package(
             dependencies: [
                 "ColonyCore",
                 .product(name: "HiveCore", package: "Hive"),
+                .product(name: "HiveCheckpointWax", package: "Hive"),
                 .product(name: "Swarm", package: "Swarm"),
+                .product(name: "Membrane", package: "Membrane"),
+                .product(name: "MembraneWax", package: "Membrane"),
+                .product(name: "ConduitAdvanced", package: "Conduit"),
             ]
         ),
         .target(
@@ -70,7 +110,11 @@ let package = Package(
         ),
         .testTarget(
             name: "ColonyTests",
-            dependencies: ["Colony"]
+            dependencies: [
+                "Colony",
+                .product(name: "Swarm", package: "Swarm"),
+                .product(name: "Membrane", package: "Membrane"),
+            ]
         ),
         .testTarget(
             name: "ColonyExecutionHardeningTests",

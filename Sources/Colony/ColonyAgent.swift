@@ -2,26 +2,28 @@ import CryptoKit
 import Foundation
 import HiveCore
 import ColonyCore
+import Swarm
+import struct Swarm.MembraneEnvironment
 
-public enum ColonySchema: HiveSchema {
-    public typealias Context = ColonyContext
-    public typealias Input = String
-    public typealias InterruptPayload = ColonyInterruptPayload
-    public typealias ResumePayload = ColonyResumePayload
+package enum ColonySchema: HiveSchema {
+    package typealias Context = ColonyContext
+    package typealias Input = String
+    package typealias InterruptPayload = ColonyInterruptPayload
+    package typealias ResumePayload = ColonyResumePayload
 
-    public enum Channels {
-        public static let messages = HiveChannelKey<ColonySchema, [HiveChatMessage]>(HiveChannelID("messages"))
-        public static let llmInputMessages = HiveChannelKey<ColonySchema, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
-        public static let pendingToolCalls = HiveChannelKey<ColonySchema, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
-        public static let finalAnswer = HiveChannelKey<ColonySchema, String?>(HiveChannelID("finalAnswer"))
-        public static let todos = HiveChannelKey<ColonySchema, [ColonyTodo]>(HiveChannelID("todos"))
+    package enum Channels {
+        package static let messages = HiveChannelKey<ColonySchema, [HiveChatMessage]>(HiveChannelID("messages"))
+        package static let llmInputMessages = HiveChannelKey<ColonySchema, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
+        package static let pendingToolCalls = HiveChannelKey<ColonySchema, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
+        package static let finalAnswer = HiveChannelKey<ColonySchema, String?>(HiveChannelID("finalAnswer"))
+        package static let todos = HiveChannelKey<ColonySchema, [ColonyTodo]>(HiveChannelID("todos"))
 
-        public static let currentToolCall = HiveChannelKey<ColonySchema, HiveToolCall>(HiveChannelID("currentToolCall"))
+        package static let currentToolCall = HiveChannelKey<ColonySchema, HiveToolCall>(HiveChannelID("currentToolCall"))
     }
 
-    public static let removeAllMessagesID = "__remove_all__"
+    package static let removeAllMessagesID = "__remove_all__"
 
-    public static var channelSpecs: [AnyHiveChannelSpec<ColonySchema>] {
+    package static var channelSpecs: [AnyHiveChannelSpec<ColonySchema>] {
         let messagesCodec = HiveAnyCodec(HiveJSONCodec<[HiveChatMessage]>(id: "colony.messages.v1"))
         let toolCallsCodec = HiveAnyCodec(HiveJSONCodec<[HiveToolCall]>(id: "colony.pending-tool-calls.v1"))
         let currentToolCallCodec = HiveAnyCodec(HiveJSONCodec<HiveToolCall>(id: "colony.current-tool-call.v1"))
@@ -96,7 +98,7 @@ public enum ColonySchema: HiveSchema {
         ]
     }
 
-    public static func inputWrites(
+    package static func inputWrites(
         _ input: String,
         inputContext: HiveInputContext
     ) throws -> [AnyHiveWrite<ColonySchema>] {
@@ -112,25 +114,27 @@ public enum ColonySchema: HiveSchema {
     }
 }
 
-public struct ColonyContext: Sendable {
-    public let configuration: ColonyConfiguration
-    public let modelCapabilities: ColonyModelCapabilities
-    public let filesystem: (any ColonyFileSystemBackend)?
-    public let shell: (any ColonyShellBackend)?
-    public let git: (any ColonyGitBackend)?
-    public let lsp: (any ColonyLSPBackend)?
-    public let applyPatch: (any ColonyApplyPatchBackend)?
-    public let webSearch: (any ColonyWebSearchBackend)?
-    public let codeSearch: (any ColonyCodeSearchBackend)?
-    public let mcp: (any ColonyMCPBackend)?
-    public let memory: (any ColonyMemoryBackend)?
-    public let plugins: (any ColonyPluginToolRegistry)?
-    public let subagents: (any ColonySubagentRegistry)?
-    public let tokenizer: any ColonyTokenizer
+package struct ColonyContext: Sendable {
+    package let configuration: ColonyConfiguration
+    package let modelCapabilities: ColonyModelCapabilities
+    package let membrane: MembraneEnvironment?
+    package let filesystem: (any ColonyFileSystemBackend)?
+    package let shell: (any ColonyShellBackend)?
+    package let git: (any ColonyGitBackend)?
+    package let lsp: (any ColonyLSPBackend)?
+    package let applyPatch: (any ColonyApplyPatchBackend)?
+    package let webSearch: (any ColonyWebSearchBackend)?
+    package let codeSearch: (any ColonyCodeSearchBackend)?
+    package let mcp: (any ColonyMCPBackend)?
+    package let memory: (any ColonyMemoryBackend)?
+    package let plugins: (any ColonyPluginToolRegistry)?
+    package let subagents: (any ColonySubagentRegistry)?
+    package let tokenizer: any ColonyTokenizer
 
-    public init(
+    package init(
         configuration: ColonyConfiguration,
         modelCapabilities: ColonyModelCapabilities = [],
+        membrane: MembraneEnvironment? = nil,
         filesystem: (any ColonyFileSystemBackend)?,
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,
@@ -146,6 +150,7 @@ public struct ColonyContext: Sendable {
     ) {
         self.configuration = configuration
         self.modelCapabilities = modelCapabilities
+        self.membrane = membrane
         self.filesystem = filesystem
         self.shell = shell
         self.git = git
@@ -161,14 +166,14 @@ public struct ColonyContext: Sendable {
     }
 }
 
-public enum ColonyAgent {
-    public static let nodePreModel = HiveNodeID("preModel")
-    public static let nodeModel = HiveNodeID("model")
-    public static let nodeRouteAfterModel = HiveNodeID("routeAfterModel")
-    public static let nodeTools = HiveNodeID("tools")
-    public static let nodeToolExecute = HiveNodeID("toolExecute")
+package enum ColonyAgent {
+    package static let nodePreModel = HiveNodeID("preModel")
+    package static let nodeModel = HiveNodeID("model")
+    package static let nodeRouteAfterModel = HiveNodeID("routeAfterModel")
+    package static let nodeTools = HiveNodeID("tools")
+    package static let nodeToolExecute = HiveNodeID("toolExecute")
 
-    public static func compile(graphVersionOverride: String? = nil) throws -> CompiledHiveGraph<ColonySchema> {
+    package static func compile(graphVersionOverride: String? = nil) throws -> CompiledHiveGraph<ColonySchema> {
         var builder = HiveGraphBuilder<ColonySchema>(start: [nodePreModel])
 
         builder.addNode(nodePreModel, preModel)
@@ -229,7 +234,10 @@ public enum ColonyAgent {
             writes.append(AnyHiveWrite(ColonySchema.Channels.messages, [removeAll] + updatedMessages))
         }
 
-        let compacted = input.context.configuration.compactionPolicy.compact(updatedMessages, tokenizer: input.context.tokenizer)
+        let compacted = input.context.configuration.compactionPolicy.compact(
+            updatedMessages.map(ColonyChatMessage.init),
+            tokenizer: input.context.tokenizer
+        )?.map(\.hive)
         writes.append(AnyHiveWrite(ColonySchema.Channels.llmInputMessages, compacted))
 
         return HiveNodeOutput(writes: writes)
@@ -240,7 +248,16 @@ public enum ColonyAgent {
         let llmInputMessages = try input.store.get(ColonySchema.Channels.llmInputMessages)
         let externalTools = input.environment.tools?.listTools() ?? []
         let builtInTools = builtInToolDefinitions(for: input.context)
-        let tools = dedupeToolsByName(builtIn: builtInTools, external: externalTools)
+        let unplannedTools = dedupeToolsByName(builtIn: builtInTools, external: externalTools)
+        let membranePlan = try? await prepareMembranePlan(
+            messages: llmInputMessages ?? messages,
+            tools: unplannedTools,
+            context: input.context
+        )
+        let tools = applyMembraneToolSelection(
+            membranePlan?.toolNames,
+            to: unplannedTools
+        )
 
         let memory: String?
         let skills: String?
@@ -277,6 +294,7 @@ public enum ColonyAgent {
         let toolsForPrompt = includeToolsInSystemPrompt ? tools : []
         var systemPrompt = ColonyPrompts.systemPrompt(
             additional: input.context.configuration.additionalSystemPrompt,
+            membrane: membranePlan?.context,
             memory: memory,
             skills: skills,
             scratchbook: scratchbook,
@@ -285,7 +303,7 @@ public enum ColonyAgent {
         if let structuredOutput = input.context.configuration.structuredOutput,
            modelCapabilities.handlesStructuredOutputsWithoutSystemPrompt == false
         {
-            systemPrompt += "\n\n" + structuredOutputInstruction(for: structuredOutput)
+            systemPrompt += "\n\n" + structuredOutputInstruction(for: structuredOutput.hive)
         }
         let systemMessage = HiveChatMessage(
             id: "system:colony",
@@ -323,7 +341,7 @@ public enum ColonyAgent {
             model: input.context.configuration.modelName,
             messages: requestMessages,
             tools: tools,
-            structuredOutput: input.context.configuration.structuredOutput
+            structuredOutput: input.context.configuration.structuredOutput?.hive
         )
 
         let modelClient: AnyHiveModelClient
@@ -376,8 +394,94 @@ public enum ColonyAgent {
         return HiveNodeOutput(writes: writes)
     }
 
+    private struct ColonyMembranePlan: Sendable {
+        let context: String?
+        let toolNames: Set<String>
+    }
+
+    private static func prepareMembranePlan(
+        messages: [HiveChatMessage],
+        tools: [HiveToolDefinition],
+        context: ColonyContext
+    ) async throws -> ColonyMembranePlan? {
+        guard let membrane = context.membrane,
+              membrane.isEnabled,
+              let adapter = membrane.adapter
+        else {
+            return nil
+        }
+
+        let query = latestUserPrompt(in: messages)
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return nil
+        }
+
+        let profile: ContextProfile = context.configuration.requestHardTokenLimit == 4_000
+            ? .strict4k
+            : .balanced
+
+        let plan = try await adapter.plan(
+            prompt: query,
+            toolSchemas: tools.map(hiveToolSchema),
+            profile: profile
+        )
+
+        return ColonyMembranePlan(
+            context: membraneContextSection(from: plan.prompt, query: query),
+            toolNames: Set(plan.toolSchemas.map(\.name))
+        )
+    }
+
+    private static func applyMembraneToolSelection(
+        _ selectedToolNames: Set<String>?,
+        to tools: [HiveToolDefinition]
+    ) -> [HiveToolDefinition] {
+        guard let selectedToolNames, selectedToolNames.isEmpty == false else {
+            return tools
+        }
+
+        let filtered = tools.filter { selectedToolNames.contains($0.name) }
+        return filtered.isEmpty ? tools : filtered
+    }
+
+    private static func latestUserPrompt(in messages: [HiveChatMessage]) -> String {
+        messages.reversed().first(where: { $0.role == .user })?.content ?? ""
+    }
+
+    private static func membraneContextSection(from plannedPrompt: String, query: String) -> String? {
+        let trimmedPlan = plannedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedPlan.isEmpty == false else {
+            return nil
+        }
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.isEmpty == false else {
+            return trimmedPlan
+        }
+
+        if trimmedPlan == trimmedQuery {
+            return nil
+        }
+
+        if trimmedPlan.hasPrefix(trimmedQuery) {
+            let suffix = trimmedPlan.dropFirst(trimmedQuery.count)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return suffix.isEmpty ? nil : suffix
+        }
+
+        return trimmedPlan
+    }
+
+    private static func hiveToolSchema(_ definition: HiveToolDefinition) -> ToolSchema {
+        ToolSchema(
+            name: definition.name,
+            description: definition.description,
+            parameters: []
+        )
+    }
+
     private static func resolvedModelCapabilities(for input: HiveNodeInput<ColonySchema>) -> ColonyModelCapabilities {
-        if let router = input.environment.modelRouter as? ColonyCapabilityReportingModelRouter {
+        if let router = input.environment.modelRouter as? ColonyCapabilityReportingHiveModelRouter {
             return router.colonyModelCapabilities(hints: input.environment.inferenceHints)
         }
         return input.context.modelCapabilities
@@ -405,7 +509,13 @@ public enum ColonyAgent {
             }
         }()
 
-        return tokenizer.countTokens([HiveChatMessage(id: "budget:tools", role: .system, content: content)])
+        return tokenizer.countTokens([
+            ColonyChatMessage(
+                id: "budget:tools",
+                role: .system,
+                content: content
+            )
+        ])
     }
 
     private static func requestMessagesWithHardTokenLimit(
@@ -484,7 +594,7 @@ public enum ColonyAgent {
         _ messages: [HiveChatMessage],
         tokenizer: any ColonyTokenizer
     ) -> Int {
-        tokenizer.countTokens(messages) + (messages.count * 3)
+        tokenizer.countTokens(messages.map(ColonyChatMessage.init)) + (messages.count * 3)
     }
 
     private static func structuredOutputInstruction(for format: HiveStructuredOutputFormat) -> String {
@@ -518,7 +628,7 @@ public enum ColonyAgent {
             mandatoryApprovalRiskLevels: input.context.configuration.mandatoryApprovalRiskLevels,
             defaultRiskLevel: input.context.configuration.defaultToolRiskLevel
         )
-        let assessments = safety.assess(toolCalls: calls)
+        let assessments = safety.assess(toolCalls: calls.map(ColonyToolCall.init))
         let assessmentsByCallID = Dictionary(uniqueKeysWithValues: assessments.map { ($0.toolCallID, $0) })
         let persistedRuleDecisions = try await resolvePersistedRuleDecisions(
             calls: calls,
@@ -553,7 +663,7 @@ public enum ColonyAgent {
                 && preApprovedIDs.contains($0.id) == false
                 && preDeniedIDs.contains($0.id) == false
         }
-        let approvalRequiredIDs = Set(approvalRequiredCalls.map(\.id))
+        let approvalRequiredIDs = Set(approvalRequiredCalls.map { $0.id })
 
         if approvalRequiredCalls.isEmpty == false {
             if let resume = input.run.resume, case let .toolApproval(decision) = resume.payload {
@@ -629,7 +739,9 @@ public enum ColonyAgent {
 
             return HiveNodeOutput(
                 next: .nodes([nodeTools]),
-                interrupt: HiveInterruptRequest(payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls))
+                interrupt: HiveInterruptRequest(
+                    payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls.map(ColonyToolCall.init))
+                )
             )
         }
 
@@ -997,7 +1109,8 @@ public enum ColonyAgent {
         threadID: HiveThreadID
     ) async throws -> [HiveChatMessage]? {
         guard messages.isEmpty == false else { return nil }
-        guard tokenizer.countTokens(messages) > policy.triggerTokens else { return nil }
+        let colonyMessages = messages.map(ColonyChatMessage.init)
+        guard tokenizer.countTokens(colonyMessages) > policy.triggerTokens else { return nil }
 
         let keepLastMessages = max(0, policy.keepLastMessages)
         guard messages.count > keepLastMessages else { return nil }

@@ -1,5 +1,6 @@
 import SwiftUI
 import Colony
+import HiveCore
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -38,6 +39,7 @@ final class ChatViewModel {
     private var _insightsStorage: (any Sendable)? = nil
     private var runtime: ColonyRuntime?
     private var eventTask: Task<Void, Never>?
+    private var runtimeConfigurationTask: Task<Void, Never>?
     private var insightsTask: Task<Void, Never>?
     private var liveInsightsTask: Task<Void, Never>?
     private var lastLiveInsightsSourceLength: Int = 0
@@ -47,7 +49,7 @@ final class ChatViewModel {
 
     struct PendingToolApproval {
         let interruptID: HiveInterruptID
-        let toolCalls: [HiveToolCall]
+        let toolCalls: [ColonyToolCall]
 
         var toolNames: [String] {
             toolCalls.map(\.name)
@@ -105,40 +107,59 @@ final class ChatViewModel {
     }
 
     private func applyRuntimeConfiguration(_ configuration: RuntimeConfiguration) {
-        let resolvedModel: ModelProviderFactory.ResolvedModel
-        do {
-            resolvedModel = try ModelProviderFactory.makeResolvedModel(configuration: configuration.provider)
-        } catch {
-            self.error = "Failed to create model client: \(describe(error))"
-            return
-        }
-
-        let tavilyRegistry: AnyHiveToolRegistry? = configuration.tavilyAPIKey.isEmpty
-            ? nil
-            : AnyHiveToolRegistry(TavilySearchToolRegistry(apiKey: configuration.tavilyAPIKey))
-
-        let profile: ColonyProfile = configuration.selectedBackend == .foundationModels
-            ? .onDevice4k
-            : .cloud
-
-        let systemPrompt = Self.deepResearchSystemPrompt
-        do {
-            runtime = try ColonyAgentFactory().makeRuntime(
-                profile: profile,
-                modelName: configuration.selectedModelName,
-                model: resolvedModel.client,
-                modelCapabilities: resolvedModel.capabilities,
-                tools: tavilyRegistry,
-                configure: { config in
-                    config.capabilities = [.planning, .scratchbook]
-                    config.toolApprovalPolicy = .never
-                    config.additionalSystemPrompt = systemPrompt
+        runtimeConfigurationTask?.cancel()
+        runtimeConfigurationTask = Task { [weak self] in
+            let resolvedModel: ModelProviderFactory.ResolvedModel
+            do {
+                resolvedModel = try ModelProviderFactory.makeResolvedModel(configuration: configuration.provider)
+            } catch {
+                await MainActor.run {
+                    guard let self, Task.isCancelled == false else { return }
+                    self.error = "Failed to create model client: \(self.describe(error))"
                 }
-            )
-            activeRuntimeConfiguration = configuration
-            pendingRuntimeConfiguration = nil
-        } catch {
-            self.error = "Failed to create runtime: \(describe(error))"
+                return
+            }
+
+            let tavilyRegistry: AnyColonyToolRegistry? = configuration.tavilyAPIKey.isEmpty
+                ? nil
+                : AnyColonyToolRegistry(TavilySearchToolRegistry(apiKey: configuration.tavilyAPIKey))
+
+            let profile: ColonyProfile = configuration.selectedBackend == .foundationModels
+                ? .onDevice4k
+                : .cloud
+
+            let systemPrompt = Self.deepResearchSystemPrompt
+            let bootstrap = ColonyBootstrap()
+
+            do {
+                let builtRuntime = try await bootstrap.makeRuntime(options: .init(
+                    profile: profile,
+                    modelName: configuration.selectedModelName,
+                    model: resolvedModel.model,
+                    services: ColonyRuntimeServices(tools: tavilyRegistry),
+                    checkpointing: .inMemory,
+                    configure: { config in
+                        config.capabilities = [.planning, .scratchbook]
+                        config.toolApprovalPolicy = .never
+                        config.additionalSystemPrompt = systemPrompt
+                    }
+                ))
+
+                await MainActor.run {
+                    guard let self, Task.isCancelled == false else { return }
+                    self.runtime = builtRuntime
+                    self.activeRuntimeConfiguration = configuration
+                    self.pendingRuntimeConfiguration = nil
+                    self.error = nil
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    guard let self, Task.isCancelled == false else { return }
+                    self.error = "Failed to create runtime: \(self.describe(error))"
+                }
+            }
         }
     }
 
@@ -179,7 +200,7 @@ final class ChatViewModel {
         currentPhase = .clarifying
         error = nil
 
-        let handle = await runtime.sendUserMessage(text)
+        let handle = await runtime.sendUserMessageRaw(text)
 
         startEventConsumption(handle: handle, assistantMessageID: assistantID)
 
@@ -201,7 +222,7 @@ final class ChatViewModel {
         pendingApproval = nil
 
         let decision: ColonyToolApprovalDecision = approved ? .approved : .rejected
-        let handle = await runtime.resumeToolApproval(
+        let handle = await runtime.resumeToolApprovalRaw(
             interruptID: approval.interruptID,
             decision: decision
         )

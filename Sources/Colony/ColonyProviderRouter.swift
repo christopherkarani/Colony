@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public enum ColonyProviderRouterError: Error, Sendable, CustomStringConvertible, Equatable {
+package enum ColonyProviderRouterError: Error, Sendable, CustomStringConvertible, Equatable {
     case noProvidersConfigured
     case noEligibleProvider(reasons: [String])
     case degraded(message: String)
@@ -19,16 +19,16 @@ public enum ColonyProviderRouterError: Error, Sendable, CustomStringConvertible,
     }
 }
 
-public struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingModelRouter, Sendable {
-    public struct Provider: Sendable {
-        public let id: String
-        public let client: AnyHiveModelClient
-        public let capabilities: ColonyModelCapabilities
-        public let priority: Int
-        public let maxRequestsPerMinute: Int?
-        public let usdPer1KTokens: Double?
+package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingHiveModelRouter, Sendable {
+    package struct Provider: Sendable {
+        package let id: String
+        package let client: AnyHiveModelClient
+        package let capabilities: ColonyModelCapabilities
+        package let priority: Int
+        package let maxRequestsPerMinute: Int?
+        package let usdPer1KTokens: Double?
 
-        public init(
+        package init(
             id: String,
             client: AnyHiveModelClient,
             capabilities: ColonyModelCapabilities = [],
@@ -45,21 +45,21 @@ public struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingMo
         }
     }
 
-    public enum GracefulDegradationPolicy: Sendable {
+    package enum GracefulDegradationPolicy: Sendable {
         case fail
         case syntheticResponse(String)
     }
 
-    public struct Policy: Sendable {
-        public var maxAttemptsPerProvider: Int
-        public var initialBackoffNanoseconds: UInt64
-        public var maxBackoffNanoseconds: UInt64
-        public var globalMaxRequestsPerMinute: Int?
-        public var costCeilingUSD: Double?
-        public var estimatedOutputToInputRatio: Double
-        public var gracefulDegradation: GracefulDegradationPolicy
+    package struct Policy: Sendable {
+        package var maxAttemptsPerProvider: Int
+        package var initialBackoffNanoseconds: UInt64
+        package var maxBackoffNanoseconds: UInt64
+        package var globalMaxRequestsPerMinute: Int?
+        package var costCeilingUSD: Double?
+        package var estimatedOutputToInputRatio: Double
+        package var gracefulDegradation: GracefulDegradationPolicy
 
-        public init(
+        package init(
             maxAttemptsPerProvider: Int = 2,
             initialBackoffNanoseconds: UInt64 = 100_000_000,
             maxBackoffNanoseconds: UInt64 = 1_000_000_000,
@@ -83,7 +83,7 @@ public struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingMo
         let sleep: @Sendable (UInt64) async throws -> Void
     }
 
-    public init(
+    package init(
         providers: [Provider],
         policy: Policy = Policy(),
         now: @escaping @Sendable () -> Date = Date.init,
@@ -98,11 +98,11 @@ public struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingMo
         self.state = ColonyProviderBudgetState()
     }
 
-    public func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+    package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         AnyHiveModelClient(ColonyProviderRoutingClient(router: self, hints: hints))
     }
 
-    public func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
+    package func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
         _ = hints
         guard let first = providers.first else { return [] }
         return providers.dropFirst().reduce(first.capabilities) { partial, provider in

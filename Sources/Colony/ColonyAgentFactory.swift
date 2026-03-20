@@ -1,7 +1,9 @@
 import Dispatch
 import Foundation
 import HiveCore
+import HiveCheckpointWax
 import ColonyCore
+import struct Swarm.MembraneEnvironment
 
 public enum ColonyProfile: Sendable {
     /// Optimize for a ~4k token context window (on-device).
@@ -33,35 +35,35 @@ public struct ColonyLaneConfigurationPreset: Sendable {
     }
 }
 
-public struct ColonySystemClock: HiveClock, Sendable {
-    public init() {}
+package struct ColonySystemClock: HiveClock, Sendable {
+    package init() {}
 
-    public func nowNanoseconds() -> UInt64 {
+    package func nowNanoseconds() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
     }
 
-    public func sleep(nanoseconds: UInt64) async throws {
+    package func sleep(nanoseconds: UInt64) async throws {
         try await Task.sleep(nanoseconds: nanoseconds)
     }
 }
 
-public struct ColonyNoopLogger: HiveLogger, Sendable {
-    public init() {}
-    public func debug(_ message: String, metadata: [String: String]) {}
-    public func info(_ message: String, metadata: [String: String]) {}
-    public func error(_ message: String, metadata: [String: String]) {}
+package struct ColonyNoopLogger: HiveLogger, Sendable {
+    package init() {}
+    package func debug(_ message: String, metadata: [String: String]) {}
+    package func info(_ message: String, metadata: [String: String]) {}
+    package func error(_ message: String, metadata: [String: String]) {}
 }
 
-public actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
+package actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
     private var checkpoints: [HiveCheckpoint<Schema>] = []
 
-    public init() {}
+    package init() {}
 
-    public func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+    package func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
     }
 
-    public func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+    package func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
         checkpoints
             .filter { $0.threadID == threadID }
             .max { lhs, rhs in
@@ -259,16 +261,16 @@ public struct ColonyAgentFactory: Sendable {
         }
     }
 
-    public static func runOptions(profile: ColonyProfile) -> HiveRunOptions {
+    public static func runOptions(profile: ColonyProfile) -> ColonyRunOptions {
         switch profile {
         case .onDevice4k:
-            return HiveRunOptions(
+            return ColonyRunOptions(
                 maxSteps: 200,
                 maxConcurrentTasks: 4,
                 checkpointPolicy: .onInterrupt
             )
         case .cloud:
-            return HiveRunOptions(
+            return ColonyRunOptions(
                 maxSteps: 1_000,
                 maxConcurrentTasks: 8,
                 checkpointPolicy: .onInterrupt
@@ -276,7 +278,56 @@ public struct ColonyAgentFactory: Sendable {
         }
     }
 
+    @available(*, deprecated, message: "Prefer ColonyBootstrap.makeRuntime(options:) for the full Colony runtime stack.")
     public func makeRuntime(
+        _ options: ColonyRuntimeCreationOptions
+    ) throws -> ColonyRuntime {
+        let resolvedModel = Self.resolveModel(options.model)
+        let checkpointStore: AnyHiveCheckpointStore<ColonySchema>? = switch options.checkpointing {
+        case .inMemory:
+            nil
+        case .durable(let url):
+            AnyHiveCheckpointStore(try Self.makeDurableCheckpointStore(at: url))
+        }
+
+        return try makeRuntime(
+            profile: options.profile,
+            threadID: options.threadID.hive,
+            modelName: options.modelName,
+            lane: options.lane,
+            intent: options.intent,
+            model: resolvedModel.model,
+            modelCapabilities: resolvedModel.capabilities,
+            modelRouter: resolvedModel.router,
+            inferenceHints: nil,
+            tools: options.services.tools.map { AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: $0)) },
+            swarmTools: options.services.swarmTools,
+            membrane: options.services.membrane,
+            filesystem: options.services.filesystem,
+            shell: options.services.shell,
+            git: options.services.git,
+            lsp: options.services.lsp,
+            applyPatch: options.services.applyPatch,
+            webSearch: options.services.webSearch,
+            codeSearch: options.services.codeSearch,
+            mcp: options.services.mcp,
+            memory: options.services.memory,
+            plugins: options.services.plugins,
+            subagents: options.services.subagents,
+            checkpointStore: checkpointStore,
+            durableCheckpointDirectoryURL: nil,
+            clock: ColonySystemClock(),
+            logger: ColonyNoopLogger(),
+            configure: options.configure,
+            configureRunOptions: { raw in
+                var publicOptions = ColonyRunOptions(raw)
+                options.configureRunOptions(&publicOptions)
+                raw = publicOptions.hive
+            }
+        )
+    }
+
+    package func makeRuntime(
         profile: ColonyProfile = .onDevice4k,
         threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
         modelName: String,
@@ -288,6 +339,7 @@ public struct ColonyAgentFactory: Sendable {
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
         swarmTools: SwarmToolBridge? = nil,
+        membrane: MembraneEnvironment? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,
@@ -397,6 +449,7 @@ public struct ColonyAgentFactory: Sendable {
         let context = ColonyContext(
             configuration: configuration,
             modelCapabilities: resolvedModelCapabilities,
+            membrane: membrane,
             filesystem: filesystem,
             shell: shell,
             git: git,
@@ -415,7 +468,7 @@ public struct ColonyAgentFactory: Sendable {
             defaultCheckpointStore = checkpointStore
         } else if let durableCheckpointDirectoryURL {
             defaultCheckpointStore = AnyHiveCheckpointStore(
-                try ColonyDurableCheckpointStore<ColonySchema>(baseURL: durableCheckpointDirectoryURL)
+                try Self.makeDurableCheckpointStore(at: durableCheckpointDirectoryURL)
             )
         } else {
             defaultCheckpointStore = AnyHiveCheckpointStore(ColonyInMemoryCheckpointStore<ColonySchema>())
@@ -462,7 +515,7 @@ public struct ColonyAgentFactory: Sendable {
         let graph = try ColonyAgent.compile()
         let runtime = try HiveRuntime(graph: graph, environment: environment)
 
-        var options = Self.runOptions(profile: profile)
+        var options = Self.runOptions(profile: profile).hive
         configureRunOptions(&options)
 
         let runControl = ColonyRunControl(
@@ -474,10 +527,179 @@ public struct ColonyAgentFactory: Sendable {
     }
 
     private static func inferredModelCapabilities(from model: (any HiveModelClient)?) -> ColonyModelCapabilities {
-        guard let reporting = model as? ColonyCapabilityReportingModelClient else {
+        guard let reporting = model as? ColonyCapabilityReportingHiveModelClient else {
             return []
         }
         return reporting.colonyModelCapabilities
+    }
+
+    private static func resolveModel(_ model: ColonyModel) -> ResolvedPublicModel {
+        switch model.storage {
+        case let .client(client, capabilities):
+            return ResolvedPublicModel(
+                model: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: client)),
+                capabilities: capabilities
+            )
+
+        case let .router(router, capabilities):
+            return ResolvedPublicModel(
+                router: ColonyHiveModelRouterAdapter(base: router),
+                capabilities: capabilities ?? []
+            )
+
+        case .foundationModels(let configuration):
+            let client = ColonyFoundationModelsClient(configuration: configuration)
+            return ResolvedPublicModel(
+                model: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: AnyColonyModelClient(client))),
+                capabilities: client.colonyModelCapabilities
+            )
+
+        case let .onDeviceFallback(fallback, fallbackCapabilities, policy, foundationModels):
+            let foundationClient = ColonyFoundationModelsClient(configuration: foundationModels)
+            let privacyBehavior: ColonyOnDeviceModelRouter.PrivacyBehavior
+            switch policy.privacyBehavior {
+            case .preferOnDevice:
+                privacyBehavior = .preferOnDevice
+            case .requireOnDevice:
+                privacyBehavior = .requireOnDevice
+            }
+            let router = ColonyOnDeviceModelRouter(
+                onDevice: AnyHiveModelClient(
+                    ColonyHiveModelClientAdapter(base: AnyColonyModelClient(foundationClient))
+                ),
+                fallback: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: fallback)),
+                onDeviceCapabilities: foundationClient.colonyModelCapabilities,
+                fallbackCapabilities: fallbackCapabilities,
+                policy: ColonyOnDeviceModelRouter.Policy(
+                    privacyBehavior: privacyBehavior,
+                    preferOnDeviceWhenOffline: policy.preferOnDeviceWhenOffline,
+                    preferOnDeviceWhenMetered: policy.preferOnDeviceWhenMetered
+                ),
+                isOnDeviceAvailable: { ColonyFoundationModelsClient.isAvailable }
+            )
+
+            return ResolvedPublicModel(
+                router: router,
+                capabilities: router.colonyModelCapabilities(hints: nil)
+            )
+
+        case let .providerRouting(providers, policy):
+            let gracefulDegradation: ColonyProviderRouter.GracefulDegradationPolicy
+            switch policy.gracefulDegradation {
+            case .fail:
+                gracefulDegradation = .fail
+            case .syntheticResponse(let message):
+                gracefulDegradation = .syntheticResponse(message)
+            }
+            let router = ColonyProviderRouter(
+                providers: providers.map { provider in
+                    ColonyProviderRouter.Provider(
+                        id: provider.id,
+                        client: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: provider.client)),
+                        capabilities: provider.capabilities,
+                        priority: provider.priority,
+                        maxRequestsPerMinute: provider.maxRequestsPerMinute,
+                        usdPer1KTokens: provider.usdPer1KTokens
+                    )
+                },
+                policy: ColonyProviderRouter.Policy(
+                    maxAttemptsPerProvider: policy.maxAttemptsPerProvider,
+                    initialBackoffNanoseconds: policy.initialBackoffNanoseconds,
+                    maxBackoffNanoseconds: policy.maxBackoffNanoseconds,
+                    globalMaxRequestsPerMinute: policy.globalMaxRequestsPerMinute,
+                    costCeilingUSD: policy.costCeilingUSD,
+                    estimatedOutputToInputRatio: policy.estimatedOutputToInputRatio,
+                    gracefulDegradation: gracefulDegradation
+                )
+            )
+
+            return ResolvedPublicModel(
+                router: router,
+                capabilities: router.colonyModelCapabilities(hints: nil)
+            )
+        }
+    }
+
+    private static func makeDurableCheckpointStore(
+        at url: URL
+    ) throws -> HiveCheckpointWaxStore<ColonySchema> {
+        try blocking {
+            try await makeDurableCheckpointStoreAsync(at: url)
+        }
+    }
+
+    private static func makeDurableCheckpointStoreAsync(
+        at url: URL
+    ) async throws -> HiveCheckpointWaxStore<ColonySchema> {
+        let storeURL = resolvedCheckpointStoreURL(from: url)
+        if FileManager.default.fileExists(atPath: storeURL.path) {
+            return try await HiveCheckpointWaxStore.open(at: storeURL)
+        }
+        return try await HiveCheckpointWaxStore.create(at: storeURL)
+    }
+
+    private static func resolvedCheckpointStoreURL(from url: URL) -> URL {
+        if url.pathExtension == "wax" {
+            return url
+        }
+        return url.appendingPathComponent("colony-checkpoints.wax", isDirectory: false)
+    }
+
+    private static func blocking<T: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> T
+    ) throws -> T {
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = BlockingResultBox<T>()
+
+        Task {
+            do {
+                box.write(Result<T, Error>.success(try await operation()))
+            } catch {
+                box.write(Result<T, Error>.failure(error))
+            }
+            semaphore.signal()
+        }
+
+        semaphore.wait()
+        guard let result = box.read() else {
+            throw ColonyBlockingMissingResult()
+        }
+        return try result.get()
+    }
+}
+
+private final class BlockingResultBox<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<Value, Error>?
+
+    func write(_ value: Result<Value, Error>) {
+        lock.lock()
+        result = value
+        lock.unlock()
+    }
+
+    func read() -> Result<Value, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+}
+
+private struct ColonyBlockingMissingResult: Error {}
+
+private struct ResolvedPublicModel: Sendable {
+    var model: AnyHiveModelClient?
+    var router: (any HiveModelRouter)?
+    var capabilities: ColonyModelCapabilities
+
+    init(
+        model: AnyHiveModelClient? = nil,
+        router: (any HiveModelRouter)? = nil,
+        capabilities: ColonyModelCapabilities = []
+    ) {
+        self.model = model
+        self.router = router
+        self.capabilities = capabilities
     }
 }
 
@@ -499,11 +721,11 @@ struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
     let activeCapabilities: ColonyCapabilities
 
     func listTools() -> [HiveToolDefinition] {
-        base.listTools(filteredBy: activeCapabilities)
+        base.listHiveTools(filteredBy: activeCapabilities)
     }
 
     func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        try await base.invoke(call)
+        try await base.invokeHive(call)
     }
 }
 

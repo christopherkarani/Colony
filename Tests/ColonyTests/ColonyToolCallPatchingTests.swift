@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -147,4 +148,3 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
 
     #expect((try store.get(ColonySchema.Channels.finalAnswer)) == "done")
 }
-
