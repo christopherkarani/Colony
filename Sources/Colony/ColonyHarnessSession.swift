@@ -2,19 +2,19 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public enum ColonyHarnessSessionError: Error, Sendable {
+package enum ColonyHarnessSessionError: Error, Sendable {
     case runAlreadyActive
     case noInterruptedRun
 }
 
-public actor ColonyHarnessSession {
-    public let sessionID: ColonyHarnessSessionID
+package actor ColonyHarnessSession {
+    package let sessionID: ColonyHarnessSessionID
 
-    public var lifecycleState: ColonyHarnessLifecycleState {
+    package var lifecycleState: ColonyHarnessLifecycleState {
         lifecycleStateStorage
     }
 
-    public static func create(
+    package static func create(
         runtime: ColonyRuntime,
         sessionID: ColonyHarnessSessionID = ColonyHarnessSessionID(rawValue: "session:" + UUID().uuidString.lowercased()),
         runStateStore: ColonyDurableRunStateStore? = nil,
@@ -28,7 +28,7 @@ public actor ColonyHarnessSession {
         )
     }
 
-    public func stream() -> AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> {
+    package func stream() -> AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> {
         let subscriberID = UUID()
         return AsyncThrowingStream { continuation in
             Task { await self.addSubscriber(id: subscriberID, continuation: continuation) }
@@ -38,7 +38,7 @@ public actor ColonyHarnessSession {
         }
     }
 
-    public func start(input: String) async throws {
+    package func start(input: String) async throws {
         guard activeAttemptID == nil else {
             throw ColonyHarnessSessionError.runAlreadyActive
         }
@@ -59,15 +59,15 @@ public actor ColonyHarnessSession {
         beginAttemptMonitoring(handle: handle, runID: runID)
     }
 
-    public func interrupted() -> ColonyHarnessInterruption? {
+    package func interrupted() -> ColonyHarnessInterruption? {
         interruptionQueue.first
     }
 
-    public func pendingInterruptions() -> [ColonyHarnessInterruption] {
+    package func pendingInterruptions() -> [ColonyHarnessInterruption] {
         interruptionQueue
     }
 
-    public func resume(decision: ColonyToolApprovalDecision) async throws {
+    package func resume(decision: ColonyToolApprovalDecision) async throws {
         guard activeAttemptID == nil else {
             throw ColonyHarnessSessionError.runAlreadyActive
         }
@@ -115,7 +115,7 @@ public actor ColonyHarnessSession {
         beginAttemptMonitoring(handle: handle, runID: runID)
     }
 
-    public func stop() {
+    package func stop() {
         stopRequested = true
         lifecycleStateStorage = .stopped
         interruptionQueue.removeAll(keepingCapacity: false)

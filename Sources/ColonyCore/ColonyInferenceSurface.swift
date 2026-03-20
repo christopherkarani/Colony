@@ -1,36 +1,7 @@
 import Foundation
 
-public struct ColonyThreadID: Hashable, Codable, Sendable, ExpressibleByStringLiteral, LosslessStringConvertible {
-    public let rawValue: String
-
-    public init(_ rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: String) {
-        self.init(value)
-    }
-
-    public var description: String {
-        rawValue
-    }
-}
-
-public struct ColonyInterruptID: Hashable, Codable, Sendable, ExpressibleByStringLiteral, LosslessStringConvertible {
-    public let rawValue: String
-
-    public init(_ rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    public init(stringLiteral value: String) {
-        self.init(value)
-    }
-
-    public var description: String {
-        rawValue
-    }
-}
+// ColonyThreadID and ColonyInterruptID are now typealiases
+// defined in ColonyID.swift via ColonyID<Domain> generic.
 
 public enum ColonyChatRole: String, Codable, Sendable {
     case system
@@ -225,61 +196,13 @@ public extension ColonyModelClient {
     }
 }
 
-public struct AnyColonyModelClient: ColonyModelClient, Sendable {
-    private let completeClosure: @Sendable (ColonyModelRequest) async throws -> ColonyModelResponse
-    private let streamClosure: @Sendable (ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error>
-
-    public init<Client: ColonyModelClient>(_ client: Client) {
-        self.completeClosure = client.complete
-        self.streamClosure = client.stream
-    }
-
-    public func complete(_ request: ColonyModelRequest) async throws -> ColonyModelResponse {
-        try await completeClosure(request)
-    }
-
-    public func stream(_ request: ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
-        streamClosure(request)
-    }
-}
-
 public protocol ColonyToolRegistry: Sendable {
     func listTools() -> [ColonyToolDefinition]
     func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult
 }
 
-public struct AnyColonyToolRegistry: ColonyToolRegistry, Sendable {
-    private let listClosure: @Sendable () -> [ColonyToolDefinition]
-    private let invokeClosure: @Sendable (ColonyToolCall) async throws -> ColonyToolResult
-
-    public init<Registry: ColonyToolRegistry>(_ registry: Registry) {
-        self.listClosure = registry.listTools
-        self.invokeClosure = registry.invoke
-    }
-
-    public func listTools() -> [ColonyToolDefinition] {
-        listClosure()
-    }
-
-    public func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
-        try await invokeClosure(call)
-    }
-}
-
 public protocol ColonyModelRouter: Sendable {
-    func route(_ request: ColonyModelRequest, hints: ColonyInferenceHints?) -> AnyColonyModelClient
-}
-
-public struct AnyColonyModelRouter: ColonyModelRouter, Sendable {
-    private let routeClosure: @Sendable (ColonyModelRequest, ColonyInferenceHints?) -> AnyColonyModelClient
-
-    public init<Router: ColonyModelRouter>(_ router: Router) {
-        self.routeClosure = router.route
-    }
-
-    public func route(_ request: ColonyModelRequest, hints: ColonyInferenceHints?) -> AnyColonyModelClient {
-        routeClosure(request, hints)
-    }
+    func route(_ request: ColonyModelRequest, hints: ColonyInferenceHints?) -> any ColonyModelClient
 }
 
 public enum ColonyLatencyTier: String, Codable, Sendable {
@@ -300,10 +223,10 @@ public struct ColonyInferenceHints: Codable, Sendable, Equatable {
     public let networkState: ColonyNetworkState
 
     public init(
-        latencyTier: ColonyLatencyTier,
-        privacyRequired: Bool,
-        tokenBudget: Int?,
-        networkState: ColonyNetworkState
+        latencyTier: ColonyLatencyTier = .interactive,
+        privacyRequired: Bool = false,
+        tokenBudget: Int? = nil,
+        networkState: ColonyNetworkState = .online
     ) {
         self.latencyTier = latencyTier
         self.privacyRequired = privacyRequired
