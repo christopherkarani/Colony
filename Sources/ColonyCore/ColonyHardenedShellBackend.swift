@@ -2,6 +2,9 @@ import Darwin
 import Dispatch
 import Foundation
 
+// SAFETY: All mutable state is isolated to ColonyShellSessionManager (an actor).
+// Immutable stored properties (confinement, defaultTimeoutNanoseconds, maxOutputBytes,
+// environmentWhitelist, defaultTerminalMode) are all Sendable value types.
 public final class ColonyHardenedShellBackend: ColonyShellBackend, @unchecked Sendable {
     public let confinement: ColonyShellConfinementPolicy
     public let defaultTimeoutNanoseconds: UInt64?
