@@ -20,7 +20,7 @@ import Swarm
 ///     tools: [searchTool, summarizeTool],
 ///     instructions: "Research specialist"
 /// )
-/// let adapter = SwarmSubagentAdapter(agents: [
+/// let adapter = ColonySwarmSubagentAdapter(agents: [
 ///     ("researcher", researcher, "Researches topics using web search"),
 /// ])
 ///
@@ -31,7 +31,10 @@ import Swarm
 ///     subagents: adapter
 /// ))
 /// ```
-public struct SwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
+@available(*, deprecated, renamed: "ColonySwarmSubagentAdapter")
+public typealias SwarmSubagentAdapter = ColonySwarmSubagentAdapter
+
+public struct ColonySwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
     private let agents: [(name: String, agent: any AgentRuntime, description: String)]
 
     /// Creates an adapter from a list of named Swarm agents.

@@ -3,12 +3,15 @@ import HiveCore
 import ColonyCore
 import Swarm
 
+@available(*, deprecated, renamed: "ColonySwarmToolRegistration")
+public typealias SwarmToolRegistration = ColonySwarmToolRegistration
+
 /// A registration entry for a Swarm tool within Colony's capability-gated system.
 ///
 /// Associates a Swarm `AnyJSONTool` with a Colony capability and risk level,
 /// so the tool participates in Colony's safety model (capability gating,
 /// approval policy, and risk-level enforcement).
-public struct SwarmToolRegistration: Sendable {
+public struct ColonySwarmToolRegistration: Sendable {
     /// The Swarm tool to register.
     public let tool: any AnyJSONTool
 
@@ -31,9 +34,12 @@ public struct SwarmToolRegistration: Sendable {
     }
 }
 
+@available(*, deprecated, renamed: "ColonySwarmToolBridge")
+public typealias SwarmToolBridge = ColonySwarmToolBridge
+
 /// Bridges Swarm's `@Tool`-defined tools into Colony's capability-gated tool system.
 ///
-/// `SwarmToolBridge` wraps a `SwarmToolRegistry` (which handles the `AnyJSONTool` → `HiveToolDefinition`
+/// `ColonySwarmToolBridge` wraps a `SwarmToolRegistry` (which handles the `AnyJSONTool` → `HiveToolDefinition`
 /// conversion and execution) and layers Colony's safety model on top:
 ///
 /// 1. **Capability gating:** Tools are only listed when their associated `ColonyCapabilities` flag
@@ -46,9 +52,9 @@ public struct SwarmToolRegistration: Sendable {
 /// ## Usage
 ///
 /// ```swift
-/// let bridge = try SwarmToolBridge(registrations: [
-///     SwarmToolRegistration(tool: mySearchTool, capability: .webSearch, riskLevel: .network),
-///     SwarmToolRegistration(tool: myCalcTool, capability: .planning, riskLevel: .readOnly),
+/// let bridge = try ColonySwarmToolBridge(registrations: [
+///     ColonySwarmToolRegistration(tool: mySearchTool, capability: .webSearch, riskLevel: .network),
+///     ColonySwarmToolRegistration(tool: myCalcTool, capability: .planning, riskLevel: .readOnly),
 /// ])
 ///
 /// let bootstrap = ColonyBootstrap()
@@ -58,7 +64,7 @@ public struct SwarmToolRegistration: Sendable {
 ///     swarmTools: bridge
 /// ))
 /// ```
-public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
+public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
     /// The underlying Swarm tool registry that handles conversion and execution.
     private let registry: ColonySwarmToolRegistry
 
@@ -81,7 +87,7 @@ public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
     ///
     /// - Parameter registrations: Swarm tools with their Colony capability and risk level.
     /// - Throws: If the underlying `SwarmToolRegistry` fails to build JSON schemas.
-    public init(registrations: [SwarmToolRegistration]) throws {
+    public init(registrations: [ColonySwarmToolRegistration]) throws {
         let tools = registrations.map(\.tool)
         self.registry = try ColonySwarmToolRegistry(tools: tools)
 
@@ -119,7 +125,7 @@ public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
         riskLevel: ColonyToolRiskLevel = .readOnly
     ) throws {
         let registrations = tools.map { tool in
-            SwarmToolRegistration(tool: tool, capability: capability, riskLevel: riskLevel)
+            ColonySwarmToolRegistration(tool: tool, capability: capability, riskLevel: riskLevel)
         }
         try self.init(registrations: registrations)
     }
@@ -156,7 +162,7 @@ public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
         try await invoke(ColonyToolCall(call)).hive
     }
 
-    private static func policyMetadata(for registration: SwarmToolRegistration) -> ColonyToolPolicyMetadata {
+    private static func policyMetadata(for registration: ColonySwarmToolRegistration) -> ColonyToolPolicyMetadata {
         let semantics = registration.tool.executionSemantics
         let semanticRiskLevel = riskLevel(for: semantics.sideEffectLevel)
         let resolvedRiskLevel = max(registration.riskLevel, semanticRiskLevel)

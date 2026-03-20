@@ -19,12 +19,12 @@ public enum ColonyLane: String, Sendable, CaseIterable {
     case memory
 }
 
-public struct ColonyLaneConfigurationPreset: Sendable {
-    public var requiredCapabilities: ColonyCapabilities
-    public var toolPromptStrategy: ColonyToolPromptStrategy?
-    public var additionalSystemPrompt: String?
+package struct ColonyLaneConfigurationPreset: Sendable {
+    package var requiredCapabilities: ColonyCapabilities
+    package var toolPromptStrategy: ColonyToolPromptStrategy?
+    package var additionalSystemPrompt: String?
 
-    public init(
+    package init(
         requiredCapabilities: ColonyCapabilities = [],
         toolPromptStrategy: ColonyToolPromptStrategy? = nil,
         additionalSystemPrompt: String? = nil
@@ -73,85 +73,97 @@ package actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointS
     }
 }
 
-public struct ColonyAgentFactory: Sendable {
-    public init() {}
+package struct ColonyAgentFactory: Sendable {
+    package init() {}
 
-    public static func configuration(
+    package static func configuration(
         profile: ColonyProfile,
         modelName: String
     ) -> ColonyConfiguration {
         switch profile {
         case .onDevice4k:
             var config = ColonyConfiguration(
-                capabilities: [.planning, .filesystem, .subagents, .scratchbook],
-                modelName: modelName,
-                toolApprovalPolicy: .allowList([
-                    "ls",
-                    "read_file",
-                    "glob",
-                    "grep",
-                    "read_todos",
-                    "write_todos",
-                    "scratch_read",
-                    "scratch_add",
-                    "scratch_update",
-                    "scratch_complete",
-                    "scratch_pin",
-                    "scratch_unpin",
-                    "wax_recall",
-                    "wax_remember",
-                ]),
-                compactionPolicy: .maxTokens(2_600),
-                summarizationPolicy: ColonySummarizationPolicy(
-                    triggerTokens: 3_200,
-                    keepLastMessages: 8,
-                    historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                model: .init(
+                    name: modelName,
+                    capabilities: [.planning, .filesystem, .subagents, .scratchbook]
                 ),
-                requestHardTokenLimit: 4_000,
-                toolResultEvictionTokenLimit: 700,
-                systemPromptMemoryTokenLimit: 256,
-                systemPromptSkillsTokenLimit: 256
+                safety: .init(
+                    toolApprovalPolicy: .allowList([
+                        "ls",
+                        "read_file",
+                        "glob",
+                        "grep",
+                        "read_todos",
+                        "write_todos",
+                        "scratch_read",
+                        "scratch_add",
+                        "scratch_update",
+                        "scratch_complete",
+                        "scratch_pin",
+                        "scratch_unpin",
+                        "wax_recall",
+                        "wax_remember",
+                    ])
+                ),
+                context: .init(
+                    compactionPolicy: .maxTokens(2_600),
+                    summarizationPolicy: ColonySummarizationPolicy(
+                        triggerTokens: 3_200,
+                        keepLastMessages: 8,
+                        historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                    ),
+                    requestHardTokenLimit: 4_000,
+                    toolResultEvictionTokenLimit: 700
+                ),
+                prompts: .init(
+                    toolPromptStrategy: .automatic,
+                    additionalSystemPrompt: """
+                    On-device runtime (~4k context window).
+                    - Keep responses short. Write large outputs to files and reference them.
+                    - Use the Scratchbook to persist state: track progress, key findings, and next actions.
+                    - Plan before acting: outline steps with write_todos, then execute one at a time.
+                    - After completing a step, update the Scratchbook before proceeding.
+                    - When context is compacted, consult the Scratchbook to recover state.
+                    - Prefer single focused tool calls over batching unrelated operations.
+                    """,
+                    systemPromptMemoryTokenLimit: 256,
+                    systemPromptSkillsTokenLimit: 256
+                )
             )
-            config.additionalSystemPrompt = """
-            On-device runtime (~4k context window).
-            - Keep responses short. Write large outputs to files and reference them.
-            - Use the Scratchbook to persist state: track progress, key findings, and next actions.
-            - Plan before acting: outline steps with write_todos, then execute one at a time.
-            - After completing a step, update the Scratchbook before proceeding.
-            - When context is compacted, consult the Scratchbook to recover state.
-            - Prefer single focused tool calls over batching unrelated operations.
-            """
-            config.scratchbookPolicy = ColonyScratchbookPolicy(
+            config.context.scratchbookPolicy = ColonyScratchbookPolicy(
                 pathPrefix: try! ColonyVirtualPath("/scratchbook"),
                 viewTokenLimit: 700,
                 maxRenderedItems: 20,
                 autoCompact: true
             )
-            config.toolPromptStrategy = .automatic
             return config
 
         case .cloud:
-            var config = ColonyConfiguration(
-                capabilities: [.planning, .filesystem, .subagents],
-                modelName: modelName,
-                toolApprovalPolicy: .never,
-                compactionPolicy: .maxTokens(12_000),
-                summarizationPolicy: ColonySummarizationPolicy(
-                    triggerTokens: 170_000,
-                    keepLastMessages: 20,
-                    historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+            return ColonyConfiguration(
+                model: .init(
+                    name: modelName,
+                    capabilities: [.planning, .filesystem, .subagents]
                 ),
-                requestHardTokenLimit: nil,
-                toolResultEvictionTokenLimit: 20_000,
-                systemPromptMemoryTokenLimit: nil,
-                systemPromptSkillsTokenLimit: nil
+                safety: .init(
+                    toolApprovalPolicy: .never
+                ),
+                context: .init(
+                    compactionPolicy: .maxTokens(12_000),
+                    summarizationPolicy: ColonySummarizationPolicy(
+                        triggerTokens: 170_000,
+                        keepLastMessages: 20,
+                        historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                    ),
+                    toolResultEvictionTokenLimit: 20_000
+                ),
+                prompts: .init(
+                    toolPromptStrategy: .automatic
+                )
             )
-            config.toolPromptStrategy = .automatic
-            return config
         }
     }
 
-    public static func configuration(
+    package static func configuration(
         profile: ColonyProfile,
         modelName: String,
         lane: ColonyLane
@@ -161,7 +173,7 @@ public struct ColonyAgentFactory: Sendable {
         return configuration
     }
 
-    public static func routeLane(forIntent intent: String) -> ColonyLane {
+    package static func routeLane(forIntent intent: String) -> ColonyLane {
         let normalized = intent.lowercased()
         guard normalized.isEmpty == false else { return .general }
         let tokenized = Set(
@@ -213,7 +225,7 @@ public struct ColonyAgentFactory: Sendable {
         return best.0
     }
 
-    public static func configurationPreset(for lane: ColonyLane) -> ColonyLaneConfigurationPreset {
+    package static func configurationPreset(for lane: ColonyLane) -> ColonyLaneConfigurationPreset {
         switch lane {
         case .general:
             return ColonyLaneConfigurationPreset()
@@ -238,30 +250,30 @@ public struct ColonyAgentFactory: Sendable {
         }
     }
 
-    public static func applyConfigurationPreset(
+    package static func applyConfigurationPreset(
         _ preset: ColonyLaneConfigurationPreset,
         to configuration: inout ColonyConfiguration
     ) {
-        configuration.capabilities.formUnion(preset.requiredCapabilities)
+        configuration.model.capabilities.formUnion(preset.requiredCapabilities)
 
         if let toolPromptStrategy = preset.toolPromptStrategy {
-            configuration.toolPromptStrategy = toolPromptStrategy
+            configuration.prompts.toolPromptStrategy = toolPromptStrategy
         }
 
         if let additional = preset.additionalSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
            additional.isEmpty == false
         {
-            if let existing = configuration.additionalSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+            if let existing = configuration.prompts.additionalSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
                existing.isEmpty == false
             {
-                configuration.additionalSystemPrompt = existing + "\n\n" + additional
+                configuration.prompts.additionalSystemPrompt = existing + "\n\n" + additional
             } else {
-                configuration.additionalSystemPrompt = additional
+                configuration.prompts.additionalSystemPrompt = additional
             }
         }
     }
 
-    public static func runOptions(profile: ColonyProfile) -> ColonyRunOptions {
+    package static func runOptions(profile: ColonyProfile) -> ColonyRunOptions {
         switch profile {
         case .onDevice4k:
             return ColonyRunOptions(
@@ -278,7 +290,7 @@ public struct ColonyAgentFactory: Sendable {
         }
     }
 
-    public func makeRuntime(
+    package func makeRuntime(
         _ options: ColonyRuntimeCreationOptions
     ) throws -> ColonyRuntime {
         let resolvedModel = Self.resolveModel(options.model)
@@ -337,7 +349,7 @@ public struct ColonyAgentFactory: Sendable {
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
-        swarmTools: SwarmToolBridge? = nil,
+        swarmTools: ColonySwarmToolBridge? = nil,
         membrane: MembraneEnvironment? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
@@ -370,21 +382,21 @@ public struct ColonyAgentFactory: Sendable {
             }
         }
 
-        if filesystem != nil { configuration.capabilities.insert(.filesystem) }
+        if filesystem != nil { configuration.model.capabilities.insert(.filesystem) }
         if shell != nil {
-            configuration.capabilities.insert(.shell)
-            configuration.capabilities.insert(.shellSessions)
+            configuration.model.capabilities.insert(.shell)
+            configuration.model.capabilities.insert(.shellSessions)
         }
-        if git != nil { configuration.capabilities.insert(.git) }
-        if lsp != nil { configuration.capabilities.insert(.lsp) }
-        if applyPatch != nil { configuration.capabilities.insert(.applyPatch) }
-        if webSearch != nil { configuration.capabilities.insert(.webSearch) }
-        if codeSearch != nil { configuration.capabilities.insert(.codeSearch) }
-        if memory != nil { configuration.capabilities.insert(.memory) }
-        if mcp != nil { configuration.capabilities.insert(.mcp) }
-        if plugins != nil { configuration.capabilities.insert(.plugins) }
+        if git != nil { configuration.model.capabilities.insert(.git) }
+        if lsp != nil { configuration.model.capabilities.insert(.lsp) }
+        if applyPatch != nil { configuration.model.capabilities.insert(.applyPatch) }
+        if webSearch != nil { configuration.model.capabilities.insert(.webSearch) }
+        if codeSearch != nil { configuration.model.capabilities.insert(.codeSearch) }
+        if memory != nil { configuration.model.capabilities.insert(.memory) }
+        if mcp != nil { configuration.model.capabilities.insert(.mcp) }
+        if plugins != nil { configuration.model.capabilities.insert(.plugins) }
         if let swarmTools {
-            configuration.capabilities.formUnion(swarmTools.requiredCapabilities)
+            configuration.model.capabilities.formUnion(swarmTools.requiredCapabilities)
         }
 
         configure(&configuration)
@@ -394,20 +406,20 @@ public struct ColonyAgentFactory: Sendable {
         if let swarmTools {
             for (name, level) in swarmTools.riskLevelOverrides {
                 // Don't overwrite explicit user-provided overrides.
-                if configuration.toolRiskLevelOverrides[name] == nil {
-                    configuration.toolRiskLevelOverrides[name] = level
+                if configuration.safety.toolRiskLevelOverrides[name] == nil {
+                    configuration.safety.toolRiskLevelOverrides[name] = level
                 }
             }
             for (name, metadata) in swarmTools.toolPolicyMetadataByName {
-                if configuration.toolPolicyMetadataByName[name] == nil {
-                    configuration.toolPolicyMetadataByName[name] = metadata
+                if configuration.safety.toolPolicyMetadataByName[name] == nil {
+                    configuration.safety.toolPolicyMetadataByName[name] = metadata
                 }
             }
         }
 
         let resolvedSubagents: (any ColonySubagentRegistry)? = {
             if let subagents { return subagents }
-            guard configuration.capabilities.contains(.subagents) else { return nil }
+            guard configuration.model.capabilities.contains(.subagents) else { return nil }
             guard let resolvedModel else { return nil }
             return ColonyDefaultSubagentRegistry(
                 profile: profile,
@@ -420,7 +432,7 @@ public struct ColonyAgentFactory: Sendable {
         }()
 
         // Ensure capability gating is consistent with configured backends.
-        let requestedCapabilities = configuration.capabilities
+        let requestedCapabilities = configuration.model.capabilities
         let swarmCapabilities = swarmTools?.requiredCapabilities ?? []
         var capabilities: ColonyCapabilities = []
 
@@ -443,7 +455,7 @@ public struct ColonyAgentFactory: Sendable {
         retainIfRequested(.plugins, available: plugins != nil || swarmCapabilities.contains(.plugins))
         retainIfRequested(.memory, available: memory != nil || swarmCapabilities.contains(.memory))
         retainIfRequested(.subagents, available: resolvedSubagents != nil)
-        configuration.capabilities = capabilities
+        configuration.model.capabilities = capabilities
 
         let context = ColonyContext(
             configuration: configuration,
@@ -481,7 +493,7 @@ public struct ColonyAgentFactory: Sendable {
             return AnyHiveToolRegistry(
                 CapabilityFilteredSwarmToolRegistry(
                     base: swarmTools,
-                    activeCapabilities: configuration.capabilities
+                    activeCapabilities: configuration.model.capabilities
                 )
             )
         }()
@@ -549,7 +561,7 @@ public struct ColonyAgentFactory: Sendable {
         case .foundationModels(let configuration):
             let client = ColonyFoundationModelsClient(configuration: configuration)
             return ResolvedPublicModel(
-                model: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: AnyColonyModelClient(client))),
+                model: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: client)),
                 capabilities: client.colonyModelCapabilities
             )
 
@@ -564,7 +576,7 @@ public struct ColonyAgentFactory: Sendable {
             }
             let router = ColonyOnDeviceModelRouter(
                 onDevice: AnyHiveModelClient(
-                    ColonyHiveModelClientAdapter(base: AnyColonyModelClient(foundationClient))
+                    ColonyHiveModelClientAdapter(base: foundationClient)
                 ),
                 fallback: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: fallback)),
                 onDeviceCapabilities: foundationClient.colonyModelCapabilities,
@@ -593,7 +605,7 @@ public struct ColonyAgentFactory: Sendable {
             let router = ColonyProviderRouter(
                 providers: providers.map { provider in
                     ColonyProviderRouter.Provider(
-                        id: provider.id,
+                        id: provider.id.rawValue,
                         client: AnyHiveModelClient(ColonyHiveModelClientAdapter(base: provider.client)),
                         capabilities: provider.capabilities,
                         priority: provider.priority,
@@ -716,7 +728,7 @@ private struct ExistentialHiveModelClient: HiveModelClient, Sendable {
 
 /// Filters Swarm tools by active Colony capabilities.
 struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
-    let base: SwarmToolBridge
+    let base: ColonySwarmToolBridge
     let activeCapabilities: ColonyCapabilities
 
     func listTools() -> [HiveToolDefinition] {

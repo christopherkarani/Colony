@@ -208,7 +208,7 @@ public typealias ColonyProviderRoutingPolicy = ColonyModel.RoutingPolicy
 
 public struct ColonyRuntimeServices: Sendable {
     public var tools: (any ColonyToolRegistry)?
-    package var swarmTools: SwarmToolBridge?
+    package var swarmTools: ColonySwarmToolBridge?
     package var membrane: MembraneEnvironment?
     public var filesystem: (any ColonyFileSystemBackend)?
     public var shell: (any ColonyShellBackend)?
@@ -241,7 +241,7 @@ public struct ColonyRuntimeServices: Sendable {
 
     package init(
         tools: (any ColonyToolRegistry)? = nil,
-        swarmTools: SwarmToolBridge? = nil,
+        swarmTools: ColonySwarmToolBridge? = nil,
         membrane: MembraneEnvironment? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,

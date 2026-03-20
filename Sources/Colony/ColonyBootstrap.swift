@@ -8,12 +8,12 @@ import Swarm
 import struct Swarm.MembraneEnvironment
 import struct Swarm.MembraneFeatureConfiguration
 
-public struct ColonyBootstrapResult: Sendable {
-    public let runtime: ColonyRuntime
-    public let membraneEnvironment: MembraneEnvironment
-    public let memoryBackend: any ColonyMemoryBackend
+package struct ColonyBootstrapResult: Sendable {
+    package let runtime: ColonyRuntime
+    package let membraneEnvironment: MembraneEnvironment
+    package let memoryBackend: any ColonyMemoryBackend
 
-    public init(
+    package init(
         runtime: ColonyRuntime,
         membraneEnvironment: MembraneEnvironment,
         memoryBackend: any ColonyMemoryBackend
@@ -24,10 +24,10 @@ public struct ColonyBootstrapResult: Sendable {
     }
 }
 
-public struct ColonyBootstrap: Sendable {
-    public init() {}
+package struct ColonyBootstrap: Sendable {
+    package init() {}
 
-    public func makeMemoryBackend(at url: URL) async throws -> ColonyWaxMemoryBackend {
+    package func makeMemoryBackend(at url: URL) async throws -> ColonyWaxMemoryBackend {
         try await ColonyWaxMemoryBackend.create(at: url)
     }
 
@@ -35,7 +35,7 @@ public struct ColonyBootstrap: Sendable {
         ColonyDefaultConduitModelClient(modelName: modelName)
     }
 
-    public func makeMembraneEnvironment(
+    package func makeMembraneEnvironment(
         memoryStoreURL: URL,
         configuration: MembraneFeatureConfiguration = .default,
         budget: MembraneCore.ContextBudget = MembraneCore.ContextBudget(
@@ -53,7 +53,7 @@ public struct ColonyBootstrap: Sendable {
         )
     }
 
-    public func makeRuntime(
+    package func makeRuntime(
         options: ColonyRuntimeCreationOptions
     ) async throws -> ColonyRuntime {
         let resolvedMemoryURL = defaultMemoryStoreURL(for: options.threadID.hive)
@@ -86,7 +86,7 @@ public struct ColonyBootstrap: Sendable {
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
-        swarmTools: SwarmToolBridge? = nil,
+        swarmTools: ColonySwarmToolBridge? = nil,
         membrane: MembraneEnvironment? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
@@ -171,7 +171,7 @@ public struct ColonyBootstrap: Sendable {
         )
     }
 
-    public func bootstrap(
+    package func bootstrap(
         options: ColonyBootstrapOptions
     ) async throws -> ColonyBootstrapResult {
         var runtimeOptions = options.runtime
@@ -219,7 +219,7 @@ public struct ColonyBootstrap: Sendable {
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
-        swarmTools: SwarmToolBridge? = nil,
+        swarmTools: ColonySwarmToolBridge? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,

@@ -16,10 +16,10 @@ import Swarm
 /// ```swift
 /// // Persistent Wax-backed memory
 /// let waxMemory = try await WaxMemory(url: dbURL)
-/// let adapter = SwarmMemoryAdapter(waxMemory)
+/// let adapter = ColonySwarmMemoryAdapter(waxMemory)
 ///
 /// // Persistent in-memory backend for tests
-/// let adapter = SwarmMemoryAdapter(backend: InMemoryBackend(), conversationID: "test")
+/// let adapter = ColonySwarmMemoryAdapter(backend: InMemoryBackend(), conversationID: "test")
 ///
 /// // Use with Colony runtime
 /// let bootstrap = ColonyBootstrap()
@@ -29,7 +29,10 @@ import Swarm
 ///     memory: adapter
 /// ))
 /// ```
-public struct SwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
+@available(*, deprecated, renamed: "ColonySwarmMemoryAdapter")
+public typealias SwarmMemoryAdapter = ColonySwarmMemoryAdapter
+
+public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
     private let memory: any Memory
 
     /// Creates an adapter wrapping any Swarm `Memory` implementation.
