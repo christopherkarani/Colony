@@ -1,5 +1,6 @@
-import Foundation
 import Colony
+import ColonyCore
+import Foundation
 
 // MARK: - Tavily API Request/Response Types
 

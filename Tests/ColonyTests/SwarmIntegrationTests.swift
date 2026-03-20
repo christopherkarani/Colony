@@ -1,5 +1,7 @@
+import ColonyCore
 import Foundation
 import HiveCore
+import Swarm
 import Testing
 @testable import Colony
 
@@ -198,11 +200,11 @@ private actor ContextOnlyMemory: Memory {
     func clear() async {}
 }
 
-// MARK: - SwarmToolBridge Tests
+// MARK: - ColonySwarmToolBridge Tests
 
-@Test("SwarmToolBridge converts Swarm tools to HiveToolDefinitions")
+@Test("ColonySwarmToolBridge converts Swarm tools to HiveToolDefinitions")
 func swarmToolBridgeListsTools() throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [EchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
@@ -214,10 +216,10 @@ func swarmToolBridgeListsTools() throws {
     #expect(definitions.first?.description == "Echoes the input message back")
 }
 
-@Test("SwarmToolBridge filters tools by capability")
+@Test("ColonySwarmToolBridge filters tools by capability")
 func swarmToolBridgeFiltersCapabilities() throws {
-    let bridge = try SwarmToolBridge(registrations: [
-        SwarmToolRegistration(tool: EchoTool(), capability: .webSearch, riskLevel: .network),
+    let bridge = try ColonySwarmToolBridge(registrations: [
+        ColonySwarmToolRegistration(tool: EchoTool(), capability: .webSearch, riskLevel: .network),
     ])
 
     // webSearch capability not enabled — should return empty
@@ -232,7 +234,7 @@ func swarmToolBridgeFiltersCapabilities() throws {
 
 @Test("ColonyAgentFactory applies capability filtering to Swarm tool advertisements")
 func colonyFactoryFiltersSwarmToolAdvertisements() async throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [EchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
@@ -246,7 +248,7 @@ func colonyFactoryFiltersSwarmToolAdvertisements() async throws {
         swarmTools: bridge,
         filesystem: ColonyInMemoryFileSystemBackend(),
         configure: { configuration in
-            configuration.capabilities.remove(.plugins)
+            configuration.model.capabilities.remove(.plugins)
         }
     )
 
@@ -259,7 +261,7 @@ func colonyFactoryFiltersSwarmToolAdvertisements() async throws {
 
 @Test("ColonyAgentFactory advertises Swarm tools by default when capability is provided by bridge")
 func colonyFactoryAdvertisesSwarmToolAdvertisementsByDefault() async throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [EchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
@@ -281,9 +283,9 @@ func colonyFactoryAdvertisesSwarmToolAdvertisementsByDefault() async throws {
     #expect(seenNames.contains("echo"))
 }
 
-@Test("SwarmToolBridge invokes tool and returns result")
+@Test("ColonySwarmToolBridge invokes tool and returns result")
 func swarmToolBridgeInvokesTool() async throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [EchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
@@ -294,18 +296,18 @@ func swarmToolBridgeInvokesTool() async throws {
     #expect(result.content.contains("Echo: hello world"))
 }
 
-@Test("SwarmToolBridge risk-level overrides are populated")
+@Test("ColonySwarmToolBridge risk-level overrides are populated")
 func swarmToolBridgeRiskLevels() throws {
-    let bridge = try SwarmToolBridge(registrations: [
-        SwarmToolRegistration(tool: EchoTool(), capability: .plugins, riskLevel: .network),
+    let bridge = try ColonySwarmToolBridge(registrations: [
+        ColonySwarmToolRegistration(tool: EchoTool(), capability: .plugins, riskLevel: .network),
     ])
 
     #expect(bridge.riskLevelOverrides["echo"] == .network)
 }
 
-@Test("SwarmToolBridge derives Colony policy metadata from Swarm tool semantics")
+@Test("ColonySwarmToolBridge derives Colony policy metadata from Swarm tool semantics")
 func swarmToolBridgeDerivesPolicyMetadataFromExecutionSemantics() throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [ApprovalMetadataEchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
@@ -336,14 +338,14 @@ private struct PrimaryEchoRegistry: HiveToolRegistry, Sendable {
 
 @Test("CompositeToolRegistry keeps listing and invocation precedence aligned")
 func compositeToolRegistryPrecedenceIsAligned() async throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [EchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
     )
     let composite = CompositeToolRegistry(
         primary: AnyHiveToolRegistry(PrimaryEchoRegistry()),
-        secondary: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge)))
+        secondary: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: bridge))
     )
 
     var dedupedByName: [String: HiveToolDefinition] = [:]
@@ -359,11 +361,11 @@ func compositeToolRegistryPrecedenceIsAligned() async throws {
     #expect(result.content == "primary-echo")
 }
 
-// MARK: - SwarmMemoryAdapter Tests
+// MARK: - ColonySwarmMemoryAdapter Tests
 
-@Test("SwarmMemoryAdapter remembers and recalls")
+@Test("ColonySwarmMemoryAdapter remembers and recalls")
 func swarmMemoryAdapterRoundTrip() async throws {
-    let adapter = SwarmMemoryAdapter(
+    let adapter = ColonySwarmMemoryAdapter(
         backend: InMemoryBackend(),
         conversationID: "test-roundtrip"
     )
@@ -381,9 +383,9 @@ func swarmMemoryAdapterRoundTrip() async throws {
     #expect(recallResult.items.first?.tags == ["lang"])
 }
 
-@Test("SwarmMemoryAdapter returns empty on no match")
+@Test("ColonySwarmMemoryAdapter returns empty on no match")
 func swarmMemoryAdapterEmptyRecall() async throws {
-    let adapter = SwarmMemoryAdapter(
+    let adapter = ColonySwarmMemoryAdapter(
         backend: InMemoryBackend(),
         conversationID: "test-empty"
     )
@@ -398,9 +400,9 @@ func swarmMemoryAdapterEmptyRecall() async throws {
     #expect(result.items.isEmpty)
 }
 
-@Test("SwarmMemoryAdapter falls back to contextual recall when memory has no local messages")
+@Test("ColonySwarmMemoryAdapter falls back to contextual recall when memory has no local messages")
 func swarmMemoryAdapterFallsBackToContextWhenMessagesUnavailable() async throws {
-    let adapter = SwarmMemoryAdapter(
+    let adapter = ColonySwarmMemoryAdapter(
         ContextOnlyMemory(fallbackContext: "[assistant]: Wax fallback context")
     )
 
@@ -413,7 +415,7 @@ func swarmMemoryAdapterFallsBackToContextWhenMessagesUnavailable() async throws 
     #expect(result.items.first?.metadata["source"] == "swarm-memory")
 }
 
-// MARK: - SwarmSubagentAdapter Tests
+// MARK: - ColonySwarmSubagentAdapter Tests
 
 private actor StubAgent: AgentRuntime {
     nonisolated let tools: [any AnyJSONTool] = []
@@ -431,9 +433,9 @@ private actor StubAgent: AgentRuntime {
     func cancel() async {}
 }
 
-@Test("SwarmSubagentAdapter lists registered agents")
+@Test("ColonySwarmSubagentAdapter lists registered agents")
 func swarmSubagentAdapterListsAgents() {
-    let adapter = SwarmSubagentAdapter(agents: [
+    let adapter = ColonySwarmSubagentAdapter(agents: [
         ("researcher", StubAgent(), "Research specialist"),
         ("coder", StubAgent(), "Coding specialist"),
     ])
@@ -444,9 +446,9 @@ func swarmSubagentAdapterListsAgents() {
     #expect(descriptors.map(\.name).contains("coder"))
 }
 
-@Test("SwarmSubagentAdapter routes to named agent")
+@Test("ColonySwarmSubagentAdapter routes to named agent")
 func swarmSubagentAdapterRoutesToAgent() async throws {
-    let adapter = SwarmSubagentAdapter(agents: [
+    let adapter = ColonySwarmSubagentAdapter(agents: [
         ("researcher", StubAgent(), "Research specialist"),
     ])
 
@@ -461,7 +463,7 @@ func swarmSubagentAdapterRoutesToAgent() async throws {
 @Test("Swarm tool executes through Colony's harness with capability gating")
 func swarmToolThroughColonyPipeline() async throws {
     let echoTool = EchoTool()
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [echoTool],
         capability: .plugins,
         riskLevel: .readOnly
@@ -471,13 +473,13 @@ func swarmToolThroughColonyPipeline() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     var configuration = ColonyConfiguration(
-        capabilities: [.plugins],
         modelName: "test-model",
+        capabilities: [.plugins],
         toolApprovalPolicy: .never
     )
     // Merge risk-level overrides from bridge
     for (name, level) in bridge.riskLevelOverrides {
-        configuration.toolRiskLevelOverrides[name] = level
+        configuration.safety.toolRiskLevelOverrides[name] = level
     }
 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -493,7 +495,7 @@ func swarmToolThroughColonyPipeline() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: bridge)),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -530,7 +532,7 @@ func swarmToolThroughColonyPipeline() async throws {
 @Test("Swarm tool requires approval when risk level triggers mandatory approval")
 func swarmToolRequiresApprovalForHighRisk() async throws {
     let echoTool = EchoTool()
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [echoTool],
         capability: .plugins,
         riskLevel: .execution  // High risk → mandatory approval
@@ -540,12 +542,12 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     var configuration = ColonyConfiguration(
-        capabilities: [.plugins],
         modelName: "test-model",
+        capabilities: [.plugins],
         toolApprovalPolicy: .always
     )
     for (name, level) in bridge.riskLevelOverrides {
-        configuration.toolRiskLevelOverrides[name] = level
+        configuration.safety.toolRiskLevelOverrides[name] = level
     }
 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -561,7 +563,7 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: bridge)),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -590,7 +592,7 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
 
 @Test("Swarm tool requires approval when Swarm execution semantics demand it")
 func swarmToolRequiresApprovalForExplicitMetadata() async throws {
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [ApprovalMetadataEchoTool()],
         capability: .plugins,
         riskLevel: .readOnly
@@ -600,15 +602,15 @@ func swarmToolRequiresApprovalForExplicitMetadata() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     var configuration = ColonyConfiguration(
-        capabilities: [.plugins],
         modelName: "test-model",
+        capabilities: [.plugins],
         toolApprovalPolicy: .never
     )
     for (name, level) in bridge.riskLevelOverrides {
-        configuration.toolRiskLevelOverrides[name] = level
+        configuration.safety.toolRiskLevelOverrides[name] = level
     }
     for (name, metadata) in bridge.toolPolicyMetadataByName {
-        configuration.toolPolicyMetadataByName[name] = metadata
+        configuration.safety.toolPolicyMetadataByName[name] = metadata
     }
 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -623,7 +625,7 @@ func swarmToolRequiresApprovalForExplicitMetadata() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: bridge)),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -654,7 +656,7 @@ func swarmToolRequiresApprovalForExplicitMetadata() async throws {
 @Test("makeRuntime accepts swarmTools parameter and merges risk overrides")
 func makeRuntimeWithSwarmTools() throws {
     let echoTool = EchoTool()
-    let bridge = try SwarmToolBridge(
+    let bridge = try ColonySwarmToolBridge(
         tools: [echoTool],
         capability: .plugins,
         riskLevel: .network

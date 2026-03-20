@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -385,7 +386,7 @@ func gitAndLspToolsAdvertisedWithBackendWiring() async throws {
     let model = ToolListRecordingModel()
 
     let context = ColonyContext(
-        configuration: ColonyConfiguration(capabilities: [.git, .lsp], modelName: "test-model", toolApprovalPolicy: .never),
+        configuration: ColonyConfiguration(modelName: "test-model", capabilities: [.git, .lsp], toolApprovalPolicy: .never),
         filesystem: nil,
         git: RecordingGitBackend(),
         lsp: RecordingLSPBackend()
@@ -425,7 +426,7 @@ func gitAndLspToolsNotAdvertisedWithoutBackends() async throws {
     let model = ToolListRecordingModel()
 
     let context = ColonyContext(
-        configuration: ColonyConfiguration(capabilities: [.git, .lsp], modelName: "test-model", toolApprovalPolicy: .never),
+        configuration: ColonyConfiguration(modelName: "test-model", capabilities: [.git, .lsp], toolApprovalPolicy: .never),
         filesystem: nil
     )
 

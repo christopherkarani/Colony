@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -120,16 +121,16 @@ func laneRouterClassifiesCodingAndGeneralIntents() {
 @Test("Coding lane preset enables coding-specific capabilities")
 func codingLanePresetEnablesCodingSpecificCapabilities() {
     let coding = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model", lane: .coding)
-    #expect(coding.capabilities.contains(.shell))
-    #expect(coding.capabilities.contains(.shellSessions))
-    #expect(coding.capabilities.contains(.git))
-    #expect(coding.capabilities.contains(.lsp))
-    #expect(coding.capabilities.contains(.applyPatch))
+    #expect(coding.model.capabilities.contains(.shell))
+    #expect(coding.model.capabilities.contains(.shellSessions))
+    #expect(coding.model.capabilities.contains(.git))
+    #expect(coding.model.capabilities.contains(.lsp))
+    #expect(coding.model.capabilities.contains(.applyPatch))
 
     let general = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model", lane: .general)
-    #expect(general.capabilities.contains(.shell) == false)
-    #expect(general.capabilities.contains(.git) == false)
-    #expect(general.capabilities.contains(.lsp) == false)
+    #expect(general.model.capabilities.contains(.shell) == false)
+    #expect(general.model.capabilities.contains(.git) == false)
+    #expect(general.model.capabilities.contains(.lsp) == false)
 }
 
 @Test("Memory tools are advertised only when capability and backend are both configured")

@@ -1,3 +1,4 @@
+import ColonyCore
 import Testing
 import Colony
 @testable import ColonyResearchAssistantExample

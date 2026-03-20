@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -85,9 +86,9 @@ func persistedAllowAlwaysRuleAutoApprovesMutatingTool() async throws {
         model: AnyHiveModelClient(RepeatingWriteModel()),
         filesystem: fs,
         configure: { configuration in
-            configuration.capabilities = [.filesystem]
-            configuration.toolApprovalPolicy = .always
-            configuration.toolApprovalRuleStore = store
+            configuration.model.capabilities = [.filesystem]
+            configuration.safety.toolApprovalPolicy = .always
+            configuration.safety.toolApprovalRuleStore = store
         }
     )
 
@@ -122,9 +123,9 @@ func persistedRejectAlwaysRuleDeniesMutatingTool() async throws {
         model: AnyHiveModelClient(RepeatingWriteModel()),
         filesystem: fs,
         configure: { configuration in
-            configuration.capabilities = [.filesystem]
-            configuration.toolApprovalPolicy = .always
-            configuration.toolApprovalRuleStore = store
+            configuration.model.capabilities = [.filesystem]
+            configuration.safety.toolApprovalPolicy = .always
+            configuration.safety.toolApprovalRuleStore = store
         }
     )
 
@@ -161,9 +162,9 @@ func persistedAllowOnceRuleIsConsumedAfterOneRun() async throws {
         model: AnyHiveModelClient(RepeatingWriteModel()),
         filesystem: fs,
         configure: { configuration in
-            configuration.capabilities = [.filesystem]
-            configuration.toolApprovalPolicy = .always
-            configuration.toolApprovalRuleStore = store
+            configuration.model.capabilities = [.filesystem]
+            configuration.safety.toolApprovalPolicy = .always
+            configuration.safety.toolApprovalRuleStore = store
         }
     )
 

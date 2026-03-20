@@ -1,5 +1,6 @@
-import Foundation
 import Colony
+import ColonyCore
+import Foundation
 
 enum ResearchAssistantAppError: Error, Sendable, Equatable, CustomStringConvertible {
     case rootPathNotDirectory(String)

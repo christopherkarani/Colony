@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -127,7 +128,7 @@ func toolMetadataCanForceApprovalAndCarryPolicy() {
     let engine = ColonyToolSafetyPolicyEngine(
         approvalPolicy: .never,
         toolPolicyMetadataByName: [
-            "safe_read": ColonyToolPolicyMetadata(
+            ColonyToolName(rawValue: "safe_read"): ColonyToolPolicyMetadata(
                 riskLevel: .readOnly,
                 approvalDisposition: .always,
                 retryDisposition: .safeToRetry,
@@ -152,7 +153,7 @@ func toolMetadataCanSuppressPolicyApproval() {
     let engine = ColonyToolSafetyPolicyEngine(
         approvalPolicy: .always,
         toolPolicyMetadataByName: [
-            "safe_read": ColonyToolPolicyMetadata(
+            ColonyToolName(rawValue: "safe_read"): ColonyToolPolicyMetadata(
                 riskLevel: .readOnly,
                 approvalDisposition: .never
             )

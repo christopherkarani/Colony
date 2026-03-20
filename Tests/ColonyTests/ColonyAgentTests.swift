@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -295,8 +296,8 @@ func colonyInterruptsAndResumesApproved() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .allowList(["ls", "read_file", "glob", "grep"])
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -362,8 +363,8 @@ func colonyResumesRejected() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .always
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -473,12 +474,12 @@ func colonyExecuteToolUsesShellBackend() async throws {
         fixedResult: ColonyShellExecutionResult(exitCode: 0, stdout: "hi", stderr: "")
     )
 
-    let configuration = ColonyConfiguration(
-        capabilities: [.shell],
+    var configuration = ColonyConfiguration(
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        capabilities: [.shell],
+        toolApprovalPolicy: .never
     )
+    configuration.safety.mandatoryApprovalRiskLevels = []
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: shell)
 
     let environment = HiveEnvironment<ColonySchema>(
@@ -517,12 +518,12 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
     let graph = try ColonyAgent.compile()
     let subagents = RecordingSubagentRegistry()
 
-    let configuration = ColonyConfiguration(
-        capabilities: [.subagents],
+    var configuration = ColonyConfiguration(
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        capabilities: [.subagents],
+        toolApprovalPolicy: .never
     )
+    configuration.safety.mandatoryApprovalRiskLevels = []
     let context = ColonyContext(
         configuration: configuration,
         filesystem: nil,
@@ -566,12 +567,12 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
     let graph = try ColonyAgent.compile()
     let subagents = RecordingSubagentRegistry()
 
-    let configuration = ColonyConfiguration(
-        capabilities: [.subagents],
+    var configuration = ColonyConfiguration(
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        capabilities: [.subagents],
+        toolApprovalPolicy: .never
     )
+    configuration.safety.mandatoryApprovalRiskLevels = []
     let context = ColonyContext(
         configuration: configuration,
         filesystem: nil,
@@ -630,11 +631,11 @@ func systemPromptInjectsAgentsMemory() async throws {
     )
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .never
     )
-    configuration.memorySources = [
+    configuration.prompts.memorySources = [
         try ColonyVirtualPath("/AGENTS.md"),
         try ColonyVirtualPath("/nested/AGENTS.md"),
     ]
@@ -683,11 +684,11 @@ BODY_SENTINEL_SHOULD_NOT_BE_DISCLOSED
     )
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .never
     )
-    configuration.skillSources = [
+    configuration.prompts.skillSources = [
         try ColonyVirtualPath("/skills"),
     ]
     let context = ColonyContext(configuration: configuration, filesystem: fs)

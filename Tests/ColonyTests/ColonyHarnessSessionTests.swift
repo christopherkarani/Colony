@@ -1,3 +1,4 @@
+import ColonyCore
 import Dispatch
 import Foundation
 import HiveCore
@@ -195,7 +196,7 @@ func harnessSessionLifecycleAndOrdering() async throws {
         clock: HarnessNoopClock(),
         logger: HarnessNoopLogger(),
         configure: { configuration in
-            configuration.toolApprovalPolicy = .always
+            configuration.safety.toolApprovalPolicy = .always
         }
     )
 
@@ -279,7 +280,7 @@ func harnessSessionStopCancelsActiveRun() async throws {
         clock: HarnessNoopClock(),
         logger: HarnessNoopLogger(),
         configure: { configuration in
-            configuration.toolApprovalPolicy = .never
+            configuration.safety.toolApprovalPolicy = .never
         }
     )
 

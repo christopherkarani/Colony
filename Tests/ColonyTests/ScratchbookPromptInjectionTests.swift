@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -103,18 +104,18 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
     try await fs.write(at: scratchbookPath, content: fileJSON)
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem, .scratchbook],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
+        capabilities: [.filesystem, .scratchbook],
+        toolApprovalPolicy: .never
     )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: prefix,
         viewTokenLimit: 200,
         maxRenderedItems: 20,
         autoCompact: false
     )
-    configuration.toolPromptStrategy = .includeInSystemPrompt
+    configuration.prompts.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -171,18 +172,18 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
     }
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem, .scratchbook],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
+        capabilities: [.filesystem, .scratchbook],
+        toolApprovalPolicy: .never
     )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: prefix,
         viewTokenLimit: 200,
         maxRenderedItems: 20,
         autoCompact: false
     )
-    configuration.toolPromptStrategy = .includeInSystemPrompt
+    configuration.prompts.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -215,18 +216,18 @@ func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
     let threadID = HiveThreadID("thread-scratchbook-no-fs")
 
     var configuration = ColonyConfiguration(
-        capabilities: [.scratchbook],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
+        capabilities: [.scratchbook],
+        toolApprovalPolicy: .never
     )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: try ColonyVirtualPath("/scratchbook"),
         viewTokenLimit: 200,
         maxRenderedItems: 20,
         autoCompact: false
     )
-    configuration.toolPromptStrategy = .includeInSystemPrompt
+    configuration.prompts.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: nil)
@@ -276,18 +277,18 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
     try await fs.write(at: scratchbookPath, content: try makeScratchbookFileJSON(items: items))
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem, .scratchbook],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
+        capabilities: [.filesystem, .scratchbook],
+        toolApprovalPolicy: .never
     )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: prefix,
         viewTokenLimit: 5_000,
         maxRenderedItems: 2,
         autoCompact: false
     )
-    configuration.toolPromptStrategy = .includeInSystemPrompt
+    configuration.prompts.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -341,19 +342,18 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
 
     let viewTokenLimit = 50
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem, .scratchbook],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0),
-        requestHardTokenLimit: nil
+        capabilities: [.filesystem, .scratchbook],
+        toolApprovalPolicy: .never
     )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: prefix,
         viewTokenLimit: viewTokenLimit,
         maxRenderedItems: 200,
         autoCompact: false
     )
-    configuration.toolPromptStrategy = .includeInSystemPrompt
+    configuration.prompts.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -391,12 +391,12 @@ func toolPromptStrategy_overridesToolsSection() async throws {
 
     func run(_ toolPromptStrategy: ColonyToolPromptStrategy) async throws -> HiveChatRequest {
         var configuration = ColonyConfiguration(
-            capabilities: [.filesystem],
             modelName: "test-model",
-            toolApprovalPolicy: .never,
-            compactionPolicy: .maxTokens(0)
+            capabilities: [.filesystem],
+            toolApprovalPolicy: .never
         )
-        configuration.toolPromptStrategy = toolPromptStrategy
+        configuration.context.compactionPolicy = .maxTokens(0)
+        configuration.prompts.toolPromptStrategy = toolPromptStrategy
 
         let recordingModel = RecordingRequestModel()
         let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -438,8 +438,8 @@ func toolPromptStrategy_defaultsToAutomaticAcrossProfiles() throws {
     let onDevice = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
     let cloud = ColonyAgentFactory.configuration(profile: .cloud, modelName: "test-model")
 
-    #expect(onDevice.toolPromptStrategy == .automatic)
-    #expect(cloud.toolPromptStrategy == .automatic)
+    #expect(onDevice.prompts.toolPromptStrategy == .automatic)
+    #expect(cloud.prompts.toolPromptStrategy == .automatic)
 }
 
 @Test("automatic tool prompt strategy omits the tools section for managed tool prompting models")
@@ -448,12 +448,12 @@ func automaticToolPromptStrategy_omitsToolsSectionForManagedModels() async throw
     let fs = ColonyInMemoryFileSystemBackend()
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
+        capabilities: [.filesystem],
+        toolApprovalPolicy: .never
     )
-    configuration.toolPromptStrategy = .automatic
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.prompts.toolPromptStrategy = .automatic
 
     let recordingModel = RecordingRequestModel(capabilities: [.managedToolPrompting])
     let context = ColonyContext(configuration: configuration, modelCapabilities: recordingModel.colonyModelCapabilities, filesystem: fs)
@@ -486,12 +486,12 @@ func automaticToolPromptStrategy_includesToolsSectionForUnknownModels() async th
     let fs = ColonyInMemoryFileSystemBackend()
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
+        capabilities: [.filesystem],
+        toolApprovalPolicy: .never
     )
-    configuration.toolPromptStrategy = .automatic
+    configuration.context.compactionPolicy = .maxTokens(0)
+    configuration.prompts.toolPromptStrategy = .automatic
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -527,10 +527,10 @@ func factory_infersDirectModelCapabilitiesForAutomaticToolPromptStrategy() async
         modelName: "test-model",
         model: recordingModel,
         configure: { configuration in
-            configuration.capabilities = [.filesystem]
-            configuration.toolApprovalPolicy = .never
-            configuration.compactionPolicy = .maxTokens(0)
-            configuration.toolPromptStrategy = .automatic
+            configuration.model.capabilities = [.filesystem]
+            configuration.safety.toolApprovalPolicy = .never
+            configuration.context.compactionPolicy = .maxTokens(0)
+            configuration.prompts.toolPromptStrategy = .automatic
         }
     )
 
@@ -569,10 +569,10 @@ func automaticToolPromptStrategy_usesRoutedModelCapabilities() async throws {
             networkState: .online
         ),
         configure: { configuration in
-            configuration.capabilities = [.filesystem]
-            configuration.toolApprovalPolicy = .never
-            configuration.compactionPolicy = .maxTokens(0)
-            configuration.toolPromptStrategy = .automatic
+            configuration.model.capabilities = [.filesystem]
+            configuration.safety.toolApprovalPolicy = .never
+            configuration.context.compactionPolicy = .maxTokens(0)
+            configuration.prompts.toolPromptStrategy = .automatic
         }
     )
 
@@ -598,8 +598,8 @@ func structuredOutputPrompting_isInjectedForModelsWithoutStructuredOutputCapabil
         modelName: "test-model",
         model: AnyHiveModelClient(recordingModel),
         configure: { configuration in
-            configuration.compactionPolicy = .maxTokens(0)
-            configuration.structuredOutput = .jsonObject
+            configuration.context.compactionPolicy = .maxTokens(0)
+            configuration.model.structuredOutput = .jsonObject
         }
     )
 
@@ -625,8 +625,8 @@ func structuredOutputPrompting_isOmittedForWrappedManagedStructuredOutputModels(
         model: AnyHiveModelClient(recordingModel),
         modelCapabilities: [.managedStructuredOutputs],
         configure: { configuration in
-            configuration.compactionPolicy = .maxTokens(0)
-            configuration.structuredOutput = .jsonObject
+            configuration.context.compactionPolicy = .maxTokens(0)
+            configuration.model.structuredOutput = .jsonObject
         }
     )
 

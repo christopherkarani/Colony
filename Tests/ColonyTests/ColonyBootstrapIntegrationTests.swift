@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCheckpointWax
 import HiveCore
@@ -96,9 +97,9 @@ struct ColonyBootstrapIntegrationTests {
             model: AnyHiveModelClient(model),
             membraneStoreURL: membraneURL,
             configure: { configuration in
-                configuration.capabilities = [.planning]
-                configuration.summarizationPolicy = nil
-                configuration.toolResultEvictionTokenLimit = nil
+                configuration.model.capabilities = [.planning]
+                configuration.context.summarizationPolicy = nil
+                configuration.context.toolResultEvictionTokenLimit = nil
             }
         )
 
@@ -170,10 +171,10 @@ struct ColonyBootstrapIntegrationTests {
             memory: memory,
             durableCheckpointStoreURL: checkpointURL,
             configure: { configuration in
-                configuration.capabilities = [.filesystem, .memory]
-                configuration.toolApprovalPolicy = .always
-                configuration.summarizationPolicy = nil
-                configuration.toolResultEvictionTokenLimit = nil
+                configuration.model.capabilities = [.filesystem, .memory]
+                configuration.safety.toolApprovalPolicy = .always
+                configuration.context.summarizationPolicy = nil
+                configuration.context.toolResultEvictionTokenLimit = nil
             }
         )
 
@@ -197,10 +198,10 @@ struct ColonyBootstrapIntegrationTests {
             memory: memory,
             durableCheckpointStoreURL: checkpointURL,
             configure: { configuration in
-                configuration.capabilities = [.filesystem, .memory]
-                configuration.toolApprovalPolicy = .always
-                configuration.summarizationPolicy = nil
-                configuration.toolResultEvictionTokenLimit = nil
+                configuration.model.capabilities = [.filesystem, .memory]
+                configuration.safety.toolApprovalPolicy = .always
+                configuration.context.summarizationPolicy = nil
+                configuration.context.toolResultEvictionTokenLimit = nil
             }
         )
 

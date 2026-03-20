@@ -1,5 +1,6 @@
 import SwiftUI
 import Colony
+import ColonyCore
 import HiveCore
 
 #if canImport(FoundationModels)

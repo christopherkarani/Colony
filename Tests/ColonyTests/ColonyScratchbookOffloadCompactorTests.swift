@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -128,10 +129,10 @@ func offload_updatesScratchbook_withDeterministicFallbackWhenSubagentsUnavailabl
 
     func makeConfiguration() throws -> ColonyConfiguration {
         var configuration = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
-        configuration.toolApprovalPolicy = .never
-        configuration.compactionPolicy = .disabled
-        configuration.capabilities.remove(.subagents)
-        configuration.summarizationPolicy = ColonySummarizationPolicy(
+        configuration.safety.toolApprovalPolicy = .never
+        configuration.context.compactionPolicy = .disabled
+        configuration.model.capabilities.remove(.subagents)
+        configuration.context.summarizationPolicy = ColonySummarizationPolicy(
             triggerTokens: 100,
             keepLastMessages: 2,
             historyPathPrefix: try ColonyVirtualPath("/conversation_history")
@@ -174,9 +175,9 @@ func offload_prefersCompactorSubagentForScratchbookUpdate_whenAvailable() async 
     let scratchbookPath = try ColonyVirtualPath("/scratchbook/\(threadID.rawValue).json")
 
     var configuration = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
-    configuration.toolApprovalPolicy = .never
-    configuration.compactionPolicy = .disabled
-    configuration.summarizationPolicy = ColonySummarizationPolicy(
+    configuration.safety.toolApprovalPolicy = .never
+    configuration.context.compactionPolicy = .disabled
+    configuration.context.summarizationPolicy = ColonySummarizationPolicy(
         triggerTokens: 100,
         keepLastMessages: 2,
         historyPathPrefix: try ColonyVirtualPath("/conversation_history")

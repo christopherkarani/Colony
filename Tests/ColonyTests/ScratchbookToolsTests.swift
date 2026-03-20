@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -178,14 +179,13 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    var configuration = ColonyConfiguration(
-        capabilities: [.planning, .filesystem],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
-    )
+    var configuration: ColonyConfiguration = {
+        var c = ColonyConfiguration(modelName: "test-model", capabilities: [.planning, .filesystem], toolApprovalPolicy: .never)
+        c.context.compactionPolicy = .maxTokens(0)
+        return c
+    }()
     // Enable Scratchbook policy explicitly; capability gate should still hide tools.
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: try ColonyVirtualPath("/scratchbook"),
         viewTokenLimit: 200,
         maxRenderedItems: 20,
@@ -228,13 +228,12 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    var configuration = ColonyConfiguration(
-        capabilities: [.planning, .filesystem, .scratchbook],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
-    )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    var configuration: ColonyConfiguration = {
+        var c = ColonyConfiguration(modelName: "test-model", capabilities: [.planning, .filesystem, .scratchbook], toolApprovalPolicy: .never)
+        c.context.compactionPolicy = .maxTokens(0)
+        return c
+    }()
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: try ColonyVirtualPath("/scratchbook"),
         viewTokenLimit: 200,
         maxRenderedItems: 20,
@@ -278,13 +277,12 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
     let baseFS = ColonyInMemoryFileSystemBackend()
     let fs = RecordingFileSystemBackend(base: baseFS)
 
-    var configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
-    )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    var configuration: ColonyConfiguration = {
+        var c = ColonyConfiguration(modelName: "test-model", capabilities: [.filesystem], toolApprovalPolicy: .never)
+        c.context.compactionPolicy = .maxTokens(0)
+        return c
+    }()
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: try ColonyVirtualPath("/scratchbook"),
         viewTokenLimit: 200,
         maxRenderedItems: 20,
@@ -355,13 +353,12 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let threadID = HiveThreadID("thread-scratchbook-crud")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
-    var configuration = ColonyConfiguration(
-        capabilities: [.filesystem, .scratchbook],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
-    )
-    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+    var configuration: ColonyConfiguration = {
+        var c = ColonyConfiguration(modelName: "test-model", capabilities: [.filesystem, .scratchbook], toolApprovalPolicy: .never)
+        c.context.compactionPolicy = .maxTokens(0)
+        return c
+    }()
+    configuration.context.scratchbookPolicy = ColonyScratchbookPolicy(
         pathPrefix: prefix,
         viewTokenLimit: 200,
         maxRenderedItems: 20,
@@ -548,13 +545,12 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
         policy: policy
     )
 
-    var configuration = ColonyConfiguration(
-        capabilities: [.filesystem, .scratchbook],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0)
-    )
-    configuration.scratchbookPolicy = policy
+    var configuration: ColonyConfiguration = {
+        var c = ColonyConfiguration(modelName: "test-model", capabilities: [.filesystem, .scratchbook], toolApprovalPolicy: .never)
+        c.context.compactionPolicy = .maxTokens(0)
+        return c
+    }()
+    configuration.context.scratchbookPolicy = policy
 
     let read = HiveToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
     let model = ToolCallSequenceModel(toolCalls: [read], finalContent: "done")
@@ -586,8 +582,8 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
 @Test("On-device profile tool approval allowlist includes scratchbook tool names")
 func onDeviceAllowList_includesScratchbookToolNames() throws {
     let config = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
-    #expect(config.capabilities.contains(.scratchbook))
-    guard case let .allowList(allowed) = config.toolApprovalPolicy else {
+    #expect(config.model.capabilities.contains(.scratchbook))
+    guard case let .allowList(allowed) = config.safety.toolApprovalPolicy else {
         #expect(Bool(false))
         return
     }

@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -35,12 +36,12 @@ func colonySummarizationOffloadsHistory() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     var configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .disabled
+        capabilities: [.filesystem],
+        toolApprovalPolicy: .never
     )
-    configuration.summarizationPolicy = ColonySummarizationPolicy(
+    configuration.context.compactionPolicy = .disabled
+    configuration.context.summarizationPolicy = ColonySummarizationPolicy(
         triggerTokens: 100,
         keepLastMessages: 2,
         historyPathPrefix: try ColonyVirtualPath("/conversation_history")

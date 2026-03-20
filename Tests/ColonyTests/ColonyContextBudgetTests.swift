@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -254,7 +255,7 @@ func contextBudget_onDeviceProfileDefaultsToHard4kRequestBudget() async throws {
     let recordingModel = RecordingRequestModel()
     let factory = ColonyAgentFactory()
     let onDeviceConfiguration = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
-    #expect(onDeviceConfiguration.requestHardTokenLimit == 4_000)
+    #expect(onDeviceConfiguration.context.requestHardTokenLimit == 4_000)
 
     let runtime = try factory.makeRuntime(
         profile: .onDevice4k,
@@ -262,8 +263,8 @@ func contextBudget_onDeviceProfileDefaultsToHard4kRequestBudget() async throws {
         modelName: "test-model",
         model: AnyHiveModelClient(recordingModel),
         configure: { configuration in
-            configuration.toolApprovalPolicy = .never
-            configuration.additionalSystemPrompt = String(repeating: "m", count: 8_000)
+            configuration.safety.toolApprovalPolicy = .never
+            configuration.prompts.additionalSystemPrompt = String(repeating: "m", count: 8_000)
         }
     )
 
@@ -285,7 +286,7 @@ func contextBudget_onDeviceProfileDefaultsToHard4kRequestBudget() async throws {
 @Test("Colony cloud profile leaves request hard cap unbounded by default")
 func contextBudget_cloudProfileDefaultsToUnboundedRequestBudget() {
     let cloudConfiguration = ColonyAgentFactory.configuration(profile: .cloud, modelName: "test-model")
-    #expect(cloudConfiguration.requestHardTokenLimit == nil)
+    #expect(cloudConfiguration.context.requestHardTokenLimit == nil)
 }
 
 private func approximateToolTokens(_ tools: [HiveToolDefinition]) -> Int {

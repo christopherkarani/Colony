@@ -1,5 +1,6 @@
-import Foundation
 import Colony
+import ColonyCore
+import Foundation
 
 struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClient, Sendable {
     let apiClient: OllamaAPIClient

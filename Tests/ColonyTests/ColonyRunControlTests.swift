@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import HiveCore
 import Testing
@@ -195,10 +196,10 @@ private func makeRuntime(
         model: model,
         filesystem: filesystem,
         configure: { configuration in
-            configuration.capabilities = [.filesystem]
-            configuration.toolApprovalPolicy = .always
-            configuration.summarizationPolicy = nil
-            configuration.toolResultEvictionTokenLimit = nil
+            configuration.model.capabilities = [.filesystem]
+            configuration.safety.toolApprovalPolicy = .always
+            configuration.context.summarizationPolicy = nil
+            configuration.context.toolResultEvictionTokenLimit = nil
         }
     )
 }

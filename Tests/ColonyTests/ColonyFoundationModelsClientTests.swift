@@ -1,3 +1,4 @@
+import ColonyCore
 import Testing
 @testable import Colony
 

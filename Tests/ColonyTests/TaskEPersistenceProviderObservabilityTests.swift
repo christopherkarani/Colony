@@ -1,3 +1,4 @@
+import ColonyCore
 import Foundation
 import Dispatch
 import HiveCore
