@@ -1,38 +1,13 @@
 import Foundation
+import ColonyCore
 
 public typealias ColonyRecordMetadata = [String: String]
 
-public struct ColonyProjectID: Hashable, Codable, Sendable {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-}
-
-public struct ColonyProductSessionID: Hashable, Codable, Sendable {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-}
-
-public struct ColonyProductSessionVersionID: Hashable, Codable, Sendable {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-}
-
-public struct ColonySessionShareToken: Hashable, Codable, Sendable {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-}
+// Control plane identity types — now typealiases to ColonyID<Domain>.
+public typealias ColonyProjectID = ColonyID<ColonyID.Project>
+public typealias ColonyProductSessionID = ColonyID<ColonyID.ProductSession>
+public typealias ColonyProductSessionVersionID = ColonyID<ColonyID.ProductSessionVersion>
+public typealias ColonySessionShareToken = ColonyID<ColonyID.ShareToken>
 
 public struct ColonyProjectRecord: Codable, Equatable, Sendable {
     public let projectID: ColonyProjectID

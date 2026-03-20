@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-extension ColonyThreadID {
+extension ColonyID where Domain == ColonyID.Thread {
     package init(_ hive: HiveThreadID) {
         self.init(hive.rawValue)
     }
@@ -12,7 +12,7 @@ extension ColonyThreadID {
     }
 }
 
-extension ColonyInterruptID {
+extension ColonyID where Domain == ColonyID.Interrupt {
     package init(_ hive: HiveInterruptID) {
         self.init(hive.rawValue)
     }
@@ -374,7 +374,7 @@ extension ColonyRunOptions {
 }
 
 package struct ColonyHiveModelClientAdapter: HiveModelClient, Sendable {
-    let base: AnyColonyModelClient
+    let base: any ColonyModelClient
 
     package func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         try await base.complete(ColonyModelRequest(request)).hive
@@ -398,7 +398,7 @@ package struct ColonyHiveModelClientAdapter: HiveModelClient, Sendable {
 }
 
 package struct ColonyHiveModelRouterAdapter: HiveModelRouter, Sendable {
-    let base: AnyColonyModelRouter
+    let base: any ColonyModelRouter
 
     package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         let client = base.route(ColonyModelRequest(request), hints: hints.map(ColonyInferenceHints.init))
@@ -407,7 +407,7 @@ package struct ColonyHiveModelRouterAdapter: HiveModelRouter, Sendable {
 }
 
 package struct ColonyHiveToolRegistryAdapter: HiveToolRegistry, Sendable {
-    let base: AnyColonyToolRegistry
+    let base: any ColonyToolRegistry
 
     package func listTools() -> [HiveToolDefinition] {
         base.listTools().map(\.hive)

@@ -1,13 +1,7 @@
 import Foundation
 
-/// Stable identifier for a harness session.
-public struct ColonyHarnessSessionID: Hashable, Codable, Sendable {
-    public let rawValue: String
-
-    public init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-}
+// ColonyHarnessSessionID is now a typealias defined in ColonyID.swift
+// via ColonyID<ColonyID.HarnessSession>.
 
 /// Session lifecycle state exposed by the harness API.
 public enum ColonyHarnessLifecycleState: String, Codable, Sendable {
