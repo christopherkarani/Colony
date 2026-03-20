@@ -34,29 +34,30 @@ struct ResearchAssistantApp: Sendable {
 
         let rootURL = URL(fileURLWithPath: options.root, isDirectory: true)
         let filesystem = ColonyDiskFileSystemBackend(root: rootURL)
-        let factory = ColonyAgentFactory()
+        let bootstrap = ColonyBootstrap()
 
-        let runtime = try factory.makeRuntime(
+        let runtime = try await bootstrap.makeRuntime(options: ColonyRuntimeCreationOptions(
             profile: options.profile.colonyProfile,
             modelName: "colony-research-assistant",
-            model: resolved.client,
-            filesystem: filesystem,
+            model: resolved.model,
+            services: ColonyRuntimeServices(filesystem: filesystem),
+            checkpointing: .inMemory,
             configure: { config in
                 config.capabilities = [.planning, .filesystem, .subagents]
                 config.toolApprovalPolicy = .allowList([
-                    "ls",
-                    "read_file",
-                    "glob",
-                    "grep",
-                    "read_todos",
-                    "write_todos",
-                    ColonyBuiltInToolDefinitions.taskName,
+                    ColonyBuiltInTool.ls.rawValue,
+                    ColonyBuiltInTool.readFile.rawValue,
+                    ColonyBuiltInTool.glob.rawValue,
+                    ColonyBuiltInTool.grep.rawValue,
+                    ColonyBuiltInTool.readTodos.rawValue,
+                    ColonyBuiltInTool.writeTodos.rawValue,
+                    ColonyBuiltInTool.task.rawValue,
                 ])
                 config.summarizationPolicy = nil
                 config.toolResultEvictionTokenLimit = nil
                 config.additionalSystemPrompt = Self.researchAssistantSystemPrompt
             }
-        )
+        ))
 
         print("Colony Research Assistant (\(resolved.selection.rawValue))")
         print("Root: \(options.root)")
@@ -81,7 +82,7 @@ struct ResearchAssistantApp: Sendable {
             }
 
             do {
-                let handle = await runtime.runControl.start(.init(input: input))
+                let handle = await runtime.sendUserMessage(input)
                 let answer = try await resolveOutcomeLoop(handle: handle, runtime: runtime)
                 print(answer)
             } catch let error as ColonyFoundationModelsClientError {
@@ -94,7 +95,7 @@ struct ResearchAssistantApp: Sendable {
     }
 
     private func resolveOutcomeLoop(
-        handle: HiveRunHandle<ColonySchema>,
+        handle: ColonyRunHandle,
         runtime: ColonyRuntime
     ) async throws -> String {
         var currentHandle = handle
@@ -102,39 +103,32 @@ struct ResearchAssistantApp: Sendable {
         while true {
             let outcome = try await currentHandle.outcome.value
             switch outcome {
-            case let .finished(output, _):
-                return try renderFinalAnswer(from: output)
+            case let .finished(transcript, _):
+                return renderFinalAnswer(from: transcript)
 
-            case let .cancelled(output, _):
-                let answer = try renderFinalAnswer(from: output)
+            case let .cancelled(transcript, _):
+                let answer = renderFinalAnswer(from: transcript)
                 return "Run was cancelled.\n\(answer)"
 
-            case let .outOfSteps(maxSteps, output, _):
-                let answer = try renderFinalAnswer(from: output)
+            case let .outOfSteps(maxSteps, transcript, _):
+                let answer = renderFinalAnswer(from: transcript)
                 return "Run reached max steps (\(maxSteps)).\n\(answer)"
 
             case let .interrupted(interruption):
-                switch interruption.interrupt.payload {
-                case .toolApprovalRequired(let toolCalls):
-                    let decision = promptForApproval(toolCalls: toolCalls)
-                    currentHandle = await runtime.runControl.resume(
-                        .init(interruptID: interruption.interrupt.id, decision: decision)
-                    )
-                }
+                let decision = promptForApproval(toolCalls: interruption.toolCalls)
+                currentHandle = await runtime.resumeToolApproval(
+                    interruptID: interruption.interruptID,
+                    decision: decision
+                )
             }
         }
     }
 
-    private func renderFinalAnswer(from output: HiveRunOutput<ColonySchema>) throws -> String {
-        switch output {
-        case .fullStore(let store):
-            return try store.get(ColonySchema.Channels.finalAnswer) ?? "(no final answer)"
-        case .channels:
-            return "(run completed with channel-only output; final answer was not materialized in full-store mode)"
-        }
+    private func renderFinalAnswer(from transcript: ColonyTranscript) -> String {
+        transcript.finalAnswer ?? "(no final answer)"
     }
 
-    private func promptForApproval(toolCalls: [HiveToolCall]) -> ColonyToolApprovalDecision {
+    private func promptForApproval(toolCalls: [ColonyToolCall]) -> ColonyToolApprovalDecision {
         let names = toolCalls.map(\.name).joined(separator: ", ")
         print("Tool approval required for: \(names)")
         print("Approve? [y/N/c(ancel)]: ", terminator: "")

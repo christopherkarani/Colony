@@ -1,5 +1,4 @@
 @_exported import ColonyCore
-@_exported import HiveCore
 @_exported import Swarm
 
 /// Namespace for the Colony module version.

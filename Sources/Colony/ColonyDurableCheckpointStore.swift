@@ -1,13 +1,13 @@
 import Foundation
 import HiveCore
 
-public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
+package actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
     private let baseURL: URL
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    public init(baseURL: URL, fileManager: FileManager = .default) throws {
+    package init(baseURL: URL, fileManager: FileManager = .default) throws {
         self.baseURL = baseURL
         self.fileManager = fileManager
 
@@ -19,7 +19,7 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         try ColonyPersistenceIO.ensureDirectoryExists(baseURL, fileManager: fileManager)
     }
 
-    public func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+    package func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
         let threadDirectory = threadDirectoryURL(threadID: checkpoint.threadID)
         try ColonyPersistenceIO.ensureDirectoryExists(threadDirectory, fileManager: fileManager)
 
@@ -28,7 +28,7 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         try ColonyPersistenceIO.writeJSON(checkpoint, to: fileURL, encoder: encoder, fileManager: fileManager)
     }
 
-    public func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+    package func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
         let checkpoints = try loadCheckpoints(threadID: threadID)
         return checkpoints.max(by: { lhs, rhs in
             if lhs.checkpoint.stepIndex != rhs.checkpoint.stepIndex {
@@ -38,7 +38,7 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         })?.checkpoint
     }
 
-    public func listCheckpoints(threadID: HiveThreadID, limit: Int?) async throws -> [HiveCheckpointSummary] {
+    package func listCheckpoints(threadID: HiveThreadID, limit: Int?) async throws -> [HiveCheckpointSummary] {
         if let limit, limit <= 0 {
             return []
         }
@@ -70,7 +70,7 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         return summaries
     }
 
-    public func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<Schema>? {
+    package func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<Schema>? {
         let checkpoints = try loadCheckpoints(threadID: threadID)
             .filter { $0.checkpoint.id == id }
             .sorted(by: { lhs, rhs in

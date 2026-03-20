@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -268,7 +269,7 @@ func contextBudget_onDeviceProfileDefaultsToHard4kRequestBudget() async throws {
 
     for turn in 0..<12 {
         let input = "on-device-\(turn): " + String(repeating: "z", count: 700)
-        let handle = await runtime.runControl.start(.init(input: input))
+        let handle = await runtime.runControl.startRaw(input: input)
         _ = try await handle.outcome.value
     }
 

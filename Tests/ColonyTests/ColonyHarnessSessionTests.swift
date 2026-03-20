@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 

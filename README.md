@@ -6,13 +6,13 @@ You are helping me onboard to Colony (Swift 6.2). Explain the Colony + ColonyCor
 
 # Colony
 
-Local-first Deep Agents-style runtime in Swift. If this project helps you ship better agent workflows, please star it.
+Local-first agent runtime in Swift.
 
 ## Why Colony
 
-- Fast to embed: create a `ColonyRuntime`, send a user message, handle finished or interrupted outcomes.
-- Safety by design: capability-gated tools and human-in-the-loop approval for risky calls.
-- Practical on-device defaults: a strict 4k-safe profile with compaction, summarization/history offload, and tool-result eviction.
+- Quick to wire up: create a `ColonyRuntime`, send a user message, handle finished or interrupted outcomes.
+- Guardrails are built in: capability-gated tools and human approval for risky calls.
+- The default on-device profile stays strict: 4k-safe budgeting, compaction, history offload, and large tool-result eviction.
 
 ## Architecture (Colony + ColonyCore)
 
@@ -20,7 +20,7 @@ Local-first Deep Agents-style runtime in Swift. If this project helps you ship b
 - `ColonyCore`: pure contracts and policies (capabilities, tool approval, interrupts/resume payloads, scratchbook, configuration).
 - Runtime loop: `preModel -> model -> routeAfterModel -> tools -> toolExecute -> preModel`.
 
-Built-in tool families (all capability-gated, backend-gated):
+Built-in tool families:
 - Planning: `write_todos`, `read_todos`
 - Filesystem: `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`
 - Shell: `execute` (requires `ColonyShellBackend`)
@@ -67,12 +67,15 @@ struct Demo {
             fatalError("Foundation Models unavailable on this device. Provide another HiveModelClient.")
         }
 
-        let factory = ColonyAgentFactory()
-        let runtime = try factory.makeRuntime(
-            profile: .onDevice4k,
-            modelName: "test-model",
-            model: AnyHiveModelClient(ColonyFoundationModelsClient())
-        )
+        let bootstrap = ColonyBootstrap()
+        let result = try await bootstrap.bootstrap(options: ColonyBootstrapOptions(
+            runtime: ColonyRuntimeCreationOptions(
+                profile: .onDevice4k,
+                modelName: "test-model",
+                model: .init(client: ColonyFoundationModelsClient())
+            )
+        ))
+        let runtime = result.runtime
 
         let handle = await runtime.sendUserMessage("Inspect this project and propose next steps.")
         let outcome = try await handle.outcome.value
@@ -86,15 +89,18 @@ struct Demo {
 ```swift
 import Colony
 
-let factory = ColonyAgentFactory()
-let runtime = try factory.makeRuntime(
-    profile: .onDevice4k,
-    modelName: "test-model",
-    model: AnyHiveModelClient(ColonyFoundationModelsClient()),
-    configure: { config in
-        config.toolApprovalPolicy = .always
-    }
-)
+let bootstrap = ColonyBootstrap()
+let result = try await bootstrap.bootstrap(options: ColonyBootstrapOptions(
+    runtime: ColonyRuntimeCreationOptions(
+        profile: .onDevice4k,
+        modelName: "test-model",
+        model: .init(client: ColonyFoundationModelsClient()),
+        configure: { config in
+            config.toolApprovalPolicy = .always
+        }
+    )
+))
+let runtime = result.runtime
 
 let handle = await runtime.sendUserMessage("Create /note.md with a deployment checklist.")
 let outcome = try await handle.outcome.value
@@ -113,7 +119,7 @@ if case let .interrupted(interruption) = outcome,
 
 ## Troubleshooting
 
-- `swift package resolve` fails: run `scripts/ci/bootstrap-hive.sh` and verify `HIVE_DEPENDENCY.lock` matches the pinned remote Hive dependency.
+- `swift package resolve` fails: run `scripts/ci/bootstrap-hive.sh` and check that `HIVE_DEPENDENCY.lock` matches the pinned remote Hive dependency.
 - `foundationModelsUnavailable`: on-device Foundation Models are not available on this device/configuration. Inject another `HiveModelClient` or use a router.
 - Missing tools in prompts: check both capabilities and backend wiring (for example, `shell` needs `ColonyShellBackend`; `subagents` needs `ColonySubagentRegistry`).
 - SDK/platform errors: this package targets Swift 6.2 with iOS/macOS 26+.

@@ -1,5 +1,7 @@
 import Foundation
 import Dispatch
+import HiveCore
+import HiveCheckpointWax
 import Testing
 @testable import Colony
 
@@ -178,12 +180,13 @@ func taskE_durableCheckpointStorePersistsAndQueries() async throws {
 
     let threadID = HiveThreadID("thread-task-e-checkpoint")
     let runID = HiveRunID(UUID(uuidString: "D39A7E4F-3355-43AF-AC72-3097F7706E57")!)
+    let storeURL = directory.appendingPathComponent("checkpoints.wax", isDirectory: false)
 
-    let store = try ColonyDurableCheckpointStore<ColonySchema>(baseURL: directory)
+    let store = try await HiveCheckpointWaxStore<ColonySchema>.create(at: storeURL)
     try await store.save(makeCheckpoint(stepIndex: 1, threadID: threadID, runID: runID, id: "cp-1"))
     try await store.save(makeCheckpoint(stepIndex: 2, threadID: threadID, runID: runID, id: "cp-2"))
 
-    let reopened = try ColonyDurableCheckpointStore<ColonySchema>(baseURL: directory)
+    let reopened = try await HiveCheckpointWaxStore<ColonySchema>.open(at: storeURL)
     let latest = try await reopened.loadLatest(threadID: threadID)
     #expect(latest?.id == HiveCheckpointID("cp-2"))
 
@@ -195,17 +198,17 @@ func taskE_durableCheckpointStorePersistsAndQueries() async throws {
     #expect(loaded?.stepIndex == 1)
 }
 
-@Test("Task E durable checkpoint store integrates with factory runtime checkpointing")
-func taskE_durableCheckpointStoreIntegratesWithFactory() async throws {
+@Test("Task E durable checkpoint store integrates with Colony bootstrap runtime checkpointing")
+func taskE_durableCheckpointStoreIntegratesWithBootstrap() async throws {
     let directory = try temporaryDirectory("factory-checkpoints")
     defer { try? FileManager.default.removeItem(at: directory) }
 
     let threadID = HiveThreadID("thread-task-e-factory-checkpoint")
-    let runtime = try ColonyAgentFactory().makeRuntime(
+    let runtime = try await ColonyBootstrap().makeRuntime(
         threadID: threadID,
         modelName: "checkpoint-runtime",
         model: AnyHiveModelClient(InterruptingOnceModelClient()),
-        durableCheckpointDirectoryURL: directory,
+        durableCheckpointStoreURL: directory,
         configure: { configuration in
             configuration.toolApprovalPolicy = .always
         }
@@ -219,7 +222,9 @@ func taskE_durableCheckpointStoreIntegratesWithFactory() async throws {
         return
     }
 
-    let store = try ColonyDurableCheckpointStore<ColonySchema>(baseURL: directory)
+    let store = try await HiveCheckpointWaxStore<ColonySchema>.open(
+        at: directory.appendingPathComponent("colony-checkpoints.wax", isDirectory: false)
+    )
     let latest = try await store.loadLatest(threadID: threadID)
     #expect(latest != nil)
 }
@@ -409,6 +414,31 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
     let degraded = try await costClient.complete(request)
     #expect(degraded.message.content == "budget-exhausted")
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
+}
+
+@Test("Task E provider router reports only capabilities shared across providers")
+func taskE_providerRouterReportsSharedCapabilities() {
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "native",
+                client: AnyHiveModelClient(FixedModelClient(content: "n1")),
+                capabilities: [.nativeToolCalling]
+            ),
+            ColonyProviderRouter.Provider(
+                id: "native-managed",
+                client: AnyHiveModelClient(FixedModelClient(content: "n2")),
+                capabilities: [.nativeToolCalling, .managedToolPrompting]
+            ),
+            ColonyProviderRouter.Provider(
+                id: "unknown",
+                client: AnyHiveModelClient(FixedModelClient(content: "n3")),
+                capabilities: []
+            ),
+        ]
+    )
+
+    #expect(router.colonyModelCapabilities(hints: nil).isEmpty)
 }
 
 @Test("Task E observability emitter redacts sensitive payloads and harness writes durable run state")

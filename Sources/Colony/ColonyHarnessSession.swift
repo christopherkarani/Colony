@@ -47,7 +47,7 @@ public actor ColonyHarnessSession {
         stopRequested = false
         lifecycleStateStorage = .running
 
-        let handle = await runtime.sendUserMessage(input)
+        let handle = await runtime.sendUserMessageRaw(input)
         let runID = handle.runID.rawValue
 
         await emit(
@@ -95,8 +95,8 @@ public actor ColonyHarnessSession {
             }
         }
 
-        let handle = await runtime.resumeToolApproval(
-            interruptID: interruptedState.interruptID,
+        let handle = await runtime.resumeToolApprovalRaw(
+            interruptID: interruptedState.interruptID.hive,
             decision: decision
         )
         let runID = handle.runID.rawValue
@@ -237,7 +237,7 @@ public actor ColonyHarnessSession {
             case .toolApprovalRequired(let toolCalls):
                 let queuedInterruption = ColonyHarnessInterruption(
                     runID: runID,
-                    interruptID: interruption.interrupt.id,
+                    interruptID: ColonyInterruptID(interruption.interrupt.id),
                     toolCalls: toolCalls
                 )
                 interruptionQueue.append(queuedInterruption)
@@ -277,7 +277,7 @@ public actor ColonyHarnessSession {
         }
 
         if let runStateStore {
-            try? await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            try? await runStateStore.appendEvent(envelope, threadID: runtime.threadID.hive)
         }
 
         if let observabilityEmitter {

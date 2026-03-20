@@ -1,5 +1,4 @@
 import Foundation
-import HiveCore
 import ColonyCore
 
 public struct ColonyObservabilityEvent: Codable, Sendable, Equatable {
@@ -72,7 +71,7 @@ public actor ColonyObservabilityEmitter {
         }
     }
 
-    public func emitHarnessEnvelope(_ envelope: ColonyHarnessEventEnvelope, threadID: HiveThreadID) async {
+    public func emitHarnessEnvelope(_ envelope: ColonyHarnessEventEnvelope, threadID: ColonyThreadID) async {
         var attributes: [String: String] = [
             "event_type": envelope.eventType.rawValue,
             "sequence": String(envelope.sequence),

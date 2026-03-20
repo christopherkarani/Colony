@@ -57,7 +57,7 @@ private struct TavilyExtractArgs: Decodable, Sendable {
 
 // MARK: - Tool Registry
 
-struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
+struct TavilySearchToolRegistry: ColonyToolRegistry, Sendable {
     let apiKey: String
 
     private static let searchToolName = "tavily_search"
@@ -66,16 +66,16 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
     private static let searchURL = URL(string: "https://api.tavily.com/search")!
     private static let extractURL = URL(string: "https://api.tavily.com/extract")!
 
-    func listTools() -> [HiveToolDefinition] {
+    func listTools() -> [ColonyToolDefinition] {
         [
-            HiveToolDefinition(
+            ColonyToolDefinition(
                 name: Self.searchToolName,
                 description: "Search the web using Tavily. Returns relevant results with titles, URLs, and content snippets.",
                 parametersJSONSchema: """
                 {"type":"object","properties":{"query":{"type":"string","description":"Search query"},"search_depth":{"type":"string","enum":["basic","advanced"],"description":"Search depth. 'advanced' for detailed results."},"max_results":{"type":"integer","description":"Max results 1-10, default 5"},"include_answer":{"type":"boolean","description":"Include AI-generated answer summary"}},"required":["query"]}
                 """
             ),
-            HiveToolDefinition(
+            ColonyToolDefinition(
                 name: Self.extractToolName,
                 description: "Extract content from web pages using Tavily. Returns the raw text content of the specified URLs.",
                 parametersJSONSchema: """
@@ -85,14 +85,14 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
         ]
     }
 
-    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+    func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
         switch call.name {
         case Self.searchToolName:
             return await invokeSearch(call)
         case Self.extractToolName:
             return await invokeExtract(call)
         default:
-            return HiveToolResult(
+            return ColonyToolResult(
                 toolCallID: call.id,
                 content: "Error: Unknown tool '\(call.name)'. Available tools: \(Self.searchToolName), \(Self.extractToolName)."
             )
@@ -101,12 +101,12 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
 
     // MARK: - Search
 
-    private func invokeSearch(_ call: HiveToolCall) async -> HiveToolResult {
+    private func invokeSearch(_ call: ColonyToolCall) async -> ColonyToolResult {
         let args: TavilySearchArgs
         do {
             args = try decodeArgs(call.argumentsJSON, as: TavilySearchArgs.self)
         } catch {
-            return HiveToolResult(toolCallID: call.id, content: "Error: Failed to parse search arguments: \(error)")
+            return ColonyToolResult(toolCallID: call.id, content: "Error: Failed to parse search arguments: \(error)")
         }
 
         let requestBody = TavilySearchRequest(
@@ -121,24 +121,24 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
             let data = try await executeRequest(url: Self.searchURL, body: requestBody)
             let response = try JSONDecoder().decode(TavilySearchResponse.self, from: data)
             let formatted = formatSearchResults(query: args.query, response: response)
-            return HiveToolResult(toolCallID: call.id, content: formatted)
+            return ColonyToolResult(toolCallID: call.id, content: formatted)
         } catch {
-            return HiveToolResult(toolCallID: call.id, content: "Error: Tavily search failed: \(error)")
+            return ColonyToolResult(toolCallID: call.id, content: "Error: Tavily search failed: \(error)")
         }
     }
 
     // MARK: - Extract
 
-    private func invokeExtract(_ call: HiveToolCall) async -> HiveToolResult {
+    private func invokeExtract(_ call: ColonyToolCall) async -> ColonyToolResult {
         let args: TavilyExtractArgs
         do {
             args = try decodeArgs(call.argumentsJSON, as: TavilyExtractArgs.self)
         } catch {
-            return HiveToolResult(toolCallID: call.id, content: "Error: Failed to parse extract arguments: \(error)")
+            return ColonyToolResult(toolCallID: call.id, content: "Error: Failed to parse extract arguments: \(error)")
         }
 
         guard args.urls.isEmpty == false else {
-            return HiveToolResult(toolCallID: call.id, content: "Error: No URLs provided for extraction.")
+            return ColonyToolResult(toolCallID: call.id, content: "Error: No URLs provided for extraction.")
         }
 
         let requestBody = TavilyExtractRequest(
@@ -150,9 +150,9 @@ struct TavilySearchToolRegistry: HiveToolRegistry, Sendable {
             let data = try await executeRequest(url: Self.extractURL, body: requestBody)
             let response = try JSONDecoder().decode(TavilyExtractResponse.self, from: data)
             let formatted = formatExtractResults(response: response)
-            return HiveToolResult(toolCallID: call.id, content: formatted)
+            return ColonyToolResult(toolCallID: call.id, content: formatted)
         } catch {
-            return HiveToolResult(toolCallID: call.id, content: "Error: Tavily extract failed: \(error)")
+            return ColonyToolResult(toolCallID: call.id, content: "Error: Tavily extract failed: \(error)")
         }
     }
 

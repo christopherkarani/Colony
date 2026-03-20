@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -123,4 +124,3 @@ func colonyCompactsBeforeSecondModelTurnAfterTools() async throws {
 
     #expect((try store.get(ColonySchema.Channels.finalAnswer)) == "done")
 }
-

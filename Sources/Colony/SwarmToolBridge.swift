@@ -51,13 +51,14 @@ public struct SwarmToolRegistration: Sendable {
 ///     SwarmToolRegistration(tool: myCalcTool, capability: .planning, riskLevel: .readOnly),
 /// ])
 ///
-/// let runtime = try ColonyAgentFactory().makeRuntime(
+/// let bootstrap = ColonyBootstrap()
+/// let runtime = try await bootstrap.makeRuntime(options: .init(
 ///     profile: .cloud,
 ///     modelName: "gpt-4",
 ///     swarmTools: bridge
-/// )
+/// ))
 /// ```
-public struct SwarmToolBridge: HiveToolRegistry, Sendable {
+public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
     /// The underlying Swarm tool registry that handles conversion and execution.
     private let registry: ColonySwarmToolRegistry
 
@@ -67,11 +68,14 @@ public struct SwarmToolBridge: HiveToolRegistry, Sendable {
     /// Risk-level overrides for Colony's safety policy engine.
     public let riskLevelOverrides: [String: ColonyToolRiskLevel]
 
+    /// Policy metadata derived from Swarm tool execution semantics.
+    public let toolPolicyMetadataByName: [String: ColonyToolPolicyMetadata]
+
     /// Union of all capabilities required by this bridge's registered tools.
     public let requiredCapabilities: ColonyCapabilities
 
     /// All tool definitions (pre-filtered by capability gating happens at query time).
-    private let allDefinitions: [HiveToolDefinition]
+    private let allDefinitions: [ColonyToolDefinition]
 
     /// Creates a bridge from an array of tool registrations.
     ///
@@ -83,14 +87,18 @@ public struct SwarmToolBridge: HiveToolRegistry, Sendable {
 
         var capMap: [String: ColonyCapabilities] = [:]
         var riskMap: [String: ColonyToolRiskLevel] = [:]
+        var policyMap: [String: ColonyToolPolicyMetadata] = [:]
         var required: ColonyCapabilities = []
         for reg in registrations {
             capMap[reg.tool.name] = reg.capability
-            riskMap[reg.tool.name] = reg.riskLevel
+            let metadata = Self.policyMetadata(for: reg)
+            riskMap[reg.tool.name] = metadata.riskLevel ?? reg.riskLevel
+            policyMap[reg.tool.name] = metadata
             required.formUnion(reg.capability)
         }
         self.capabilityMap = capMap
         self.riskLevelOverrides = riskMap
+        self.toolPolicyMetadataByName = policyMap
         self.requiredCapabilities = required
         self.allDefinitions = registry.listTools()
     }
@@ -115,13 +123,11 @@ public struct SwarmToolBridge: HiveToolRegistry, Sendable {
         try self.init(registrations: registrations)
     }
 
-    // MARK: - HiveToolRegistry
-
     /// Returns tool definitions filtered by the active capabilities.
     ///
     /// Only tools whose associated capability is present in `activeCapabilities`
     /// will be included. Call with the current `ColonyConfiguration.capabilities`.
-    public func listTools(filteredBy activeCapabilities: ColonyCapabilities) -> [HiveToolDefinition] {
+    public func listTools(filteredBy activeCapabilities: ColonyCapabilities) -> [ColonyToolDefinition] {
         allDefinitions.filter { def in
             guard let required = capabilityMap[def.name] else { return false }
             return activeCapabilities.contains(required)
@@ -129,10 +135,7 @@ public struct SwarmToolBridge: HiveToolRegistry, Sendable {
     }
 
     /// Returns all tool definitions regardless of capability gating.
-    ///
-    /// This satisfies `HiveToolRegistry` protocol. For capability-filtered listing,
-    /// use `listTools(filteredBy:)`.
-    public func listTools() -> [HiveToolDefinition] {
+    public func listTools() -> [ColonyToolDefinition] {
         allDefinitions
     }
 
@@ -140,8 +143,75 @@ public struct SwarmToolBridge: HiveToolRegistry, Sendable {
     ///
     /// Colony's approval and safety policies should be checked *before* calling this.
     /// The `ColonyAgent` graph's tool-execution node handles approval gating.
-    public func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+    public func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
         try await registry.invoke(call)
+    }
+
+    package func listHiveTools(filteredBy activeCapabilities: ColonyCapabilities) -> [HiveToolDefinition] {
+        listTools(filteredBy: activeCapabilities).map(\.hive)
+    }
+
+    package func invokeHive(_ call: HiveToolCall) async throws -> HiveToolResult {
+        try await invoke(ColonyToolCall(call)).hive
+    }
+
+    private static func policyMetadata(for registration: SwarmToolRegistration) -> ColonyToolPolicyMetadata {
+        let semantics = registration.tool.executionSemantics
+        let semanticRiskLevel = riskLevel(for: semantics.sideEffectLevel)
+        let resolvedRiskLevel = max(registration.riskLevel, semanticRiskLevel)
+
+        return ColonyToolPolicyMetadata(
+            riskLevel: resolvedRiskLevel,
+            approvalDisposition: approvalDisposition(for: semantics.approvalRequirement),
+            retryDisposition: retryDisposition(for: semantics.retryPolicy),
+            resultDurability: resultDurability(for: semantics.resultDurability)
+        )
+    }
+
+    private static func riskLevel(for sideEffectLevel: ToolSideEffectLevel) -> ColonyToolRiskLevel {
+        switch sideEffectLevel {
+        case .unspecified, .readOnly:
+            return .readOnly
+        case .localMutation:
+            return .stateMutation
+        case .externalMutation:
+            return .mutation
+        }
+    }
+
+    private static func approvalDisposition(for requirement: ToolApprovalRequirement) -> ColonyToolApprovalDisposition {
+        switch requirement {
+        case .automatic:
+            return .automatic
+        case .always:
+            return .always
+        case .never:
+            return .never
+        }
+    }
+
+    private static func retryDisposition(for retryPolicy: ToolRetryPolicy) -> ColonyToolRetryDisposition {
+        switch retryPolicy {
+        case .automatic:
+            return .inherit
+        case .safe:
+            return .safeToRetry
+        case .unsafe:
+            return .never
+        case .callerManaged:
+            return .approvalGated
+        }
+    }
+
+    private static func resultDurability(for durability: ToolResultDurability) -> ColonyToolResultDurability {
+        switch durability {
+        case .unspecified, .transcriptOnly:
+            return .transient
+        case .artifactBacked:
+            return .checkpointed
+        case .externalReference:
+            return .durable
+        }
     }
 }
 
@@ -153,9 +223,9 @@ private enum ColonySwarmToolRegistryError: Error, Equatable, Sendable {
     case toolNotFound(name: String)
 }
 
-private struct ColonySwarmToolRegistry: HiveToolRegistry, Sendable {
+private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
     private let registry: ToolRegistry
-    private let toolDefinitions: [HiveToolDefinition]
+    private let toolDefinitions: [ColonyToolDefinition]
 
     init(tools: [any AnyJSONTool]) throws {
         self.registry = try ToolRegistry(tools: tools)
@@ -164,11 +234,11 @@ private struct ColonySwarmToolRegistry: HiveToolRegistry, Sendable {
             .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     }
 
-    func listTools() -> [HiveToolDefinition] {
+    func listTools() -> [ColonyToolDefinition] {
         toolDefinitions
     }
 
-    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
+    func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
         let arguments = try Self.parseArgumentsJSON(call.argumentsJSON)
         guard await registry.contains(named: call.name) else {
             throw ColonySwarmToolRegistryError.toolNotFound(name: call.name)
@@ -176,7 +246,7 @@ private struct ColonySwarmToolRegistry: HiveToolRegistry, Sendable {
 
         let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
         let content = try Self.encodeJSONFragment(output)
-        return HiveToolResult(toolCallID: call.id, content: content)
+        return ColonyToolResult(toolCallID: call.id, content: content)
     }
 
     private static func parseArgumentsJSON(_ json: String) throws -> [String: SendableValue] {
@@ -215,13 +285,13 @@ private struct ColonySwarmToolRegistry: HiveToolRegistry, Sendable {
         return json
     }
 
-    private static func makeToolDefinition(for schema: ToolSchema) throws -> HiveToolDefinition {
+    private static func makeToolDefinition(for schema: ToolSchema) throws -> ColonyToolDefinition {
         let schemaObject = makeParametersSchema(toolName: schema.name, parameters: schema.parameters)
         let data = try JSONSerialization.data(withJSONObject: schemaObject, options: [.sortedKeys])
         guard let json = String(data: data, encoding: .utf8) else {
             throw ColonySwarmToolRegistryError.schemaEncodingFailed
         }
-        return HiveToolDefinition(
+        return ColonyToolDefinition(
             name: schema.name,
             description: schema.description,
             parametersJSONSchema: json

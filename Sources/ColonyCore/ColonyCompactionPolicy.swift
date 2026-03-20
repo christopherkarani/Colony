@@ -1,14 +1,12 @@
-import HiveCore
-
 public enum ColonyCompactionPolicy: Sendable {
     case disabled
     case maxMessages(Int)
     case maxTokens(Int)
 
-    public func compact(
-        _ messages: [HiveChatMessage],
+    package func compact(
+        _ messages: [ColonyChatMessage],
         tokenizer: any ColonyTokenizer
-    ) -> [HiveChatMessage]? {
+    ) -> [ColonyChatMessage]? {
         switch self {
         case .disabled:
             return nil
@@ -29,4 +27,3 @@ public enum ColonyCompactionPolicy: Sendable {
         }
     }
 }
-

@@ -18,6 +18,10 @@ extension ModelProviderError: LocalizedError {
 }
 
 enum ModelProviderFactory {
+    struct ResolvedModel: Sendable {
+        let model: ColonyModel
+    }
+
     struct Configuration: Equatable, Sendable {
         let backend: BackendType
         let ollamaBaseURL: String
@@ -35,8 +39,8 @@ enum ModelProviderFactory {
         }
     }
 
-    static func makeClient(settings: AppSettings) throws -> AnyHiveModelClient {
-        try makeClient(
+    static func makeResolvedModel(settings: AppSettings) throws -> ResolvedModel {
+        try makeResolvedModel(
             configuration: Configuration(
                 backend: settings.selectedBackend,
                 ollamaBaseURL: settings.ollamaBaseURL,
@@ -45,10 +49,12 @@ enum ModelProviderFactory {
         )
     }
 
-    static func makeClient(configuration: Configuration) throws -> AnyHiveModelClient {
+    static func makeResolvedModel(configuration: Configuration) throws -> ResolvedModel {
         switch configuration.backend {
         case .foundationModels:
-            return AnyHiveModelClient(ColonyFoundationModelsClient())
+            return ResolvedModel(
+                model: .foundationModels()
+            )
 
         case .ollama:
             guard !configuration.selectedOllamaModel.isEmpty else {
@@ -62,7 +68,12 @@ enum ModelProviderFactory {
                 apiClient: apiClient,
                 modelName: configuration.selectedOllamaModel
             )
-            return AnyHiveModelClient(ollamaClient)
+            return ResolvedModel(
+                model: ColonyModel(
+                    client: ollamaClient,
+                    capabilities: ollamaClient.colonyModelCapabilities
+                )
+            )
         }
     }
 }

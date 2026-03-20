@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -143,6 +144,33 @@ private struct EchoTool: AnyJSONTool {
     }
 }
 
+private struct ApprovalMetadataEchoTool: AnyJSONTool {
+    var name: String { "approval_echo" }
+    var description: String { "Echoes input but always requires explicit approval." }
+    var parameters: [ToolParameter] {
+        [
+            ToolParameter(
+                name: "message",
+                description: "The message to echo",
+                type: .string,
+                isRequired: true
+            ),
+        ]
+    }
+    var executionSemantics: ToolExecutionSemantics {
+        ToolExecutionSemantics(
+            sideEffectLevel: .readOnly,
+            retryPolicy: .callerManaged,
+            approvalRequirement: .always,
+            resultDurability: .externalReference
+        )
+    }
+
+    func execute(arguments: [String: SendableValue]) async throws -> SendableValue {
+        .string("Approval Echo: \(arguments["message"]?.stringValue ?? "")")
+    }
+}
+
 private actor ContextOnlyMemory: Memory {
     let fallbackContext: String
 
@@ -261,7 +289,7 @@ func swarmToolBridgeInvokesTool() async throws {
         riskLevel: .readOnly
     )
 
-    let call = HiveToolCall(id: "test-1", name: "echo", argumentsJSON: #"{"message":"hello world"}"#)
+    let call = ColonyToolCall(id: "test-1", name: "echo", argumentsJSON: #"{"message":"hello world"}"#)
     let result = try await bridge.invoke(call)
     #expect(result.content.contains("Echo: hello world"))
 }
@@ -273,6 +301,21 @@ func swarmToolBridgeRiskLevels() throws {
     ])
 
     #expect(bridge.riskLevelOverrides["echo"] == .network)
+}
+
+@Test("SwarmToolBridge derives Colony policy metadata from Swarm tool semantics")
+func swarmToolBridgeDerivesPolicyMetadataFromExecutionSemantics() throws {
+    let bridge = try SwarmToolBridge(
+        tools: [ApprovalMetadataEchoTool()],
+        capability: .plugins,
+        riskLevel: .readOnly
+    )
+
+    let metadata = bridge.toolPolicyMetadataByName["approval_echo"]
+    #expect(metadata?.riskLevel == .readOnly)
+    #expect(metadata?.approvalDisposition == .always)
+    #expect(metadata?.retryDisposition == .approvalGated)
+    #expect(metadata?.resultDurability == .durable)
 }
 
 private struct PrimaryEchoRegistry: HiveToolRegistry, Sendable {
@@ -300,7 +343,7 @@ func compositeToolRegistryPrecedenceIsAligned() async throws {
     )
     let composite = CompositeToolRegistry(
         primary: AnyHiveToolRegistry(PrimaryEchoRegistry()),
-        secondary: AnyHiveToolRegistry(bridge)
+        secondary: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge)))
     )
 
     var dedupedByName: [String: HiveToolDefinition] = [:]
@@ -450,7 +493,7 @@ func swarmToolThroughColonyPipeline() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(bridge),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -518,7 +561,7 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
         clock: NoopClock(),
         logger: NoopLogger(),
         model: AnyHiveModelClient(model),
-        tools: AnyHiveToolRegistry(bridge),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
 
@@ -543,6 +586,67 @@ func swarmToolRequiresApprovalForHighRisk() async throws {
     }
     #expect(toolCalls.count == 1)
     #expect(toolCalls.first?.name == "echo")
+}
+
+@Test("Swarm tool requires approval when Swarm execution semantics demand it")
+func swarmToolRequiresApprovalForExplicitMetadata() async throws {
+    let bridge = try SwarmToolBridge(
+        tools: [ApprovalMetadataEchoTool()],
+        capability: .plugins,
+        riskLevel: .readOnly
+    )
+
+    let graph = try ColonyAgent.compile()
+    let fs = ColonyInMemoryFileSystemBackend()
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.plugins],
+        modelName: "test-model",
+        toolApprovalPolicy: .never
+    )
+    for (name, level) in bridge.riskLevelOverrides {
+        configuration.toolRiskLevelOverrides[name] = level
+    }
+    for (name, metadata) in bridge.toolPolicyMetadataByName {
+        configuration.toolPolicyMetadataByName[name] = metadata
+    }
+
+    let context = ColonyContext(configuration: configuration, filesystem: fs)
+    let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
+    let model = SwarmToolCallingModel(
+        toolName: "approval_echo",
+        toolArgs: #"{"message":"approval-gated"}"#
+    )
+
+    let environment = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(model),
+        tools: AnyHiveToolRegistry(ColonyHiveToolRegistryAdapter(base: AnyColonyToolRegistry(bridge))),
+        checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+    )
+
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let handle = await runtime.run(
+        threadID: HiveThreadID("swarm-metadata-approval-test"),
+        input: "echo something approval-gated",
+        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+    )
+
+    let outcome = try await handle.outcome.value
+    guard case let .interrupted(interruption) = outcome else {
+        #expect(Bool(false), "Expected interrupted outcome for metadata-gated Swarm tool")
+        return
+    }
+
+    guard case let .toolApprovalRequired(toolCalls) = interruption.interrupt.payload else {
+        #expect(Bool(false), "Expected toolApprovalRequired payload")
+        return
+    }
+
+    #expect(toolCalls.count == 1)
+    #expect(toolCalls.first?.name == "approval_echo")
 }
 
 // MARK: - Factory Integration

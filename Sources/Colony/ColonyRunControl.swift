@@ -1,41 +1,12 @@
 import HiveCore
 import ColonyCore
 
-public struct ColonyRunStartRequest: Sendable {
-    public var input: String
-    public var optionsOverride: HiveRunOptions?
+package struct ColonyRunControl: Sendable {
+    package let threadID: HiveThreadID
+    package let runtime: HiveRuntime<ColonySchema>
+    package let options: HiveRunOptions
 
-    public init(
-        input: String,
-        optionsOverride: HiveRunOptions? = nil
-    ) {
-        self.input = input
-        self.optionsOverride = optionsOverride
-    }
-}
-
-public struct ColonyRunResumeRequest: Sendable {
-    public var interruptID: HiveInterruptID
-    public var decision: ColonyToolApprovalDecision
-    public var optionsOverride: HiveRunOptions?
-
-    public init(
-        interruptID: HiveInterruptID,
-        decision: ColonyToolApprovalDecision,
-        optionsOverride: HiveRunOptions? = nil
-    ) {
-        self.interruptID = interruptID
-        self.decision = decision
-        self.optionsOverride = optionsOverride
-    }
-}
-
-public struct ColonyRunControl: Sendable {
-    public let threadID: HiveThreadID
-    public let runtime: HiveRuntime<ColonySchema>
-    public let options: HiveRunOptions
-
-    public init(
+    package init(
         threadID: HiveThreadID,
         runtime: HiveRuntime<ColonySchema>,
         options: HiveRunOptions
@@ -45,22 +16,38 @@ public struct ColonyRunControl: Sendable {
         self.options = options
     }
 
-    public func start(_ request: ColonyRunStartRequest) async -> HiveRunHandle<ColonySchema> {
-        let effectiveOptions = request.optionsOverride ?? options
+    package func startRaw(input: String, optionsOverride: HiveRunOptions? = nil) async -> HiveRunHandle<ColonySchema> {
+        let effectiveOptions = optionsOverride ?? options
         return await runtime.run(
             threadID: threadID,
-            input: request.input,
+            input: input,
             options: effectiveOptions
         )
     }
 
-    public func resume(_ request: ColonyRunResumeRequest) async -> HiveRunHandle<ColonySchema> {
-        let effectiveOptions = request.optionsOverride ?? options
+    package func start(_ request: ColonyRunStartRequest) async -> HiveRunHandle<ColonySchema> {
+        await startRaw(input: request.input, optionsOverride: request.optionsOverride?.hive)
+    }
+
+    package func resumeRaw(
+        interruptID: HiveInterruptID,
+        decision: ColonyToolApprovalDecision,
+        optionsOverride: HiveRunOptions? = nil
+    ) async -> HiveRunHandle<ColonySchema> {
+        let effectiveOptions = optionsOverride ?? options
         return await runtime.resume(
             threadID: threadID,
-            interruptID: request.interruptID,
-            payload: .toolApproval(decision: request.decision),
+            interruptID: interruptID,
+            payload: .toolApproval(decision: decision),
             options: effectiveOptions
+        )
+    }
+
+    package func resume(_ request: ColonyRunResumeRequest) async -> HiveRunHandle<ColonySchema> {
+        await resumeRaw(
+            interruptID: request.interruptID.hive,
+            decision: request.decision,
+            optionsOverride: request.optionsOverride?.hive
         )
     }
 }

@@ -1,7 +1,7 @@
 import HiveCore
 
 public protocol ColonyTokenizer: Sendable {
-    func countTokens(_ messages: [HiveChatMessage]) -> Int
+    func countTokens(_ messages: [ColonyChatMessage]) -> Int
 }
 
 /// Cheap, deterministic fallback tokenizer.
@@ -12,7 +12,7 @@ public protocol ColonyTokenizer: Sendable {
 public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
     public init() {}
 
-    public func countTokens(_ messages: [HiveChatMessage]) -> Int {
+    public func countTokens(_ messages: [ColonyChatMessage]) -> Int {
         let chars = messages.reduce(into: 0) { partial, message in
             partial += message.content.count
             partial += message.name?.count ?? 0
@@ -23,5 +23,17 @@ public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
         }
         return max(1, chars / 4)
     }
-}
 
+    package func countTokens(_ messages: [HiveChatMessage]) -> Int {
+        let chars = messages.reduce(into: 0) { partial, message in
+            partial += message.content.count
+            partial += message.name?.count ?? 0
+            partial += message.toolCallID?.count ?? 0
+            partial += message.toolCalls.reduce(into: 0) { toolPartial, call in
+                toolPartial += call.id.count + call.name.count + call.argumentsJSON.count
+            }
+            partial += message.structuredOutput?.json.count ?? 0
+        }
+        return max(1, chars / 4)
+    }
+}

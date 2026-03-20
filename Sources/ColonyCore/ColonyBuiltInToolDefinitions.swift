@@ -1,9 +1,9 @@
 import HiveCore
 
-public enum ColonyBuiltInToolDefinitions {
-    public static let taskName = "task"
+package enum ColonyBuiltInToolDefinitions {
+    package static let taskName = "task"
 
-    public static let ls = HiveToolDefinition(
+    package static let ls = HiveToolDefinition(
         name: "ls",
         description: "List files in a directory (non-recursive).",
         parametersJSONSchema: """
@@ -11,7 +11,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let readFile = HiveToolDefinition(
+    package static let readFile = HiveToolDefinition(
         name: "read_file",
         description: "Read a file with line numbers. Use offset/limit for pagination.",
         parametersJSONSchema: """
@@ -19,7 +19,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let writeFile = HiveToolDefinition(
+    package static let writeFile = HiveToolDefinition(
         name: "write_file",
         description: "Create a new file. Fails if the file already exists.",
         parametersJSONSchema: """
@@ -27,7 +27,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let editFile = HiveToolDefinition(
+    package static let editFile = HiveToolDefinition(
         name: "edit_file",
         description: "Replace an exact string in a file.",
         parametersJSONSchema: """
@@ -35,7 +35,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let glob = HiveToolDefinition(
+    package static let glob = HiveToolDefinition(
         name: "glob",
         description: "Find files matching a glob pattern.",
         parametersJSONSchema: """
@@ -43,7 +43,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let grep = HiveToolDefinition(
+    package static let grep = HiveToolDefinition(
         name: "grep",
         description: "Search for a literal string across files. Optionally filter files with glob.",
         parametersJSONSchema: """
@@ -51,7 +51,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let writeTodos = HiveToolDefinition(
+    package static let writeTodos = HiveToolDefinition(
         name: "write_todos",
         description: "Replace the current todo list with the provided items.",
         parametersJSONSchema: """
@@ -59,7 +59,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let readTodos = HiveToolDefinition(
+    package static let readTodos = HiveToolDefinition(
         name: "read_todos",
         description: "Read the current todo list.",
         parametersJSONSchema: """
@@ -67,7 +67,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let execute = HiveToolDefinition(
+    package static let execute = HiveToolDefinition(
         name: "execute",
         description: "Execute a shell command using the configured sandbox backend.",
         parametersJSONSchema: """
@@ -75,7 +75,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let shellOpen = HiveToolDefinition(
+    package static let shellOpen = HiveToolDefinition(
         name: "shell_open",
         description: "Open a managed interactive shell PTY session.",
         parametersJSONSchema: """
@@ -83,7 +83,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let shellWrite = HiveToolDefinition(
+    package static let shellWrite = HiveToolDefinition(
         name: "shell_write",
         description: "Write stdin bytes to an existing managed shell session.",
         parametersJSONSchema: """
@@ -91,7 +91,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let shellRead = HiveToolDefinition(
+    package static let shellRead = HiveToolDefinition(
         name: "shell_read",
         description: "Read incremental output from a managed shell session.",
         parametersJSONSchema: """
@@ -99,7 +99,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let shellClose = HiveToolDefinition(
+    package static let shellClose = HiveToolDefinition(
         name: "shell_close",
         description: "Close a managed shell session.",
         parametersJSONSchema: """
@@ -107,7 +107,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let applyPatch = HiveToolDefinition(
+    package static let applyPatch = HiveToolDefinition(
         name: "apply_patch",
         description: "Apply a unified patch using the configured apply-patch backend.",
         parametersJSONSchema: """
@@ -115,7 +115,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let webSearch = HiveToolDefinition(
+    package static let webSearch = HiveToolDefinition(
         name: "web_search",
         description: "Search the web via the configured web backend.",
         parametersJSONSchema: """
@@ -123,7 +123,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let codeSearch = HiveToolDefinition(
+    package static let codeSearch = HiveToolDefinition(
         name: "code_search",
         description: "Search code using the configured code-search backend.",
         parametersJSONSchema: """
@@ -131,7 +131,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let memoryRecall = HiveToolDefinition(
+    package static let memoryRecall = HiveToolDefinition(
         name: "wax_recall",
         description: "Recall relevant memory entries from the configured memory backend.",
         parametersJSONSchema: """
@@ -139,7 +139,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let memoryRemember = HiveToolDefinition(
+    package static let memoryRemember = HiveToolDefinition(
         name: "wax_remember",
         description: "Persist a memory entry in the configured memory backend.",
         parametersJSONSchema: """
@@ -147,7 +147,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let mcpListResources = HiveToolDefinition(
+    package static let mcpListResources = HiveToolDefinition(
         name: "mcp_list_resources",
         description: "List resources from the configured MCP backend.",
         parametersJSONSchema: """
@@ -155,7 +155,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let mcpReadResource = HiveToolDefinition(
+    package static let mcpReadResource = HiveToolDefinition(
         name: "mcp_read_resource",
         description: "Read a resource by id from the configured MCP backend.",
         parametersJSONSchema: """
@@ -163,7 +163,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let pluginListTools = HiveToolDefinition(
+    package static let pluginListTools = HiveToolDefinition(
         name: "plugin_list_tools",
         description: "List plugin tools available from the configured plugin registry.",
         parametersJSONSchema: """
@@ -171,7 +171,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let pluginInvoke = HiveToolDefinition(
+    package static let pluginInvoke = HiveToolDefinition(
         name: "plugin_invoke",
         description: "Invoke a plugin tool by name with JSON arguments.",
         parametersJSONSchema: """
@@ -179,7 +179,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let gitStatus = HiveToolDefinition(
+    package static let gitStatus = HiveToolDefinition(
         name: "git_status",
         description: "Inspect working tree and branch status from the configured Git backend.",
         parametersJSONSchema: """
@@ -187,7 +187,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let gitDiff = HiveToolDefinition(
+    package static let gitDiff = HiveToolDefinition(
         name: "git_diff",
         description: "Get repository diffs from the configured Git backend.",
         parametersJSONSchema: """
@@ -195,7 +195,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let gitCommit = HiveToolDefinition(
+    package static let gitCommit = HiveToolDefinition(
         name: "git_commit",
         description: "Create a commit using the configured Git backend.",
         parametersJSONSchema: """
@@ -203,7 +203,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let gitBranch = HiveToolDefinition(
+    package static let gitBranch = HiveToolDefinition(
         name: "git_branch",
         description: "List/create/checkout/delete branches via the configured Git backend.",
         parametersJSONSchema: """
@@ -211,7 +211,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let gitPush = HiveToolDefinition(
+    package static let gitPush = HiveToolDefinition(
         name: "git_push",
         description: "Push commits using the configured Git backend.",
         parametersJSONSchema: """
@@ -219,7 +219,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let gitPreparePR = HiveToolDefinition(
+    package static let gitPreparePR = HiveToolDefinition(
         name: "git_prepare_pr",
         description: "Prepare pull-request metadata from the configured Git backend.",
         parametersJSONSchema: """
@@ -227,7 +227,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let lspSymbols = HiveToolDefinition(
+    package static let lspSymbols = HiveToolDefinition(
         name: "lsp_symbols",
         description: "Query symbols from the configured LSP backend.",
         parametersJSONSchema: """
@@ -235,7 +235,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let lspDiagnostics = HiveToolDefinition(
+    package static let lspDiagnostics = HiveToolDefinition(
         name: "lsp_diagnostics",
         description: "Fetch diagnostics from the configured LSP backend.",
         parametersJSONSchema: """
@@ -243,7 +243,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let lspReferences = HiveToolDefinition(
+    package static let lspReferences = HiveToolDefinition(
         name: "lsp_references",
         description: "Find references for a symbol from the configured LSP backend.",
         parametersJSONSchema: """
@@ -251,7 +251,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let lspApplyEdit = HiveToolDefinition(
+    package static let lspApplyEdit = HiveToolDefinition(
         name: "lsp_apply_edit",
         description: "Apply LSP text edits through the configured LSP backend.",
         parametersJSONSchema: """
@@ -259,7 +259,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let scratchRead = HiveToolDefinition(
+    package static let scratchRead = HiveToolDefinition(
         name: "scratch_read",
         description: "Read the Scratchbook (compact view).",
         parametersJSONSchema: """
@@ -267,7 +267,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let scratchAdd = HiveToolDefinition(
+    package static let scratchAdd = HiveToolDefinition(
         name: "scratch_add",
         description: "Add a Scratchbook item (note/todo/task).",
         parametersJSONSchema: """
@@ -275,7 +275,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let scratchUpdate = HiveToolDefinition(
+    package static let scratchUpdate = HiveToolDefinition(
         name: "scratch_update",
         description: "Update fields on an existing Scratchbook item by id.",
         parametersJSONSchema: """
@@ -283,7 +283,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let scratchComplete = HiveToolDefinition(
+    package static let scratchComplete = HiveToolDefinition(
         name: "scratch_complete",
         description: "Mark a Scratchbook item done by id.",
         parametersJSONSchema: """
@@ -291,7 +291,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let scratchPin = HiveToolDefinition(
+    package static let scratchPin = HiveToolDefinition(
         name: "scratch_pin",
         description: "Pin a Scratchbook item by id.",
         parametersJSONSchema: """
@@ -299,7 +299,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static let scratchUnpin = HiveToolDefinition(
+    package static let scratchUnpin = HiveToolDefinition(
         name: "scratch_unpin",
         description: "Unpin a Scratchbook item by id.",
         parametersJSONSchema: """
@@ -307,7 +307,7 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    public static func task(availableSubagents: [ColonySubagentDescriptor]) -> HiveToolDefinition {
+    package static func task(availableSubagents: [ColonySubagentDescriptor]) -> HiveToolDefinition {
         let available: String
         if availableSubagents.isEmpty {
             available = "(none configured)"

@@ -1,4 +1,5 @@
 import Foundation
+import HiveCore
 import Testing
 @testable import Colony
 
@@ -13,9 +14,18 @@ private struct NoopLogger: HiveLogger {
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: HiveModelClient, ColonyCapabilityReportingHiveModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [HiveChatRequest] = []
+    private let capabilities: ColonyModelCapabilities
+
+    init(capabilities: ColonyModelCapabilities = []) {
+        self.capabilities = capabilities
+    }
+
+    var colonyModelCapabilities: ColonyModelCapabilities {
+        capabilities
+    }
 
     func recordedRequests() -> [HiveChatRequest] {
         lock.lock()
@@ -104,7 +114,7 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
         maxRenderedItems: 20,
         autoCompact: false
     )
-    configuration.includeToolListInSystemPrompt = true
+    configuration.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -172,7 +182,7 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
         maxRenderedItems: 20,
         autoCompact: false
     )
-    configuration.includeToolListInSystemPrompt = true
+    configuration.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -216,7 +226,7 @@ func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
         maxRenderedItems: 20,
         autoCompact: false
     )
-    configuration.includeToolListInSystemPrompt = true
+    configuration.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: nil)
@@ -277,7 +287,7 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
         maxRenderedItems: 2,
         autoCompact: false
     )
-    configuration.includeToolListInSystemPrompt = true
+    configuration.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -343,7 +353,7 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
         maxRenderedItems: 200,
         autoCompact: false
     )
-    configuration.includeToolListInSystemPrompt = true
+    configuration.toolPromptStrategy = .includeInSystemPrompt
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -374,19 +384,19 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
     #expect(tokens <= viewTokenLimit)
 }
 
-@Test("includeToolListInSystemPrompt toggles system prompt tool list output without removing tool definitions")
-func includeToolListInSystemPrompt_togglesToolsSection() async throws {
+@Test("toolPromptStrategy overrides system prompt tool list output without removing tool definitions")
+func toolPromptStrategy_overridesToolsSection() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    func run(includeToolsInPrompt: Bool) async throws -> HiveChatRequest {
+    func run(_ toolPromptStrategy: ColonyToolPromptStrategy) async throws -> HiveChatRequest {
         var configuration = ColonyConfiguration(
             capabilities: [.filesystem],
             modelName: "test-model",
             toolApprovalPolicy: .never,
             compactionPolicy: .maxTokens(0)
         )
-        configuration.includeToolListInSystemPrompt = includeToolsInPrompt
+        configuration.toolPromptStrategy = toolPromptStrategy
 
         let recordingModel = RecordingRequestModel()
         let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -398,7 +408,7 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
         )
         let runtime = try HiveRuntime(graph: graph, environment: environment)
         _ = try await (await runtime.run(
-            threadID: HiveThreadID("thread-tools-section-\(includeToolsInPrompt)"),
+            threadID: HiveThreadID("thread-tools-section-\(toolPromptStrategy)"),
             input: "hi",
             options: HiveRunOptions(checkpointPolicy: .disabled)
         )).outcome.value
@@ -409,8 +419,8 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
         return request
     }
 
-    let withTools = try await run(includeToolsInPrompt: true)
-    let withoutTools = try await run(includeToolsInPrompt: false)
+    let withTools = try await run(.includeInSystemPrompt)
+    let withoutTools = try await run(.omitFromSystemPrompt)
 
     #expect(withTools.tools.isEmpty == false)
     #expect(withoutTools.tools.isEmpty == false)
@@ -423,11 +433,211 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
     #expect(withoutPrompt.contains("Tools:\n") == false)
 }
 
-@Test("includeToolListInSystemPrompt defaults are on-device=false and cloud=true")
-func includeToolListInSystemPrompt_defaults_matchProfiles() throws {
+@Test("toolPromptStrategy defaults are automatic for on-device and cloud profiles")
+func toolPromptStrategy_defaultsToAutomaticAcrossProfiles() throws {
     let onDevice = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model")
     let cloud = ColonyAgentFactory.configuration(profile: .cloud, modelName: "test-model")
 
-    #expect(onDevice.includeToolListInSystemPrompt == false)
-    #expect(cloud.includeToolListInSystemPrompt == true)
+    #expect(onDevice.toolPromptStrategy == .automatic)
+    #expect(cloud.toolPromptStrategy == .automatic)
+}
+
+@Test("automatic tool prompt strategy omits the tools section for managed tool prompting models")
+func automaticToolPromptStrategy_omitsToolsSectionForManagedModels() async throws {
+    let graph = try ColonyAgent.compile()
+    let fs = ColonyInMemoryFileSystemBackend()
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.filesystem],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        compactionPolicy: .maxTokens(0)
+    )
+    configuration.toolPromptStrategy = .automatic
+
+    let recordingModel = RecordingRequestModel(capabilities: [.managedToolPrompting])
+    let context = ColonyContext(configuration: configuration, modelCapabilities: recordingModel.colonyModelCapabilities, filesystem: fs)
+    let environment = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(recordingModel)
+    )
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    _ = try await (await runtime.run(
+        threadID: HiveThreadID("thread-tools-managed"),
+        input: "hi",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )).outcome.value
+
+    guard let request = recordingModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let systemPrompt = systemPromptString(from: request) ?? ""
+    #expect(request.tools.isEmpty == false)
+    #expect(systemPrompt.contains("Tools:\n") == false)
+}
+
+@Test("automatic tool prompt strategy includes the tools section for unknown models")
+func automaticToolPromptStrategy_includesToolsSectionForUnknownModels() async throws {
+    let graph = try ColonyAgent.compile()
+    let fs = ColonyInMemoryFileSystemBackend()
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.filesystem],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        compactionPolicy: .maxTokens(0)
+    )
+    configuration.toolPromptStrategy = .automatic
+
+    let recordingModel = RecordingRequestModel()
+    let context = ColonyContext(configuration: configuration, filesystem: fs)
+    let environment = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(recordingModel)
+    )
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    _ = try await (await runtime.run(
+        threadID: HiveThreadID("thread-tools-unknown"),
+        input: "hi",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )).outcome.value
+
+    guard let request = recordingModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let systemPrompt = systemPromptString(from: request) ?? ""
+    #expect(request.tools.isEmpty == false)
+    #expect(systemPrompt.contains("Tools:\n"))
+}
+
+@Test("factory infers direct model capabilities for automatic tool prompt strategy")
+func factory_infersDirectModelCapabilitiesForAutomaticToolPromptStrategy() async throws {
+    let recordingModel = RecordingRequestModel(capabilities: [.managedToolPrompting])
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        profile: .cloud,
+        threadID: HiveThreadID("thread-tools-factory-inference"),
+        modelName: "test-model",
+        model: recordingModel,
+        configure: { configuration in
+            configuration.capabilities = [.filesystem]
+            configuration.toolApprovalPolicy = .never
+            configuration.compactionPolicy = .maxTokens(0)
+            configuration.toolPromptStrategy = .automatic
+        }
+    )
+
+    _ = try await (await runtime.runControl.startRaw(input: "hi")).outcome.value
+
+    guard let request = recordingModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let systemPrompt = systemPromptString(from: request) ?? ""
+    #expect(request.tools.isEmpty == false)
+    #expect(systemPrompt.contains("Tools:\n") == false)
+}
+
+@Test("automatic tool prompt strategy uses routed model capabilities")
+func automaticToolPromptStrategy_usesRoutedModelCapabilities() async throws {
+    let onDeviceModel = RecordingRequestModel()
+    let fallbackModel = RecordingRequestModel()
+    let router = ColonyOnDeviceModelRouter(
+        onDevice: AnyHiveModelClient(onDeviceModel),
+        fallback: AnyHiveModelClient(fallbackModel),
+        onDeviceCapabilities: [.managedToolPrompting],
+        fallbackCapabilities: []
+    )
+
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        profile: .cloud,
+        threadID: HiveThreadID("thread-tools-router-capabilities"),
+        modelName: "test-model",
+        modelRouter: router,
+        inferenceHints: HiveInferenceHints(
+            latencyTier: .interactive,
+            privacyRequired: true,
+            tokenBudget: nil,
+            networkState: .online
+        ),
+        configure: { configuration in
+            configuration.capabilities = [.filesystem]
+            configuration.toolApprovalPolicy = .never
+            configuration.compactionPolicy = .maxTokens(0)
+            configuration.toolPromptStrategy = .automatic
+        }
+    )
+
+    _ = try await (await runtime.runControl.startRaw(input: "hi")).outcome.value
+
+    guard let request = onDeviceModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let systemPrompt = systemPromptString(from: request) ?? ""
+    #expect(request.tools.isEmpty == false)
+    #expect(systemPrompt.contains("Tools:\n") == false)
+    #expect(fallbackModel.recordedRequests().isEmpty)
+}
+
+@Test("structured output instructions are injected when model cannot handle them directly")
+func structuredOutputPrompting_isInjectedForModelsWithoutStructuredOutputCapability() async throws {
+    let recordingModel = RecordingRequestModel()
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        profile: .cloud,
+        threadID: HiveThreadID("thread-structured-output-prompt"),
+        modelName: "test-model",
+        model: AnyHiveModelClient(recordingModel),
+        configure: { configuration in
+            configuration.compactionPolicy = .maxTokens(0)
+            configuration.structuredOutput = .jsonObject
+        }
+    )
+
+    _ = try await (await runtime.runControl.startRaw(input: "return json")).outcome.value
+
+    guard let request = recordingModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let systemPrompt = systemPromptString(from: request) ?? ""
+    #expect(request.structuredOutput == .jsonObject)
+    #expect(systemPrompt.contains("Respond with valid JSON only.") == true)
+}
+
+@Test("structured output instructions are omitted when wrapped models provide managed structured-output capabilities")
+func structuredOutputPrompting_isOmittedForWrappedManagedStructuredOutputModels() async throws {
+    let recordingModel = RecordingRequestModel(capabilities: [.managedStructuredOutputs])
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        profile: .cloud,
+        threadID: HiveThreadID("thread-structured-output-managed"),
+        modelName: "test-model",
+        model: AnyHiveModelClient(recordingModel),
+        modelCapabilities: [.managedStructuredOutputs],
+        configure: { configuration in
+            configuration.compactionPolicy = .maxTokens(0)
+            configuration.structuredOutput = .jsonObject
+        }
+    )
+
+    _ = try await (await runtime.runControl.startRaw(input: "return json")).outcome.value
+
+    guard let request = recordingModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let systemPrompt = systemPromptString(from: request) ?? ""
+    #expect(request.structuredOutput == .jsonObject)
+    #expect(systemPrompt.contains("Respond with valid JSON only.") == false)
 }
