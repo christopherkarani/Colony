@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
+package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private enum RegistryError: Error, Sendable, Equatable {
         case unsupportedSubagentType(String)
         case runInterrupted
@@ -26,7 +26,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private let logger: any HiveLogger
     private let filesystem: (any ColonyFileSystemBackend)?
 
-    public init(
+    package init(
         modelName: String,
         model: AnyHiveModelClient,
         clock: any HiveClock,
@@ -43,7 +43,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         )
     }
 
-    public init(
+    package init(
         profile: ColonyProfile,
         modelName: String,
         model: AnyHiveModelClient,
@@ -59,7 +59,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         self.filesystem = filesystem
     }
 
-    public func listSubagents() -> [ColonySubagentDescriptor] {
+    package func listSubagents() -> [ColonySubagentDescriptor] {
         [
             ColonySubagentDescriptor(
                 name: "general-purpose",
@@ -72,7 +72,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         ]
     }
 
-    public func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
+    package func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
         let type = request.subagentType.trimmingCharacters(in: .whitespacesAndNewlines)
         guard type == "general-purpose" || type == "compactor" else {
             throw RegistryError.unsupportedSubagentType(request.subagentType)
@@ -81,15 +81,15 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         let delegatedPrompt = try await renderDelegatedPrompt(request)
 
         var configuration = ColonyAgentFactory.configuration(profile: profile, modelName: modelName)
-        configuration.capabilities = subagentCapabilities(
-            base: configuration.capabilities,
+        configuration.model.capabilities = subagentCapabilities(
+            base: configuration.model.capabilities,
             filesystem: filesystem
         )
-        configuration.toolApprovalPolicy = .never
+        configuration.safety.toolApprovalPolicy = .never
 
         if type == "compactor" {
-            configuration.additionalSystemPrompt = mergeAdditionalSystemPrompt(
-                base: configuration.additionalSystemPrompt,
+            configuration.prompts.additionalSystemPrompt = mergeAdditionalSystemPrompt(
+                base: configuration.prompts.additionalSystemPrompt,
                 extra: """
                 Compactor mode:
                 - Prefer Scratchbook for summary + next actions.

@@ -2,22 +2,22 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public enum ColonyRunPhase: String, Codable, Sendable, Equatable {
+package enum ColonyRunPhase: String, Codable, Sendable, Equatable {
     case running
     case interrupted
     case finished
     case cancelled
 }
 
-public struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
-    public let runID: UUID
-    public let sessionID: ColonyHarnessSessionID
-    public let threadID: String
-    public let phase: ColonyRunPhase
-    public let lastEventSequence: Int
-    public let updatedAt: Date
+package struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
+    package let runID: UUID
+    package let sessionID: ColonyHarnessSessionID
+    package let threadID: String
+    package let phase: ColonyRunPhase
+    package let lastEventSequence: Int
+    package let updatedAt: Date
 
-    public init(
+    package init(
         runID: UUID,
         sessionID: ColonyHarnessSessionID,
         threadID: String,
@@ -34,13 +34,13 @@ public struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
     }
 }
 
-public actor ColonyDurableRunStateStore {
+package actor ColonyDurableRunStateStore {
     private let runsDirectoryURL: URL
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    public init(baseURL: URL, fileManager: FileManager = .default) throws {
+    package init(baseURL: URL, fileManager: FileManager = .default) throws {
         self.runsDirectoryURL = baseURL.appendingPathComponent("runs", isDirectory: true)
         self.fileManager = fileManager
 
@@ -56,7 +56,7 @@ public actor ColonyDurableRunStateStore {
         try ColonyPersistenceIO.ensureDirectoryExists(runsDirectoryURL, fileManager: fileManager)
     }
 
-    public func appendEvent(
+    package func appendEvent(
         _ envelope: ColonyHarnessEventEnvelope,
         threadID: HiveThreadID
     ) async throws {
@@ -83,7 +83,7 @@ public actor ColonyDurableRunStateStore {
         try ColonyPersistenceIO.writeJSON(snapshot, to: stateURL, encoder: encoder, fileManager: fileManager)
     }
 
-    public func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
+    package func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
         let stateURL = runDirectoryURL(runID: runID).appendingPathComponent("state.json", isDirectory: false)
         guard fileManager.fileExists(atPath: stateURL.path) else {
             return nil
@@ -91,7 +91,7 @@ public actor ColonyDurableRunStateStore {
         return try ColonyPersistenceIO.readJSON(ColonyRunStateSnapshot.self, from: stateURL, decoder: decoder)
     }
 
-    public func listRunStates(limit: Int? = nil) async throws -> [ColonyRunStateSnapshot] {
+    package func listRunStates(limit: Int? = nil) async throws -> [ColonyRunStateSnapshot] {
         if let limit, limit <= 0 {
             return []
         }
@@ -119,7 +119,7 @@ public actor ColonyDurableRunStateStore {
         return snapshots
     }
 
-    public func loadEvents(runID: UUID, limit: Int? = nil) async throws -> [ColonyHarnessEventEnvelope] {
+    package func loadEvents(runID: UUID, limit: Int? = nil) async throws -> [ColonyHarnessEventEnvelope] {
         if let limit, limit <= 0 {
             return []
         }
@@ -144,7 +144,7 @@ public actor ColonyDurableRunStateStore {
         return events
     }
 
-    public func latestInterruptedRun(sessionID: ColonyHarnessSessionID? = nil) async throws -> ColonyRunStateSnapshot? {
+    package func latestInterruptedRun(sessionID: ColonyHarnessSessionID? = nil) async throws -> ColonyRunStateSnapshot? {
         let snapshots = try await listRunStates()
         return snapshots.first { snapshot in
             guard snapshot.phase == .interrupted else { return false }
@@ -155,7 +155,7 @@ public actor ColonyDurableRunStateStore {
         }
     }
 
-    public func latestRunState(sessionID: ColonyHarnessSessionID? = nil) async throws -> ColonyRunStateSnapshot? {
+    package func latestRunState(sessionID: ColonyHarnessSessionID? = nil) async throws -> ColonyRunStateSnapshot? {
         let snapshots = try await listRunStates()
         return snapshots.first { snapshot in
             if let sessionID {
