@@ -69,13 +69,13 @@ public struct ColonySubagentFileReference: Sendable, Codable, Equatable {
 
 public struct ColonySubagentRequest: Sendable, Equatable {
     public var prompt: String
-    public var subagentType: String
+    public var subagentType: ColonySubagentType
     public var context: ColonySubagentContext?
     public var fileReferences: [ColonySubagentFileReference]
 
     public init(
         prompt: String,
-        subagentType: String,
+        subagentType: ColonySubagentType,
         context: ColonySubagentContext? = nil,
         fileReferences: [ColonySubagentFileReference] = []
     ) {

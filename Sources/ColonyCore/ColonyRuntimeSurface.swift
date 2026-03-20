@@ -62,12 +62,12 @@ public struct ColonyTranscript: Sendable, Equatable {
 public struct ColonyRunInterruption: Sendable, Equatable {
     public let interruptID: ColonyInterruptID
     public let toolCalls: [ColonyToolCall]
-    public let checkpointID: String
+    public let checkpointID: ColonyCheckpointID
 
     public init(
         interruptID: ColonyInterruptID,
         toolCalls: [ColonyToolCall],
-        checkpointID: String
+        checkpointID: ColonyCheckpointID
     ) {
         self.interruptID = interruptID
         self.toolCalls = toolCalls
@@ -76,10 +76,10 @@ public struct ColonyRunInterruption: Sendable, Equatable {
 }
 
 public enum ColonyRunOutcome: Sendable, Equatable {
-    case finished(transcript: ColonyTranscript, checkpointID: String?)
+    case finished(transcript: ColonyTranscript, checkpointID: ColonyCheckpointID?)
     case interrupted(ColonyRunInterruption)
-    case cancelled(transcript: ColonyTranscript, checkpointID: String?)
-    case outOfSteps(maxSteps: Int, transcript: ColonyTranscript, checkpointID: String?)
+    case cancelled(transcript: ColonyTranscript, checkpointID: ColonyCheckpointID?)
+    case outOfSteps(maxSteps: Int, transcript: ColonyTranscript, checkpointID: ColonyCheckpointID?)
 }
 
 public struct ColonyRunStartRequest: Sendable, Equatable {

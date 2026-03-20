@@ -202,15 +202,15 @@ package enum ColonyAgent {
             rewritesMessages = true
         }
 
-        if let policy = input.context.configuration.summarizationPolicy,
+        if let policy = input.context.configuration.context.summarizationPolicy,
            let filesystem = input.context.filesystem
         {
             if let summarized = try await maybeSummarize(
                 messages: updatedMessages,
                 policy: policy,
-                scratchbookEnabled: input.context.configuration.capabilities.contains(.scratchbook),
-                scratchbookPolicy: input.context.configuration.scratchbookPolicy,
-                subagentsAllowed: input.context.configuration.capabilities.contains(.subagents),
+                scratchbookEnabled: input.context.configuration.model.capabilities.contains(.scratchbook),
+                scratchbookPolicy: input.context.configuration.context.scratchbookPolicy,
+                subagentsAllowed: input.context.configuration.model.capabilities.contains(.subagents),
                 subagents: input.context.subagents,
                 tokenizer: input.context.tokenizer,
                 filesystem: filesystem,
@@ -234,7 +234,7 @@ package enum ColonyAgent {
             writes.append(AnyHiveWrite(ColonySchema.Channels.messages, [removeAll] + updatedMessages))
         }
 
-        let compacted = input.context.configuration.compactionPolicy.compact(
+        let compacted = input.context.configuration.context.compactionPolicy.compact(
             updatedMessages.map(ColonyChatMessage.init),
             tokenizer: input.context.tokenizer
         )?.map(\.hive)
@@ -264,19 +264,19 @@ package enum ColonyAgent {
         let scratchbook: String?
         if let filesystem = input.context.filesystem {
             memory = try await loadAgentsMemory(
-                sources: input.context.configuration.memorySources,
-                tokenLimit: input.context.configuration.systemPromptMemoryTokenLimit,
+                sources: input.context.configuration.prompts.memorySources,
+                tokenLimit: input.context.configuration.prompts.systemPromptMemoryTokenLimit,
                 filesystem: filesystem
             )
             skills = try await loadSkillsCatalogMetadata(
-                sources: input.context.configuration.skillSources,
-                tokenLimit: input.context.configuration.systemPromptSkillsTokenLimit,
+                sources: input.context.configuration.prompts.skillSources,
+                tokenLimit: input.context.configuration.prompts.systemPromptSkillsTokenLimit,
                 filesystem: filesystem
             )
 
-            if input.context.configuration.capabilities.contains(.scratchbook) {
+            if input.context.configuration.model.capabilities.contains(.scratchbook) {
                 scratchbook = try await loadScratchbookView(
-                    policy: input.context.configuration.scratchbookPolicy,
+                    policy: input.context.configuration.context.scratchbookPolicy,
                     filesystem: filesystem,
                     threadID: input.run.threadID
                 )
@@ -290,17 +290,17 @@ package enum ColonyAgent {
         }
 
         let modelCapabilities = resolvedModelCapabilities(for: input)
-        let includeToolsInSystemPrompt = input.context.configuration.toolPromptStrategy.includesToolList(for: modelCapabilities)
+        let includeToolsInSystemPrompt = input.context.configuration.prompts.toolPromptStrategy.includesToolList(for: modelCapabilities)
         let toolsForPrompt = includeToolsInSystemPrompt ? tools : []
         var systemPrompt = ColonyPrompts.systemPrompt(
-            additional: input.context.configuration.additionalSystemPrompt,
+            additional: input.context.configuration.prompts.additionalSystemPrompt,
             membrane: membranePlan?.context,
             memory: memory,
             skills: skills,
             scratchbook: scratchbook,
             availableTools: toolsForPrompt
         )
-        if let structuredOutput = input.context.configuration.structuredOutput,
+        if let structuredOutput = input.context.configuration.model.structuredOutput,
            modelCapabilities.handlesStructuredOutputsWithoutSystemPrompt == false
         {
             systemPrompt += "\n\n" + structuredOutputInstruction(for: structuredOutput.hive)
@@ -314,7 +314,7 @@ package enum ColonyAgent {
         let inputMessages = (llmInputMessages ?? messages)
 
         let messageTokenLimit: Int?
-        if let hardLimit = input.context.configuration.requestHardTokenLimit {
+        if let hardLimit = input.context.configuration.context.requestHardTokenLimit {
             let toolTokenCount = toolDefinitionTokenCount(tools, tokenizer: input.context.tokenizer)
             guard toolTokenCount < hardLimit else {
                 throw ColonyBudgetError.toolDefinitionsExceedHardRequestTokenLimit(
@@ -338,10 +338,10 @@ package enum ColonyAgent {
             tokenizer: input.context.tokenizer
         )
         let request = HiveChatRequest(
-            model: input.context.configuration.modelName,
+            model: input.context.configuration.model.name,
             messages: requestMessages,
             tools: tools,
-            structuredOutput: input.context.configuration.structuredOutput?.hive
+            structuredOutput: input.context.configuration.model.structuredOutput?.hive
         )
 
         let modelClient: AnyHiveModelClient
@@ -416,7 +416,7 @@ package enum ColonyAgent {
             return nil
         }
 
-        let profile: ContextProfile = context.configuration.requestHardTokenLimit == 4_000
+        let profile: ContextProfile = context.configuration.context.requestHardTokenLimit == 4_000
             ? .strict4k
             : .balanced
 
@@ -622,18 +622,18 @@ package enum ColonyAgent {
         }
 
         let safety = ColonyToolSafetyPolicyEngine(
-            approvalPolicy: input.context.configuration.toolApprovalPolicy,
-            riskLevelOverrides: input.context.configuration.toolRiskLevelOverrides,
-            toolPolicyMetadataByName: input.context.configuration.toolPolicyMetadataByName,
-            mandatoryApprovalRiskLevels: input.context.configuration.mandatoryApprovalRiskLevels,
-            defaultRiskLevel: input.context.configuration.defaultToolRiskLevel
+            approvalPolicy: input.context.configuration.safety.toolApprovalPolicy,
+            riskLevelOverrides: input.context.configuration.safety.toolRiskLevelOverrides,
+            toolPolicyMetadataByName: input.context.configuration.safety.toolPolicyMetadataByName,
+            mandatoryApprovalRiskLevels: input.context.configuration.safety.mandatoryApprovalRiskLevels,
+            defaultRiskLevel: input.context.configuration.safety.defaultToolRiskLevel
         )
         let assessments = safety.assess(toolCalls: calls.map(ColonyToolCall.init))
         let assessmentsByCallID = Dictionary(uniqueKeysWithValues: assessments.map { ($0.toolCallID, $0) })
         let persistedRuleDecisions = try await resolvePersistedRuleDecisions(
             calls: calls,
             assessmentsByCallID: assessmentsByCallID,
-            store: input.context.configuration.toolApprovalRuleStore
+            store: input.context.configuration.safety.toolApprovalRuleStore
         )
 
         var preApprovedIDs: Set<String> = []
@@ -850,7 +850,7 @@ package enum ColonyAgent {
         input: HiveNodeInput<ColonySchema>
     ) async throws {
         guard calls.isEmpty == false else { return }
-        guard let recorder = input.context.configuration.toolAuditRecorder else { return }
+        guard let recorder = input.context.configuration.safety.toolAuditRecorder else { return }
 
         for call in calls {
             guard let assessment = assessmentsByCallID[call.id] else { continue }
@@ -900,7 +900,7 @@ package enum ColonyAgent {
             toolCall: call,
             content: outcome.content,
             filesystem: input.context.filesystem,
-            tokenLimit: input.context.configuration.toolResultEvictionTokenLimit
+            tokenLimit: input.context.configuration.context.toolResultEvictionTokenLimit
         )
 
         let toolMessage = HiveChatMessage(
@@ -922,12 +922,12 @@ package enum ColonyAgent {
     private static func builtInToolDefinitions(for context: ColonyContext) -> [HiveToolDefinition] {
         var tools: [HiveToolDefinition] = []
 
-        if context.configuration.capabilities.contains(.planning) {
+        if context.configuration.model.capabilities.contains(.planning) {
             tools.append(ColonyBuiltInToolDefinitions.writeTodos)
             tools.append(ColonyBuiltInToolDefinitions.readTodos)
         }
 
-        if context.configuration.capabilities.contains(.filesystem), context.filesystem != nil {
+        if context.configuration.model.capabilities.contains(.filesystem), context.filesystem != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.ls,
                 ColonyBuiltInToolDefinitions.readFile,
@@ -938,9 +938,9 @@ package enum ColonyAgent {
             ])
         }
 
-        if context.configuration.capabilities.contains(.shell), context.shell != nil {
+        if context.configuration.model.capabilities.contains(.shell), context.shell != nil {
             tools.append(ColonyBuiltInToolDefinitions.execute)
-            if context.configuration.capabilities.contains(.shellSessions) {
+            if context.configuration.model.capabilities.contains(.shellSessions) {
                 tools.append(contentsOf: [
                     ColonyBuiltInToolDefinitions.shellOpen,
                     ColonyBuiltInToolDefinitions.shellWrite,
@@ -950,7 +950,7 @@ package enum ColonyAgent {
             }
         }
 
-        if context.configuration.capabilities.contains(.git), context.git != nil {
+        if context.configuration.model.capabilities.contains(.git), context.git != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.gitStatus,
                 ColonyBuiltInToolDefinitions.gitDiff,
@@ -961,7 +961,7 @@ package enum ColonyAgent {
             ])
         }
 
-        if context.configuration.capabilities.contains(.lsp), context.lsp != nil {
+        if context.configuration.model.capabilities.contains(.lsp), context.lsp != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.lspSymbols,
                 ColonyBuiltInToolDefinitions.lspDiagnostics,
@@ -970,40 +970,40 @@ package enum ColonyAgent {
             ])
         }
 
-        if context.configuration.capabilities.contains(.applyPatch), context.applyPatch != nil {
+        if context.configuration.model.capabilities.contains(.applyPatch), context.applyPatch != nil {
             tools.append(ColonyBuiltInToolDefinitions.applyPatch)
         }
 
-        if context.configuration.capabilities.contains(.webSearch), context.webSearch != nil {
+        if context.configuration.model.capabilities.contains(.webSearch), context.webSearch != nil {
             tools.append(ColonyBuiltInToolDefinitions.webSearch)
         }
 
-        if context.configuration.capabilities.contains(.codeSearch), context.codeSearch != nil {
+        if context.configuration.model.capabilities.contains(.codeSearch), context.codeSearch != nil {
             tools.append(ColonyBuiltInToolDefinitions.codeSearch)
         }
 
-        if context.configuration.capabilities.contains(.memory), context.memory != nil {
+        if context.configuration.model.capabilities.contains(.memory), context.memory != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.memoryRecall,
                 ColonyBuiltInToolDefinitions.memoryRemember,
             ])
         }
 
-        if context.configuration.capabilities.contains(.mcp), context.mcp != nil {
+        if context.configuration.model.capabilities.contains(.mcp), context.mcp != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.mcpListResources,
                 ColonyBuiltInToolDefinitions.mcpReadResource,
             ])
         }
 
-        if context.configuration.capabilities.contains(.plugins), context.plugins != nil {
+        if context.configuration.model.capabilities.contains(.plugins), context.plugins != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.pluginListTools,
                 ColonyBuiltInToolDefinitions.pluginInvoke,
             ])
         }
 
-        if context.configuration.capabilities.contains(.scratchbook), context.filesystem != nil {
+        if context.configuration.model.capabilities.contains(.scratchbook), context.filesystem != nil {
             tools.append(contentsOf: [
                 ColonyBuiltInToolDefinitions.scratchRead,
                 ColonyBuiltInToolDefinitions.scratchAdd,
@@ -1014,7 +1014,7 @@ package enum ColonyAgent {
             ])
         }
 
-        if context.configuration.capabilities.contains(.subagents), let subagents = context.subagents {
+        if context.configuration.model.capabilities.contains(.subagents), let subagents = context.subagents {
             tools.append(
                 ColonyBuiltInToolDefinitions.task(availableSubagents: subagents.listSubagents())
             )
@@ -1706,14 +1706,14 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: renderTodos(todos), writes: [])
 
         case ColonyBuiltInToolDefinitions.scratchRead.name:
-            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+            guard input.context.configuration.model.capabilities.contains(.scratchbook) else {
                 return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
             }
             guard let fs = input.context.filesystem else {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
             }
 
-            let policy = input.context.configuration.scratchbookPolicy
+            let policy = input.context.configuration.context.scratchbookPolicy
             let scratchbook = try await ColonyScratchbookStore.load(
                 filesystem: fs,
                 threadID: input.run.threadID.rawValue,
@@ -1723,7 +1723,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: view, writes: [])
 
         case ColonyBuiltInToolDefinitions.scratchAdd.name:
-            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+            guard input.context.configuration.model.capabilities.contains(.scratchbook) else {
                 return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
             }
             guard let fs = input.context.filesystem else {
@@ -1731,7 +1731,7 @@ enum ColonyTools {
             }
 
             let args = try decode(call.argumentsJSON, as: ScratchAddArgs.self)
-            let policy = input.context.configuration.scratchbookPolicy
+            let policy = input.context.configuration.context.scratchbookPolicy
             let scratchbook = try await ColonyScratchbookStore.load(
                 filesystem: fs,
                 threadID: input.run.threadID.rawValue,
@@ -1766,7 +1766,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: "OK: added \(itemID)", writes: [])
 
         case ColonyBuiltInToolDefinitions.scratchUpdate.name:
-            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+            guard input.context.configuration.model.capabilities.contains(.scratchbook) else {
                 return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
             }
             guard let fs = input.context.filesystem else {
@@ -1774,7 +1774,7 @@ enum ColonyTools {
             }
 
             let args = try decode(call.argumentsJSON, as: ScratchUpdateArgs.self)
-            let policy = input.context.configuration.scratchbookPolicy
+            let policy = input.context.configuration.context.scratchbookPolicy
             let scratchbook = try await ColonyScratchbookStore.load(
                 filesystem: fs,
                 threadID: input.run.threadID.rawValue,
@@ -1811,7 +1811,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: "OK: updated \(args.id)", writes: [])
 
         case ColonyBuiltInToolDefinitions.scratchComplete.name:
-            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+            guard input.context.configuration.model.capabilities.contains(.scratchbook) else {
                 return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
             }
             guard let fs = input.context.filesystem else {
@@ -1819,7 +1819,7 @@ enum ColonyTools {
             }
 
             let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
-            let policy = input.context.configuration.scratchbookPolicy
+            let policy = input.context.configuration.context.scratchbookPolicy
             let scratchbook = try await ColonyScratchbookStore.load(
                 filesystem: fs,
                 threadID: input.run.threadID.rawValue,
@@ -1855,7 +1855,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: "OK: completed \(args.id)", writes: [])
 
         case ColonyBuiltInToolDefinitions.scratchPin.name:
-            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+            guard input.context.configuration.model.capabilities.contains(.scratchbook) else {
                 return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
             }
             guard let fs = input.context.filesystem else {
@@ -1863,7 +1863,7 @@ enum ColonyTools {
             }
 
             let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
-            let policy = input.context.configuration.scratchbookPolicy
+            let policy = input.context.configuration.context.scratchbookPolicy
             let scratchbook = try await ColonyScratchbookStore.load(
                 filesystem: fs,
                 threadID: input.run.threadID.rawValue,
@@ -1885,7 +1885,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: "OK: pinned \(args.id)", writes: [])
 
         case ColonyBuiltInToolDefinitions.scratchUnpin.name:
-            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+            guard input.context.configuration.model.capabilities.contains(.scratchbook) else {
                 return ColonyToolOutcome(success: false, content: "Error: Scratchbook capability not enabled.", writes: [])
             }
             guard let fs = input.context.filesystem else {
@@ -1893,7 +1893,7 @@ enum ColonyTools {
             }
 
             let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
-            let policy = input.context.configuration.scratchbookPolicy
+            let policy = input.context.configuration.context.scratchbookPolicy
             let scratchbook = try await ColonyScratchbookStore.load(
                 filesystem: fs,
                 threadID: input.run.threadID.rawValue,
@@ -2007,7 +2007,7 @@ enum ColonyTools {
             )
 
         case ColonyBuiltInToolDefinitions.shellOpen.name:
-            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+            guard input.context.configuration.model.capabilities.contains(.shellSessions) else {
                 return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
             }
             guard let shell = input.context.shell else {
@@ -2030,7 +2030,7 @@ enum ColonyTools {
             )
 
         case ColonyBuiltInToolDefinitions.shellWrite.name:
-            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+            guard input.context.configuration.model.capabilities.contains(.shellSessions) else {
                 return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
             }
             guard let shell = input.context.shell else {
@@ -2044,7 +2044,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: "OK: wrote to \(args.sessionID)", writes: [])
 
         case ColonyBuiltInToolDefinitions.shellRead.name:
-            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+            guard input.context.configuration.model.capabilities.contains(.shellSessions) else {
                 return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
             }
             guard let shell = input.context.shell else {
@@ -2060,7 +2060,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatShellSessionReadResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.shellClose.name:
-            guard input.context.configuration.capabilities.contains(.shellSessions) else {
+            guard input.context.configuration.model.capabilities.contains(.shellSessions) else {
                 return ColonyToolOutcome(success: false, content: "Error: Shell sessions capability not enabled.", writes: [])
             }
             guard let shell = input.context.shell else {
@@ -2071,7 +2071,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: "OK: closed \(args.sessionID)", writes: [])
 
         case ColonyBuiltInToolDefinitions.applyPatch.name:
-            guard input.context.configuration.capabilities.contains(.applyPatch) else {
+            guard input.context.configuration.model.capabilities.contains(.applyPatch) else {
                 return ColonyToolOutcome(success: false, content: "Error: apply_patch capability not enabled.", writes: [])
             }
             guard let backend = input.context.applyPatch else {
@@ -2082,7 +2082,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: result.success, content: result.summary, writes: [])
 
         case ColonyBuiltInToolDefinitions.webSearch.name:
-            guard input.context.configuration.capabilities.contains(.webSearch) else {
+            guard input.context.configuration.model.capabilities.contains(.webSearch) else {
                 return ColonyToolOutcome(success: false, content: "Error: web_search capability not enabled.", writes: [])
             }
             guard let backend = input.context.webSearch else {
@@ -2094,7 +2094,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n\n"), writes: [])
 
         case ColonyBuiltInToolDefinitions.codeSearch.name:
-            guard input.context.configuration.capabilities.contains(.codeSearch) else {
+            guard input.context.configuration.model.capabilities.contains(.codeSearch) else {
                 return ColonyToolOutcome(success: false, content: "Error: code_search capability not enabled.", writes: [])
             }
             guard let backend = input.context.codeSearch else {
@@ -2106,7 +2106,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n"), writes: [])
 
         case ColonyBuiltInToolDefinitions.memoryRecall.name:
-            guard input.context.configuration.capabilities.contains(.memory) else {
+            guard input.context.configuration.model.capabilities.contains(.memory) else {
                 return ColonyToolOutcome(success: false, content: "Error: memory capability not enabled.", writes: [])
             }
             guard let backend = input.context.memory else {
@@ -2122,7 +2122,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatMemoryRecallResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.memoryRemember.name:
-            guard input.context.configuration.capabilities.contains(.memory) else {
+            guard input.context.configuration.model.capabilities.contains(.memory) else {
                 return ColonyToolOutcome(success: false, content: "Error: memory capability not enabled.", writes: [])
             }
             guard let backend = input.context.memory else {
@@ -2139,7 +2139,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatMemoryRememberResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.mcpListResources.name:
-            guard input.context.configuration.capabilities.contains(.mcp) else {
+            guard input.context.configuration.model.capabilities.contains(.mcp) else {
                 return ColonyToolOutcome(success: false, content: "Error: MCP capability not enabled.", writes: [])
             }
             guard let backend = input.context.mcp else {
@@ -2155,7 +2155,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n"), writes: [])
 
         case ColonyBuiltInToolDefinitions.mcpReadResource.name:
-            guard input.context.configuration.capabilities.contains(.mcp) else {
+            guard input.context.configuration.model.capabilities.contains(.mcp) else {
                 return ColonyToolOutcome(success: false, content: "Error: MCP capability not enabled.", writes: [])
             }
             guard let backend = input.context.mcp else {
@@ -2166,7 +2166,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: content, writes: [])
 
         case ColonyBuiltInToolDefinitions.pluginListTools.name:
-            guard input.context.configuration.capabilities.contains(.plugins) else {
+            guard input.context.configuration.model.capabilities.contains(.plugins) else {
                 return ColonyToolOutcome(success: false, content: "Error: plugins capability not enabled.", writes: [])
             }
             guard let plugins = input.context.plugins else {
@@ -2177,7 +2177,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: lines.joined(separator: "\n"), writes: [])
 
         case ColonyBuiltInToolDefinitions.pluginInvoke.name:
-            guard input.context.configuration.capabilities.contains(.plugins) else {
+            guard input.context.configuration.model.capabilities.contains(.plugins) else {
                 return ColonyToolOutcome(success: false, content: "Error: plugins capability not enabled.", writes: [])
             }
             guard let plugins = input.context.plugins else {
@@ -2188,7 +2188,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: output, writes: [])
 
         case ColonyBuiltInToolDefinitions.gitStatus.name:
-            guard input.context.configuration.capabilities.contains(.git) else {
+            guard input.context.configuration.model.capabilities.contains(.git) else {
                 return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
             }
             guard let git = input.context.git else {
@@ -2203,7 +2203,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatGitStatusResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitDiff.name:
-            guard input.context.configuration.capabilities.contains(.git) else {
+            guard input.context.configuration.model.capabilities.contains(.git) else {
                 return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
             }
             guard let git = input.context.git else {
@@ -2221,7 +2221,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: result.patch, writes: [])
 
         case ColonyBuiltInToolDefinitions.gitCommit.name:
-            guard input.context.configuration.capabilities.contains(.git) else {
+            guard input.context.configuration.model.capabilities.contains(.git) else {
                 return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
             }
             guard let git = input.context.git else {
@@ -2239,7 +2239,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatGitCommitResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitBranch.name:
-            guard input.context.configuration.capabilities.contains(.git) else {
+            guard input.context.configuration.model.capabilities.contains(.git) else {
                 return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
             }
             guard let git = input.context.git else {
@@ -2257,7 +2257,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatGitBranchResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitPush.name:
-            guard input.context.configuration.capabilities.contains(.git) else {
+            guard input.context.configuration.model.capabilities.contains(.git) else {
                 return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
             }
             guard let git = input.context.git else {
@@ -2275,7 +2275,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatGitPushResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitPreparePR.name:
-            guard input.context.configuration.capabilities.contains(.git) else {
+            guard input.context.configuration.model.capabilities.contains(.git) else {
                 return ColonyToolOutcome(success: false, content: "Error: Git capability not enabled.", writes: [])
             }
             guard let git = input.context.git else {
@@ -2294,7 +2294,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatGitPreparePRResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.lspSymbols.name:
-            guard input.context.configuration.capabilities.contains(.lsp) else {
+            guard input.context.configuration.model.capabilities.contains(.lsp) else {
                 return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
             }
             guard let lsp = input.context.lsp else {
@@ -2309,7 +2309,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatLSPSymbols(symbols), writes: [])
 
         case ColonyBuiltInToolDefinitions.lspDiagnostics.name:
-            guard input.context.configuration.capabilities.contains(.lsp) else {
+            guard input.context.configuration.model.capabilities.contains(.lsp) else {
                 return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
             }
             guard let lsp = input.context.lsp else {
@@ -2321,7 +2321,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatLSPDiagnostics(diagnostics), writes: [])
 
         case ColonyBuiltInToolDefinitions.lspReferences.name:
-            guard input.context.configuration.capabilities.contains(.lsp) else {
+            guard input.context.configuration.model.capabilities.contains(.lsp) else {
                 return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
             }
             guard let lsp = input.context.lsp else {
@@ -2337,7 +2337,7 @@ enum ColonyTools {
             return ColonyToolOutcome(success: true, content: formatLSPReferences(references), writes: [])
 
         case ColonyBuiltInToolDefinitions.lspApplyEdit.name:
-            guard input.context.configuration.capabilities.contains(.lsp) else {
+            guard input.context.configuration.model.capabilities.contains(.lsp) else {
                 return ColonyToolOutcome(success: false, content: "Error: LSP capability not enabled.", writes: [])
             }
             guard let lsp = input.context.lsp else {
@@ -2362,8 +2362,8 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Subagent registry not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: TaskArgs.self)
-            let type = args.subagentType?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let selectedType = (type?.isEmpty == false) ? type! : "general-purpose"
+            let trimmed = args.subagentType?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let selectedType: ColonySubagentType = (trimmed?.isEmpty == false) ? ColonySubagentType(trimmed!) : .generalPurpose
             let result = try await subagents.run(
                 ColonySubagentRequest(
                     prompt: args.prompt,

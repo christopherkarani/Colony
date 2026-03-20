@@ -91,7 +91,7 @@ public struct ColonyRuntime: Sendable {
         case let .finished(output, checkpointID):
             return .finished(
                 transcript: try transcript(from: output),
-                checkpointID: checkpointID?.rawValue
+                checkpointID: checkpointID.map { ColonyCheckpointID($0.rawValue) }
             )
         case let .interrupted(interruption):
             let toolCalls: [ColonyToolCall]
@@ -104,19 +104,19 @@ public struct ColonyRuntime: Sendable {
                 ColonyRunInterruption(
                     interruptID: ColonyInterruptID(interruption.interrupt.id),
                     toolCalls: toolCalls,
-                    checkpointID: interruption.checkpointID.rawValue
+                    checkpointID: ColonyCheckpointID(interruption.checkpointID.rawValue)
                 )
             )
         case let .cancelled(output, checkpointID):
             return .cancelled(
                 transcript: try transcript(from: output),
-                checkpointID: checkpointID?.rawValue
+                checkpointID: checkpointID.map { ColonyCheckpointID($0.rawValue) }
             )
         case let .outOfSteps(maxSteps, output, checkpointID):
             return .outOfSteps(
                 maxSteps: maxSteps,
                 transcript: try transcript(from: output),
-                checkpointID: checkpointID?.rawValue
+                checkpointID: checkpointID.map { ColonyCheckpointID($0.rawValue) }
             )
         }
     }

@@ -73,9 +73,9 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }
 
     package func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
-        let type = request.subagentType.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard type == "general-purpose" || type == "compactor" else {
-            throw RegistryError.unsupportedSubagentType(request.subagentType)
+        let type = request.subagentType
+        guard type == .generalPurpose || type == .compactor else {
+            throw RegistryError.unsupportedSubagentType(request.subagentType.rawValue)
         }
 
         let delegatedPrompt = try await renderDelegatedPrompt(request)
@@ -87,7 +87,7 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         )
         configuration.safety.toolApprovalPolicy = .never
 
-        if type == "compactor" {
+        if type == .compactor {
             configuration.prompts.additionalSystemPrompt = mergeAdditionalSystemPrompt(
                 base: configuration.prompts.additionalSystemPrompt,
                 extra: """
