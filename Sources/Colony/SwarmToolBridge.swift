@@ -66,10 +66,10 @@ public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
     private let capabilityMap: [String: ColonyCapabilities]
 
     /// Risk-level overrides for Colony's safety policy engine.
-    public let riskLevelOverrides: [String: ColonyToolRiskLevel]
+    public let riskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel]
 
     /// Policy metadata derived from Swarm tool execution semantics.
-    public let toolPolicyMetadataByName: [String: ColonyToolPolicyMetadata]
+    public let toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata]
 
     /// Union of all capabilities required by this bridge's registered tools.
     public let requiredCapabilities: ColonyCapabilities
@@ -86,14 +86,15 @@ public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
         self.registry = try ColonySwarmToolRegistry(tools: tools)
 
         var capMap: [String: ColonyCapabilities] = [:]
-        var riskMap: [String: ColonyToolRiskLevel] = [:]
-        var policyMap: [String: ColonyToolPolicyMetadata] = [:]
+        var riskMap: [ColonyToolName: ColonyToolRiskLevel] = [:]
+        var policyMap: [ColonyToolName: ColonyToolPolicyMetadata] = [:]
         var required: ColonyCapabilities = []
         for reg in registrations {
+            let toolName = ColonyToolName(rawValue: reg.tool.name)
             capMap[reg.tool.name] = reg.capability
             let metadata = Self.policyMetadata(for: reg)
-            riskMap[reg.tool.name] = metadata.riskLevel ?? reg.riskLevel
-            policyMap[reg.tool.name] = metadata
+            riskMap[toolName] = metadata.riskLevel ?? reg.riskLevel
+            policyMap[toolName] = metadata
             required.formUnion(reg.capability)
         }
         self.capabilityMap = capMap
@@ -126,10 +127,10 @@ public struct SwarmToolBridge: ColonyToolRegistry, Sendable {
     /// Returns tool definitions filtered by the active capabilities.
     ///
     /// Only tools whose associated capability is present in `activeCapabilities`
-    /// will be included. Call with the current `ColonyConfiguration.capabilities`.
+    /// will be included. Call with the current `ColonyConfiguration.model.capabilities`.
     public func listTools(filteredBy activeCapabilities: ColonyCapabilities) -> [ColonyToolDefinition] {
         allDefinitions.filter { def in
-            guard let required = capabilityMap[def.name] else { return false }
+            guard let required = capabilityMap[def.name.rawValue] else { return false }
             return activeCapabilities.contains(required)
         }
     }
@@ -231,7 +232,7 @@ private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
         self.registry = try ToolRegistry(tools: tools)
         self.toolDefinitions = try tools
             .map { try Self.makeToolDefinition(for: $0.schema) }
-            .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+            .sorted { $0.name.rawValue.utf8.lexicographicallyPrecedes($1.name.rawValue.utf8) }
     }
 
     func listTools() -> [ColonyToolDefinition] {
@@ -240,11 +241,11 @@ private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
 
     func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
         let arguments = try Self.parseArgumentsJSON(call.argumentsJSON)
-        guard await registry.contains(named: call.name) else {
-            throw ColonySwarmToolRegistryError.toolNotFound(name: call.name)
+        guard await registry.contains(named: call.name.rawValue) else {
+            throw ColonySwarmToolRegistryError.toolNotFound(name: call.name.rawValue)
         }
 
-        let output = try await registry.execute(toolNamed: call.name, arguments: arguments)
+        let output = try await registry.execute(toolNamed: call.name.rawValue, arguments: arguments)
         let content = try Self.encodeJSONFragment(output)
         return ColonyToolResult(toolCallID: call.id, content: content)
     }
@@ -292,7 +293,7 @@ private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
             throw ColonySwarmToolRegistryError.schemaEncodingFailed
         }
         return ColonyToolDefinition(
-            name: schema.name,
+            name: ColonyToolName(rawValue: schema.name),
             description: schema.description,
             parametersJSONSchema: json
         )

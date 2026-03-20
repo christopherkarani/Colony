@@ -114,7 +114,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
                 let convertedArgs = argsDict.mapValues { convertToOllamaJSONValue($0) }
                 return OllamaToolCallWrapper(
                     function: OllamaToolCallFunction(
-                        name: call.name,
+                        name: call.name.rawValue,
                         arguments: convertedArgs
                     )
                 )
@@ -151,7 +151,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
 
         return ColonyToolCall(
             id: UUID().uuidString,
-            name: wrapper.function.name,
+            name: ColonyToolName(rawValue: wrapper.function.name),
             argumentsJSON: argumentsJSON
         )
     }

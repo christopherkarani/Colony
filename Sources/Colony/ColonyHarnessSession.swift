@@ -87,7 +87,7 @@ package actor ColonyHarnessSession {
                     payload: .toolDenied(
                         ColonyHarnessToolDeniedPayload(
                             toolCallID: call.id,
-                            toolName: call.name,
+                            toolName: call.name.rawValue,
                             reason: decision == .cancelled ? "cancelled" : "rejected"
                         )
                     )
@@ -249,7 +249,7 @@ package actor ColonyHarnessSession {
                         payload: .toolRequest(
                             ColonyHarnessToolRequestPayload(
                                 toolCallID: toolCall.id,
-                                toolName: toolCall.name,
+                                toolName: toolCall.name.rawValue,
                                 argumentsJSON: toolCall.argumentsJSON
                             )
                         )

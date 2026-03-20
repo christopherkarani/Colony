@@ -52,7 +52,7 @@ final class ChatViewModel {
         let toolCalls: [ColonyToolCall]
 
         var toolNames: [String] {
-            toolCalls.map(\.name)
+            toolCalls.map(\.name.rawValue)
         }
     }
 
@@ -120,30 +120,30 @@ final class ChatViewModel {
                 return
             }
 
-            let tavilyRegistry: AnyColonyToolRegistry? = configuration.tavilyAPIKey.isEmpty
+            let tavilyRegistry: (any ColonyToolRegistry)? = configuration.tavilyAPIKey.isEmpty
                 ? nil
-                : AnyColonyToolRegistry(TavilySearchToolRegistry(apiKey: configuration.tavilyAPIKey))
+                : TavilySearchToolRegistry(apiKey: configuration.tavilyAPIKey)
 
             let profile: ColonyProfile = configuration.selectedBackend == .foundationModels
                 ? .onDevice4k
                 : .cloud
 
             let systemPrompt = Self.deepResearchSystemPrompt
-            let bootstrap = ColonyBootstrap()
 
             do {
-                let builtRuntime = try await bootstrap.makeRuntime(options: .init(
-                    profile: profile,
-                    modelName: configuration.selectedModelName,
+                let builtRuntime = try await Colony.agent(
                     model: resolvedModel.model,
-                    services: ColonyRuntimeServices(tools: tavilyRegistry),
-                    checkpointing: .inMemory,
-                    configure: { config in
-                        config.capabilities = [.planning, .scratchbook]
-                        config.toolApprovalPolicy = .never
-                        config.additionalSystemPrompt = systemPrompt
+                    profile: profile,
+                    capabilities: [.planning, .scratchbook],
+                    checkpointing: .inMemory
+                ) {
+                    if let tavilyRegistry {
+                        .tools(tavilyRegistry)
                     }
-                ))
+                } configure: { config in
+                    config.safety.toolApprovalPolicy = .never
+                    config.prompts.additionalSystemPrompt = systemPrompt
+                }
 
                 await MainActor.run {
                     guard let self, Task.isCancelled == false else { return }

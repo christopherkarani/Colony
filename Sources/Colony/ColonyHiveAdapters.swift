@@ -73,7 +73,7 @@ extension ColonyChatMessageOperation {
 extension ColonyToolDefinition {
     package init(_ hive: HiveToolDefinition) {
         self.init(
-            name: hive.name,
+            name: ColonyToolName(rawValue: hive.name),
             description: hive.description,
             parametersJSONSchema: hive.parametersJSONSchema
         )
@@ -81,7 +81,7 @@ extension ColonyToolDefinition {
 
     package var hive: HiveToolDefinition {
         HiveToolDefinition(
-            name: name,
+            name: name.rawValue,
             description: description,
             parametersJSONSchema: parametersJSONSchema
         )
@@ -92,7 +92,7 @@ extension ColonyToolCall {
     package init(_ hive: HiveToolCall) {
         self.init(
             id: hive.id,
-            name: hive.name,
+            name: ColonyToolName(rawValue: hive.name),
             argumentsJSON: hive.argumentsJSON
         )
     }
@@ -100,7 +100,7 @@ extension ColonyToolCall {
     package var hive: HiveToolCall {
         HiveToolCall(
             id: id,
-            name: name,
+            name: name.rawValue,
             argumentsJSON: argumentsJSON
         )
     }

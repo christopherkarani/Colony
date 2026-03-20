@@ -131,7 +131,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         var systemParts: [String] = []
         var promptLines: [String] = []
 
-        let toolsAllowed = Set(request.tools.map(\.name))
+        let toolsAllowed = Set(request.tools.map(\.name.rawValue))
         let toolInstructions = makeToolInstructions(tools: request.tools)
 
         for message in request.messages {
@@ -195,7 +195,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         switch configuration.toolInstructionVerbosity {
         case .compact:
             let toolList = tools
-                .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+                .sorted { $0.name.rawValue.utf8.lexicographicallyPrecedes($1.name.rawValue.utf8) }
                 .map { tool -> String in
                     let argsSummary = compactArgumentSummary(from: tool.parametersJSONSchema)
                     if argsSummary.isEmpty || argsSummary == "(none)" {
@@ -215,7 +215,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
             """
         case .verbose:
             let toolList = tools
-                .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+                .sorted { $0.name.rawValue.utf8.lexicographicallyPrecedes($1.name.rawValue.utf8) }
                 .map { tool -> String in
                     """
                     - \(tool.name): \(tool.description)
@@ -264,7 +264,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
     }
 
     private func renderToolCallMarkup(from call: ColonyToolCall) -> String {
-        "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id))\",\"name\":\"\(jsonEscaped(call.name))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
+        "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id))\",\"name\":\"\(jsonEscaped(call.name.rawValue))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
     }
 
     private func makeStructuredOutputInstructions(format: ColonyStructuredOutput?) -> String? {
@@ -429,7 +429,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
 
         return ColonyToolCall(
             id: id ?? toolCallID(name: name, argumentsJSON: argumentsJSON, index: index),
-            name: name,
+            name: ColonyToolName(rawValue: name),
             argumentsJSON: argumentsJSON
         )
     }

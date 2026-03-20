@@ -17,11 +17,11 @@ func mockResearchModelCompletesTaskLoop() async throws {
         model: ColonyModel(client: MockResearchModel()),
         services: ColonyRuntimeServices(filesystem: fs),
         configure: { config in
-            config.capabilities = [.planning, .filesystem, .subagents]
-            config.toolApprovalPolicy = .never
-            config.mandatoryApprovalRiskLevels = []
-            config.summarizationPolicy = nil
-            config.toolResultEvictionTokenLimit = nil
+            config.model.capabilities = [.planning, .filesystem, .subagents]
+            config.safety.toolApprovalPolicy = .never
+            config.safety.mandatoryApprovalRiskLevels = []
+            config.context.summarizationPolicy = nil
+            config.context.toolResultEvictionTokenLimit = nil
         }
     ))
 
@@ -41,13 +41,13 @@ func mockResearchModelCompletesTaskLoop() async throws {
 
     let messages = transcript.messages
     guard let assistantTaskMessage = messages.first(where: { message in
-        message.role == .assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInTool.task.rawValue })
+        message.role == .assistant && message.toolCalls.contains(where: { $0.name.rawValue == ColonyBuiltInTool.task.rawValue })
     }) else {
         #expect(Bool(false))
         return
     }
 
-    guard let taskCallID = assistantTaskMessage.toolCalls.first(where: { $0.name == ColonyBuiltInTool.task.rawValue })?.id else {
+    guard let taskCallID = assistantTaskMessage.toolCalls.first(where: { $0.name.rawValue == ColonyBuiltInTool.task.rawValue })?.id else {
         #expect(Bool(false))
         return
     }

@@ -72,7 +72,7 @@ public struct ColonyToolPolicyMetadata: Codable, Sendable, Equatable {
 
 public struct ColonyToolSafetyAssessment: Sendable, Equatable {
     public var toolCallID: String
-    public var toolName: String
+    public var toolName: ColonyToolName
     public var riskLevel: ColonyToolRiskLevel
     public var requiresApproval: Bool
     public var reason: ColonyToolApprovalRequirementReason?
@@ -82,7 +82,7 @@ public struct ColonyToolSafetyAssessment: Sendable, Equatable {
 
     public init(
         toolCallID: String,
-        toolName: String,
+        toolName: ColonyToolName,
         riskLevel: ColonyToolRiskLevel,
         requiresApproval: Bool,
         reason: ColonyToolApprovalRequirementReason?,
@@ -103,15 +103,15 @@ public struct ColonyToolSafetyAssessment: Sendable, Equatable {
 
 public struct ColonyToolSafetyPolicyEngine: Sendable {
     public var approvalPolicy: ColonyToolApprovalPolicy
-    public var riskLevelOverrides: [String: ColonyToolRiskLevel]
-    public var toolPolicyMetadataByName: [String: ColonyToolPolicyMetadata]
+    public var riskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel]
+    public var toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata]
     public var mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel>
     public var defaultRiskLevel: ColonyToolRiskLevel
 
     public init(
         approvalPolicy: ColonyToolApprovalPolicy,
-        riskLevelOverrides: [String: ColonyToolRiskLevel] = [:],
-        toolPolicyMetadataByName: [String: ColonyToolPolicyMetadata] = [:],
+        riskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel] = [:],
+        toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata] = [:],
         mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel> = [.mutation, .execution, .network],
         defaultRiskLevel: ColonyToolRiskLevel = .readOnly
     ) {
@@ -122,7 +122,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
         self.defaultRiskLevel = defaultRiskLevel
     }
 
-    public func riskLevel(for toolName: String) -> ColonyToolRiskLevel {
+    public func riskLevel(for toolName: ColonyToolName) -> ColonyToolRiskLevel {
         if let override = riskLevelOverrides[toolName] {
             return override
         }
@@ -137,13 +137,14 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
 
     public func assess(toolCalls: [ColonyToolCall]) -> [ColonyToolSafetyAssessment] {
         toolCalls.map { call in
-            let riskLevel = riskLevel(for: call.name)
-            let metadata = toolPolicyMetadataByName[call.name] ?? ColonyToolPolicyMetadata()
+            let toolName = call.name
+            let riskLevel = riskLevel(for: toolName)
+            let metadata = toolPolicyMetadataByName[toolName] ?? ColonyToolPolicyMetadata()
 
             if metadata.approvalDisposition == .always {
                 return ColonyToolSafetyAssessment(
                     toolCallID: call.id,
-                    toolName: call.name,
+                    toolName: toolName,
                     riskLevel: riskLevel,
                     requiresApproval: true,
                     reason: .toolMetadataAlways,
@@ -156,7 +157,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
             if mandatoryApprovalRiskLevels.contains(riskLevel) {
                 return ColonyToolSafetyAssessment(
                     toolCallID: call.id,
-                    toolName: call.name,
+                    toolName: toolName,
                     riskLevel: riskLevel,
                     requiresApproval: true,
                     reason: .mandatoryRiskLevel,
@@ -166,7 +167,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
                 )
             }
 
-            let policyRequiresApproval = approvalPolicy.requiresApproval(for: call.name)
+            let policyRequiresApproval = approvalPolicy.requiresApproval(for: toolName.rawValue)
             if policyRequiresApproval, metadata.approvalDisposition != .never {
                 let reason: ColonyToolApprovalRequirementReason = {
                     switch approvalPolicy {
@@ -181,7 +182,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
 
                 return ColonyToolSafetyAssessment(
                     toolCallID: call.id,
-                    toolName: call.name,
+                    toolName: toolName,
                     riskLevel: riskLevel,
                     requiresApproval: true,
                     reason: reason,
@@ -193,7 +194,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
 
             return ColonyToolSafetyAssessment(
                 toolCallID: call.id,
-                toolName: call.name,
+                toolName: toolName,
                 riskLevel: riskLevel,
                 requiresApproval: false,
                 reason: nil,
@@ -206,50 +207,50 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
 }
 
 extension ColonyToolSafetyPolicyEngine {
-    private static let defaultRiskLevelForToolName: [String: ColonyToolRiskLevel] = [
-        ColonyBuiltInToolDefinitions.ls.name: .readOnly,
-        ColonyBuiltInToolDefinitions.readFile.name: .readOnly,
-        ColonyBuiltInToolDefinitions.glob.name: .readOnly,
-        ColonyBuiltInToolDefinitions.grep.name: .readOnly,
-        ColonyBuiltInToolDefinitions.readTodos.name: .readOnly,
-        ColonyBuiltInToolDefinitions.scratchRead.name: .readOnly,
-        ColonyBuiltInToolDefinitions.gitStatus.name: .readOnly,
-        ColonyBuiltInToolDefinitions.gitDiff.name: .readOnly,
-        ColonyBuiltInToolDefinitions.lspSymbols.name: .readOnly,
-        ColonyBuiltInToolDefinitions.lspDiagnostics.name: .readOnly,
-        ColonyBuiltInToolDefinitions.lspReferences.name: .readOnly,
-        ColonyBuiltInToolDefinitions.shellRead.name: .readOnly,
-        ColonyBuiltInToolDefinitions.mcpListResources.name: .readOnly,
-        ColonyBuiltInToolDefinitions.mcpReadResource.name: .readOnly,
-        ColonyBuiltInToolDefinitions.pluginListTools.name: .readOnly,
-        ColonyBuiltInToolDefinitions.memoryRecall.name: .readOnly,
+    private static let defaultRiskLevelForToolName: [ColonyToolName: ColonyToolRiskLevel] = [
+        .ls: .readOnly,
+        .readFile: .readOnly,
+        .glob: .readOnly,
+        .grep: .readOnly,
+        .readTodos: .readOnly,
+        .scratchRead: .readOnly,
+        .gitStatus: .readOnly,
+        .gitDiff: .readOnly,
+        .lspSymbols: .readOnly,
+        .lspDiagnostics: .readOnly,
+        .lspReferences: .readOnly,
+        .shellRead: .readOnly,
+        .mcpListResources: .readOnly,
+        .mcpReadResource: .readOnly,
+        .pluginListTools: .readOnly,
+        .memoryRecall: .readOnly,
 
-        ColonyBuiltInToolDefinitions.writeTodos.name: .stateMutation,
-        ColonyBuiltInToolDefinitions.scratchAdd.name: .stateMutation,
-        ColonyBuiltInToolDefinitions.scratchUpdate.name: .stateMutation,
-        ColonyBuiltInToolDefinitions.scratchComplete.name: .stateMutation,
-        ColonyBuiltInToolDefinitions.scratchPin.name: .stateMutation,
-        ColonyBuiltInToolDefinitions.scratchUnpin.name: .stateMutation,
-        ColonyBuiltInToolDefinitions.memoryRemember.name: .stateMutation,
+        .writeTodos: .stateMutation,
+        .scratchAdd: .stateMutation,
+        .scratchUpdate: .stateMutation,
+        .scratchComplete: .stateMutation,
+        .scratchPin: .stateMutation,
+        .scratchUnpin: .stateMutation,
+        .memoryRemember: .stateMutation,
 
-        ColonyBuiltInToolDefinitions.writeFile.name: .mutation,
-        ColonyBuiltInToolDefinitions.editFile.name: .mutation,
-        ColonyBuiltInToolDefinitions.gitCommit.name: .mutation,
-        ColonyBuiltInToolDefinitions.gitBranch.name: .mutation,
-        ColonyBuiltInToolDefinitions.lspApplyEdit.name: .mutation,
-        ColonyBuiltInToolDefinitions.applyPatch.name: .mutation,
+        .writeFile: .mutation,
+        .editFile: .mutation,
+        .gitCommit: .mutation,
+        .gitBranch: .mutation,
+        .lspApplyEdit: .mutation,
+        .applyPatch: .mutation,
 
-        ColonyBuiltInToolDefinitions.execute.name: .execution,
-        ColonyBuiltInToolDefinitions.shellOpen.name: .execution,
-        ColonyBuiltInToolDefinitions.shellWrite.name: .execution,
-        ColonyBuiltInToolDefinitions.shellClose.name: .execution,
-        ColonyBuiltInToolDefinitions.taskName: .execution,
+        .execute: .execution,
+        .shellOpen: .execution,
+        .shellWrite: .execution,
+        .shellClose: .execution,
+        .task: .execution,
 
-        ColonyBuiltInToolDefinitions.gitPush.name: .network,
-        ColonyBuiltInToolDefinitions.gitPreparePR.name: .network,
-        ColonyBuiltInToolDefinitions.webSearch.name: .network,
-        ColonyBuiltInToolDefinitions.codeSearch.name: .network,
-        ColonyBuiltInToolDefinitions.pluginInvoke.name: .network,
+        .gitPush: .network,
+        .gitPreparePR: .network,
+        .webSearch: .network,
+        .codeSearch: .network,
+        .pluginInvoke: .network,
 
         "tavily_search": .network,
         "tavily_extract": .network,

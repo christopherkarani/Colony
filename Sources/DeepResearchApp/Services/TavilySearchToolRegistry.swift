@@ -69,14 +69,14 @@ struct TavilySearchToolRegistry: ColonyToolRegistry, Sendable {
     func listTools() -> [ColonyToolDefinition] {
         [
             ColonyToolDefinition(
-                name: Self.searchToolName,
+                name: ColonyToolName(rawValue: Self.searchToolName),
                 description: "Search the web using Tavily. Returns relevant results with titles, URLs, and content snippets.",
                 parametersJSONSchema: """
                 {"type":"object","properties":{"query":{"type":"string","description":"Search query"},"search_depth":{"type":"string","enum":["basic","advanced"],"description":"Search depth. 'advanced' for detailed results."},"max_results":{"type":"integer","description":"Max results 1-10, default 5"},"include_answer":{"type":"boolean","description":"Include AI-generated answer summary"}},"required":["query"]}
                 """
             ),
             ColonyToolDefinition(
-                name: Self.extractToolName,
+                name: ColonyToolName(rawValue: Self.extractToolName),
                 description: "Extract content from web pages using Tavily. Returns the raw text content of the specified URLs.",
                 parametersJSONSchema: """
                 {"type":"object","properties":{"urls":{"type":"array","items":{"type":"string"},"description":"URLs to extract content from"}},"required":["urls"]}
@@ -86,7 +86,7 @@ struct TavilySearchToolRegistry: ColonyToolRegistry, Sendable {
     }
 
     func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
-        switch call.name {
+        switch call.name.rawValue {
         case Self.searchToolName:
             return await invokeSearch(call)
         case Self.extractToolName:

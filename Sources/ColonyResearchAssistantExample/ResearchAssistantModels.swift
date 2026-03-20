@@ -125,7 +125,7 @@ Return:
 
             let call = ColonyToolCall(
                 id: nextToolCallID(),
-                name: ColonyBuiltInTool.task.rawValue,
+                name: ColonyToolName(rawValue: ColonyBuiltInTool.task.rawValue),
                 argumentsJSON: #"{"prompt":"\#(jsonEscaped(delegatedPrompt))","subagent_type":"general-purpose"}"#
             )
 
@@ -181,7 +181,7 @@ Return:
         let hasSubagentMarker = request.messages.contains(where: { message in
             message.role == .system && message.content.contains("Subagent mode")
         })
-        let hasTaskTool = request.tools.contains(where: { $0.name == ColonyBuiltInTool.task.rawValue })
+        let hasTaskTool = request.tools.contains(where: { $0.name.rawValue == ColonyBuiltInTool.task.rawValue })
         return hasSubagentMarker || hasTaskTool == false
     }
 

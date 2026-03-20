@@ -16,11 +16,11 @@ public enum ColonyChatMessageOperation: String, Codable, Sendable {
 }
 
 public struct ColonyToolDefinition: Codable, Sendable, Equatable {
-    public let name: String
+    public let name: ColonyToolName
     public let description: String
     public let parametersJSONSchema: String
 
-    public init(name: String, description: String, parametersJSONSchema: String) {
+    public init(name: ColonyToolName, description: String, parametersJSONSchema: String) {
         self.name = name
         self.description = description
         self.parametersJSONSchema = parametersJSONSchema
@@ -29,10 +29,10 @@ public struct ColonyToolDefinition: Codable, Sendable, Equatable {
 
 public struct ColonyToolCall: Codable, Sendable, Equatable {
     public let id: String
-    public let name: String
+    public let name: ColonyToolName
     public let argumentsJSON: String
 
-    public init(id: String, name: String, argumentsJSON: String) {
+    public init(id: String, name: ColonyToolName, argumentsJSON: String) {
         self.id = id
         self.name = name
         self.argumentsJSON = argumentsJSON

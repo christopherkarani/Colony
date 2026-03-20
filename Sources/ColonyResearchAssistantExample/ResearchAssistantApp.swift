@@ -34,30 +34,28 @@ struct ResearchAssistantApp: Sendable {
 
         let rootURL = URL(fileURLWithPath: options.root, isDirectory: true)
         let filesystem = ColonyDiskFileSystemBackend(root: rootURL)
-        let bootstrap = ColonyBootstrap()
 
-        let runtime = try await bootstrap.makeRuntime(options: ColonyRuntimeCreationOptions(
-            profile: options.profile.colonyProfile,
-            modelName: "colony-research-assistant",
+        let runtime = try await Colony.agent(
             model: resolved.model,
-            services: ColonyRuntimeServices(filesystem: filesystem),
-            checkpointing: .inMemory,
-            configure: { config in
-                config.capabilities = [.planning, .filesystem, .subagents]
-                config.toolApprovalPolicy = .allowList([
-                    ColonyBuiltInTool.ls.rawValue,
-                    ColonyBuiltInTool.readFile.rawValue,
-                    ColonyBuiltInTool.glob.rawValue,
-                    ColonyBuiltInTool.grep.rawValue,
-                    ColonyBuiltInTool.readTodos.rawValue,
-                    ColonyBuiltInTool.writeTodos.rawValue,
-                    ColonyBuiltInTool.task.rawValue,
-                ])
-                config.summarizationPolicy = nil
-                config.toolResultEvictionTokenLimit = nil
-                config.additionalSystemPrompt = Self.researchAssistantSystemPrompt
-            }
-        ))
+            profile: options.profile.colonyProfile,
+            capabilities: [.planning, .filesystem, .subagents],
+            checkpointing: .inMemory
+        ) {
+            .filesystem(filesystem)
+        } configure: { config in
+            config.safety.toolApprovalPolicy = .allowList([
+                ColonyBuiltInTool.ls.rawValue,
+                ColonyBuiltInTool.readFile.rawValue,
+                ColonyBuiltInTool.glob.rawValue,
+                ColonyBuiltInTool.grep.rawValue,
+                ColonyBuiltInTool.readTodos.rawValue,
+                ColonyBuiltInTool.writeTodos.rawValue,
+                ColonyBuiltInTool.task.rawValue,
+            ])
+            config.context.summarizationPolicy = nil
+            config.context.toolResultEvictionTokenLimit = nil
+            config.prompts.additionalSystemPrompt = Self.researchAssistantSystemPrompt
+        }
 
         print("Colony Research Assistant (\(resolved.selection.rawValue))")
         print("Root: \(options.root)")
@@ -129,7 +127,7 @@ struct ResearchAssistantApp: Sendable {
     }
 
     private func promptForApproval(toolCalls: [ColonyToolCall]) -> ColonyToolApprovalDecision {
-        let names = toolCalls.map(\.name).joined(separator: ", ")
+        let names = toolCalls.map(\.name.rawValue).joined(separator: ", ")
         print("Tool approval required for: \(names)")
         print("Approve? [y/N/c(ancel)]: ", terminator: "")
         fflush(stdout)
