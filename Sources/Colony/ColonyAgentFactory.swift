@@ -20,12 +20,12 @@ public enum ColonyLane: String, Sendable, CaseIterable {
 }
 
 package struct ColonyLaneConfigurationPreset: Sendable {
-    package var requiredCapabilities: ColonyCapabilities
+    package var requiredCapabilities: ColonyRuntimeCapabilities
     package var toolPromptStrategy: ColonyToolPromptStrategy?
     package var additionalSystemPrompt: String?
 
     package init(
-        requiredCapabilities: ColonyCapabilities = [],
+        requiredCapabilities: ColonyRuntimeCapabilities = [],
         toolPromptStrategy: ColonyToolPromptStrategy? = nil,
         additionalSystemPrompt: String? = nil
     ) {
@@ -434,9 +434,9 @@ package struct ColonyAgentFactory: Sendable {
         // Ensure capability gating is consistent with configured backends.
         let requestedCapabilities = configuration.model.capabilities
         let swarmCapabilities = swarmTools?.requiredCapabilities ?? []
-        var capabilities: ColonyCapabilities = []
+        var capabilities: ColonyRuntimeCapabilities = []
 
-        func retainIfRequested(_ capability: ColonyCapabilities, available: Bool) {
+        func retainIfRequested(_ capability: ColonyRuntimeCapabilities, available: Bool) {
             guard requestedCapabilities.contains(capability), available else { return }
             capabilities.insert(capability)
         }
@@ -729,7 +729,7 @@ private struct ExistentialHiveModelClient: HiveModelClient, Sendable {
 /// Filters Swarm tools by active Colony capabilities.
 struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
     let base: ColonySwarmToolBridge
-    let activeCapabilities: ColonyCapabilities
+    let activeCapabilities: ColonyRuntimeCapabilities
 
     func listTools() -> [HiveToolDefinition] {
         base.listHiveTools(filteredBy: activeCapabilities)

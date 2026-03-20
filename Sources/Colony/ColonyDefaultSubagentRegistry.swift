@@ -236,10 +236,10 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }
 
     private func subagentCapabilities(
-        base: ColonyCapabilities,
+        base: ColonyRuntimeCapabilities,
         filesystem: (any ColonyFileSystemBackend)?
-    ) -> ColonyCapabilities {
-        var capabilities: ColonyCapabilities = [.planning]
+    ) -> ColonyRuntimeCapabilities {
+        var capabilities: ColonyRuntimeCapabilities = [.planning]
         if filesystem != nil, base.contains(.filesystem) {
             capabilities.insert(.filesystem)
         }

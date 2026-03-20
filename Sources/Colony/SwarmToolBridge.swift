@@ -17,7 +17,7 @@ public struct ColonySwarmToolRegistration: Sendable {
 
     /// The Colony capability required for this tool to be injected into the prompt.
     /// The tool will only appear when this capability is enabled in the configuration.
-    public let capability: ColonyCapabilities
+    public let capability: ColonyRuntimeCapabilities
 
     /// The risk level for Colony's safety policy engine.
     /// Controls whether the tool requires human approval before execution.
@@ -25,7 +25,7 @@ public struct ColonySwarmToolRegistration: Sendable {
 
     public init(
         tool: any AnyJSONTool,
-        capability: ColonyCapabilities,
+        capability: ColonyRuntimeCapabilities,
         riskLevel: ColonyToolRiskLevel = .readOnly
     ) {
         self.tool = tool
@@ -42,7 +42,7 @@ public typealias SwarmToolBridge = ColonySwarmToolBridge
 /// `ColonySwarmToolBridge` wraps a `SwarmToolRegistry` (which handles the `AnyJSONTool` → `HiveToolDefinition`
 /// conversion and execution) and layers Colony's safety model on top:
 ///
-/// 1. **Capability gating:** Tools are only listed when their associated `ColonyCapabilities` flag
+/// 1. **Capability gating:** Tools are only listed when their associated `ColonyRuntimeCapabilities` flag
 ///    is enabled in the current configuration.
 /// 2. **Risk-level overrides:** Each registered tool's risk level is injected into
 ///    `ColonyToolSafetyPolicyEngine` so approval policies apply correctly.
@@ -69,7 +69,7 @@ public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
     private let registry: ColonySwarmToolRegistry
 
     /// Mapping from tool name to the capability required to expose it.
-    private let capabilityMap: [String: ColonyCapabilities]
+    private let capabilityMap: [String: ColonyRuntimeCapabilities]
 
     /// Risk-level overrides for Colony's safety policy engine.
     public let riskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel]
@@ -78,7 +78,7 @@ public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
     public let toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata]
 
     /// Union of all capabilities required by this bridge's registered tools.
-    public let requiredCapabilities: ColonyCapabilities
+    public let requiredCapabilities: ColonyRuntimeCapabilities
 
     /// All tool definitions (pre-filtered by capability gating happens at query time).
     private let allDefinitions: [ColonyToolDefinition]
@@ -91,10 +91,10 @@ public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
         let tools = registrations.map(\.tool)
         self.registry = try ColonySwarmToolRegistry(tools: tools)
 
-        var capMap: [String: ColonyCapabilities] = [:]
+        var capMap: [String: ColonyRuntimeCapabilities] = [:]
         var riskMap: [ColonyToolName: ColonyToolRiskLevel] = [:]
         var policyMap: [ColonyToolName: ColonyToolPolicyMetadata] = [:]
-        var required: ColonyCapabilities = []
+        var required: ColonyRuntimeCapabilities = []
         for reg in registrations {
             let toolName = ColonyToolName(rawValue: reg.tool.name)
             capMap[reg.tool.name] = reg.capability
@@ -121,7 +121,7 @@ public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
     ///   - riskLevel: The risk level for all tools.
     public init(
         tools: [any AnyJSONTool],
-        capability: ColonyCapabilities,
+        capability: ColonyRuntimeCapabilities,
         riskLevel: ColonyToolRiskLevel = .readOnly
     ) throws {
         let registrations = tools.map { tool in
@@ -134,7 +134,7 @@ public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
     ///
     /// Only tools whose associated capability is present in `activeCapabilities`
     /// will be included. Call with the current `ColonyConfiguration.model.capabilities`.
-    public func listTools(filteredBy activeCapabilities: ColonyCapabilities) -> [ColonyToolDefinition] {
+    public func listTools(filteredBy activeCapabilities: ColonyRuntimeCapabilities) -> [ColonyToolDefinition] {
         allDefinitions.filter { def in
             guard let required = capabilityMap[def.name.rawValue] else { return false }
             return activeCapabilities.contains(required)
@@ -154,7 +154,7 @@ public struct ColonySwarmToolBridge: ColonyToolRegistry, Sendable {
         try await registry.invoke(call)
     }
 
-    package func listHiveTools(filteredBy activeCapabilities: ColonyCapabilities) -> [HiveToolDefinition] {
+    package func listHiveTools(filteredBy activeCapabilities: ColonyRuntimeCapabilities) -> [HiveToolDefinition] {
         listTools(filteredBy: activeCapabilities).map(\.hive)
     }
 
