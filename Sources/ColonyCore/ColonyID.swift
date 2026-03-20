@@ -48,6 +48,8 @@ extension ColonyID {
     public enum ProductSession: Sendable {}
     public enum ProductSessionVersion: Sendable {}
     public enum ShareToken: Sendable {}
+    public enum Artifact: Sendable {}
+    public enum Checkpoint: Sendable {}
 }
 
 // MARK: - Backward-Compatible Type Aliases
@@ -55,6 +57,8 @@ extension ColonyID {
 public typealias ColonyThreadID = ColonyID<ColonyID.Thread>
 public typealias ColonyInterruptID = ColonyID<ColonyID.Interrupt>
 public typealias ColonyHarnessSessionID = ColonyID<ColonyID.HarnessSession>
+public typealias ColonyArtifactID = ColonyID<ColonyID.Artifact>
+public typealias ColonyCheckpointID = ColonyID<ColonyID.Checkpoint>
 
 // Keep old names as deprecated typealiases for migration
 @available(*, deprecated, renamed: "ColonyID.Thread")
@@ -71,3 +75,18 @@ public typealias ProductSessionDomain = ColonyID.ProductSession
 public typealias ProductSessionVersionDomain = ColonyID.ProductSessionVersion
 @available(*, deprecated, renamed: "ColonyID.ShareToken")
 public typealias ShareTokenDomain = ColonyID.ShareToken
+
+// MARK: - Subagent Type
+
+/// Type-safe subagent type identifier.
+public struct ColonySubagentType: Hashable, Codable, Sendable,
+                                   ExpressibleByStringLiteral,
+                                   CustomStringConvertible {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+    public init(stringLiteral value: String) { self.init(value) }
+    public var description: String { rawValue }
+
+    public static let generalPurpose: ColonySubagentType = "general-purpose"
+    public static let compactor: ColonySubagentType = "compactor"
+}
