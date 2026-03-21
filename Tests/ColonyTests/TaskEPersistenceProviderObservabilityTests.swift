@@ -360,10 +360,10 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
         ],
         policy: ColonyProviderRouter.Policy(
             maxAttemptsPerProvider: 2,
-            initialBackoffNanoseconds: 1,
-            maxBackoffNanoseconds: 1,
+            initialBackoff: .nanoseconds(1),
+            maxBackoff: .nanoseconds(1),
             globalMaxRequestsPerMinute: nil,
-            costCeilingUSD: 10,
+            costCeilingUSD: 10.0,
             estimatedOutputToInputRatio: 0,
             gracefulDegradation: .syntheticResponse("degraded")
         ),
@@ -395,13 +395,13 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
                 client: AnyHiveModelClient(expensiveProvider),
                 priority: 0,
                 maxRequestsPerMinute: nil,
-                usdPer1KTokens: 10
+                usdPer1KTokens: 10.0
             ),
         ],
         policy: ColonyProviderRouter.Policy(
             maxAttemptsPerProvider: 1,
-            initialBackoffNanoseconds: 1,
-            maxBackoffNanoseconds: 1,
+            initialBackoff: .nanoseconds(1),
+            maxBackoff: .nanoseconds(1),
             globalMaxRequestsPerMinute: nil,
             costCeilingUSD: 0.00001,
             estimatedOutputToInputRatio: 1,

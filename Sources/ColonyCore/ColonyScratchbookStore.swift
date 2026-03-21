@@ -4,10 +4,10 @@ public enum ColonyScratchbookStore {
     public static func path(
         threadID: String,
         policy: ColonyScratchbookPolicy
-    ) throws -> ColonyVirtualPath {
+    ) throws -> ColonyFileSystem.VirtualPath {
         let sanitized = sanitizeThreadID(threadID)
         let filename = sanitized + ".json"
-        return try ColonyVirtualPath(policy.pathPrefix.rawValue + "/" + filename)
+        return try ColonyFileSystem.VirtualPath(policy.pathPrefix.rawValue + "/" + filename)
     }
 
     public static func load(
@@ -20,7 +20,7 @@ public enum ColonyScratchbookStore {
         let content: String
         do {
             content = try await filesystem.read(at: scratchbookPath)
-        } catch let error as ColonyFileSystemError {
+        } catch let error as ColonyFileSystem.Error {
             switch error {
             case .notFound:
                 return ColonyScratchbook()
@@ -33,7 +33,7 @@ public enum ColonyScratchbookStore {
         guard trimmed.isEmpty == false else { return ColonyScratchbook() }
 
         guard let data = trimmed.data(using: .utf8) else {
-            throw ColonyFileSystemError.ioError("Scratchbook file was not valid UTF-8: \(scratchbookPath.rawValue)")
+            throw ColonyFileSystem.Error.ioError("Scratchbook file was not valid UTF-8: \(scratchbookPath.rawValue)")
         }
 
         return try JSONDecoder().decode(ColonyScratchbook.self, from: data)
@@ -95,17 +95,17 @@ public enum ColonyScratchbookStore {
 
     private static func writeOrOverwrite(
         filesystem: any ColonyFileSystemBackend,
-        path: ColonyVirtualPath,
+        path: ColonyFileSystem.VirtualPath,
         content: String
     ) async throws {
         do {
             try await filesystem.write(at: path, content: content)
-        } catch let error as ColonyFileSystemError {
+        } catch let error as ColonyFileSystem.Error {
             switch error {
             case .alreadyExists:
                 let existing = try await filesystem.read(at: path)
                 guard existing.isEmpty == false else {
-                    throw ColonyFileSystemError.ioError("Scratchbook file exists but is empty and cannot be overwritten safely: \(path.rawValue)")
+                    throw ColonyFileSystem.Error.ioError("Scratchbook file exists but is empty and cannot be overwritten safely: \(path.rawValue)")
                 }
                 _ = try await filesystem.edit(at: path, oldString: existing, newString: content, replaceAll: false)
             default:

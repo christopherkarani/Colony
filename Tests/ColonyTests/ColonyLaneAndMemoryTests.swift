@@ -140,8 +140,8 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
     let modelWithBackend = LaneMemoryToolListModel()
     let contextWithBackend = ColonyContext(
         configuration: ColonyConfiguration(
-            capabilities: [.memory],
             modelName: "test-model",
+            capabilities: [.memory],
             toolApprovalPolicy: .never
         ),
         filesystem: nil,
@@ -170,8 +170,8 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
     let modelWithoutBackend = LaneMemoryToolListModel()
     let contextWithoutBackend = ColonyContext(
         configuration: ColonyConfiguration(
-            capabilities: [.memory],
             modelName: "test-model",
+            capabilities: [.memory],
             toolApprovalPolicy: .never
         ),
         filesystem: nil
@@ -203,10 +203,8 @@ func memoryToolsDispatchAndPersist() async throws {
     let memory = ColonyInMemoryMemoryBackend()
 
     let configuration = ColonyConfiguration(
-        capabilities: [.memory],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        model: .init(name: "test-model", capabilities: [.memory]),
+        safety: .init(toolApprovalPolicy: .never, mandatoryApprovalRiskLevels: [])
     )
     let context = ColonyContext(
         configuration: configuration,

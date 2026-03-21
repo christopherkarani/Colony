@@ -25,13 +25,13 @@ package struct ColonyRunControl: Sendable {
         )
     }
 
-    package func start(_ request: ColonyRunStartRequest) async -> HiveRunHandle<ColonySchema> {
+    package func start(_ request: ColonyRun.StartRequest) async -> HiveRunHandle<ColonySchema> {
         await startRaw(input: request.input, optionsOverride: request.optionsOverride?.hive)
     }
 
     package func resumeRaw(
         interruptID: HiveInterruptID,
-        decision: ColonyToolApprovalDecision,
+        decision: ColonyToolApproval.Decision,
         optionsOverride: HiveRunOptions? = nil
     ) async -> HiveRunHandle<ColonySchema> {
         let effectiveOptions = optionsOverride ?? options
@@ -43,7 +43,7 @@ package struct ColonyRunControl: Sendable {
         )
     }
 
-    package func resume(_ request: ColonyRunResumeRequest) async -> HiveRunHandle<ColonySchema> {
+    package func resume(_ request: ColonyRun.ResumeRequest) async -> HiveRunHandle<ColonySchema> {
         await resumeRaw(
             interruptID: request.interruptID.hive,
             decision: request.decision,

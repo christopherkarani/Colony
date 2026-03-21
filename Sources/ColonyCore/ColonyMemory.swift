@@ -1,73 +1,100 @@
 import Foundation
 
-public struct ColonyMemoryItem: Sendable, Codable, Equatable {
-    public var id: String
-    public var content: String
-    public var tags: [String]
-    public var metadata: [String: String]
-    public var score: Double?
+/// Namespace for Colony memory types.
+public enum ColonyMemory {}
 
-    public init(
-        id: String,
-        content: String,
-        tags: [String] = [],
-        metadata: [String: String] = [:],
-        score: Double? = nil
-    ) {
-        self.id = id
-        self.content = content
-        self.tags = tags
-        self.metadata = metadata
-        self.score = score
+// MARK: - ColonyMemory.Item
+
+extension ColonyMemory {
+    public struct Item: Sendable, Codable, Equatable {
+        public var id: String
+        public var content: String
+        public var tags: [String]
+        public var metadata: [String: String]
+        public var score: Double?
+
+        public init(
+            id: String,
+            content: String,
+            tags: [String] = [],
+            metadata: [String: String] = [:],
+            score: Double? = nil
+        ) {
+            self.id = id
+            self.content = content
+            self.tags = tags
+            self.metadata = metadata
+            self.score = score
+        }
     }
 }
 
-public struct ColonyMemoryRecallRequest: Sendable, Codable, Equatable {
-    public var query: String
-    public var limit: Int?
+// MARK: - ColonyMemory.RecallRequest
 
-    public init(query: String, limit: Int? = nil) {
-        self.query = query
-        self.limit = limit
+extension ColonyMemory {
+    public struct RecallRequest: Sendable, Codable, Equatable {
+        public var query: String
+        public var limit: Int?
+
+        public init(query: String, limit: Int? = nil) {
+            self.query = query
+            self.limit = limit
+        }
     }
 }
 
-public struct ColonyMemoryRecallResult: Sendable, Codable, Equatable {
-    public var items: [ColonyMemoryItem]
+// MARK: - ColonyMemory.RecallResult
 
-    public init(items: [ColonyMemoryItem]) {
-        self.items = items
+extension ColonyMemory {
+    public struct RecallResult: Sendable, Codable, Equatable {
+        public var items: [ColonyMemory.Item]
+
+        public init(items: [ColonyMemory.Item]) {
+            self.items = items
+        }
     }
 }
 
-public struct ColonyMemoryRememberRequest: Sendable, Codable, Equatable {
-    public var content: String
-    public var tags: [String]
-    public var metadata: [String: String]
+// MARK: - ColonyMemory.RememberRequest
 
-    public init(
-        content: String,
-        tags: [String] = [],
-        metadata: [String: String] = [:]
-    ) {
-        self.content = content
-        self.tags = tags
-        self.metadata = metadata
+extension ColonyMemory {
+    public struct RememberRequest: Sendable, Codable, Equatable {
+        public var content: String
+        public var tags: [String]
+        public var metadata: [String: String]
+
+        public init(
+            content: String,
+            tags: [String] = [],
+            metadata: [String: String] = [:]
+        ) {
+            self.content = content
+            self.tags = tags
+            self.metadata = metadata
+        }
     }
 }
 
-public struct ColonyMemoryRememberResult: Sendable, Codable, Equatable {
-    public var id: String
+// MARK: - ColonyMemory.RememberResult
 
-    public init(id: String) {
-        self.id = id
+extension ColonyMemory {
+    public struct RememberResult: Sendable, Codable, Equatable {
+        public var id: String
+
+        public init(id: String) {
+            self.id = id
+        }
     }
 }
+
+// MARK: - ColonyMemoryBackend (top-level protocol)
 
 public protocol ColonyMemoryBackend: Sendable {
-    func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult
-    func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult
+    func recall(_ request: ColonyMemory.RecallRequest) async throws -> ColonyMemory.RecallResult
+    func remember(_ request: ColonyMemory.RememberRequest) async throws -> ColonyMemory.RememberResult
 }
+
+// MARK: - In-Memory Backend
 
 package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
     private struct StoredMemory: Sendable {
@@ -82,7 +109,7 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
 
     package init(
         nextID: UInt64 = 1,
-        items: [ColonyMemoryItem] = []
+        items: [ColonyMemory.Item] = []
     ) {
         let seededNextID = Self.nextIDFloor(from: items)
         self.nextID = max(1, max(nextID, seededNextID))
@@ -96,7 +123,7 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         }
     }
 
-    package func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
+    package func recall(_ request: ColonyMemory.RecallRequest) async throws -> ColonyMemory.RecallResult {
         let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let limit = min(100, max(1, request.limit ?? 5))
 
@@ -119,7 +146,7 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         }
 
         let recallItems = sorted.prefix(limit).map { ranked in
-            ColonyMemoryItem(
+            ColonyMemory.Item(
                 id: ranked.item.id,
                 content: ranked.item.content,
                 tags: ranked.item.tags,
@@ -127,10 +154,10 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
                 score: ranked.score
             )
         }
-        return ColonyMemoryRecallResult(items: recallItems)
+        return ColonyMemory.RecallResult(items: recallItems)
     }
 
-    package func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
+    package func remember(_ request: ColonyMemory.RememberRequest) async throws -> ColonyMemory.RememberResult {
         let id = "mem-" + String(nextID)
         nextID += 1
 
@@ -142,7 +169,7 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
                 metadata: request.metadata
             )
         )
-        return ColonyMemoryRememberResult(id: id)
+        return ColonyMemory.RememberResult(id: id)
     }
 
     private func score(query: String, item: StoredMemory) -> Double {
@@ -177,7 +204,7 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         return Set(components.map(String.init).filter { $0.isEmpty == false })
     }
 
-    private static func nextIDFloor(from items: [ColonyMemoryItem]) -> UInt64 {
+    private static func nextIDFloor(from items: [ColonyMemory.Item]) -> UInt64 {
         let maxExisting = items.reduce(0 as UInt64) { currentMax, item in
             guard item.id.hasPrefix("mem-") else { return currentMax }
             let suffix = item.id.dropFirst("mem-".count)
@@ -187,3 +214,4 @@ package actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         return maxExisting + 1
     }
 }
+

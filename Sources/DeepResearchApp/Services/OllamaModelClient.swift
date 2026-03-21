@@ -22,7 +22,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
     func stream(_ request: ColonyModelRequest) -> AsyncThrowingStream<ColonyModelStreamChunk, Error> {
         let ollamaMessages = request.messages.compactMap { convertMessage($0) }
         let ollamaTools: [OllamaToolDef]? = request.tools.isEmpty ? nil : request.tools.map { convertToolDefinition($0) }
-        let model = request.model.isEmpty ? modelName : request.model
+        let model = request.model.rawValue.isEmpty ? modelName : request.model.rawValue
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -55,7 +55,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
                         if chunk.done {
                             let hiveToolCalls = accumulatedToolCalls.map { convertToolCall($0) }
                             let message = ColonyChatMessage(
-                                id: UUID().uuidString,
+                                id: ColonyMessageID(UUID().uuidString),
                                 role: .assistant,
                                 content: accumulatedContent,
                                 toolCalls: hiveToolCalls
@@ -69,7 +69,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
 
                     // If we exit the loop without a done chunk, emit final with what we have.
                     let message = ColonyChatMessage(
-                        id: UUID().uuidString,
+                        id: ColonyMessageID(UUID().uuidString),
                         role: .assistant,
                         content: accumulatedContent,
                         toolCalls: accumulatedToolCalls.map { convertToolCall($0) }
@@ -132,7 +132,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
     private func convertToolDefinition(_ tool: ColonyToolDefinition) -> OllamaToolDef {
         OllamaToolDef(
             function: OllamaToolFunction(
-                name: tool.name,
+                name: tool.name.rawValue,
                 description: tool.description,
                 parameters: OllamaJSONValue.from(jsonString: tool.parametersJSONSchema)
             )
@@ -151,7 +151,7 @@ struct OllamaModelClient: ColonyModelClient, ColonyCapabilityReportingModelClien
         }
 
         return ColonyToolCall(
-            id: UUID().uuidString,
+            id: ColonyToolCallID(UUID().uuidString),
             name: ColonyToolName(rawValue: wrapper.function.name),
             argumentsJSON: argumentsJSON
         )

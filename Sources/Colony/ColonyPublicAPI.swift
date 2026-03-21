@@ -36,18 +36,46 @@ public struct ColonyModel: Sendable {
             case requireOnDevice
         }
 
-        public var privacyBehavior: PrivacyBehavior
-        public var preferOnDeviceWhenOffline: Bool
-        public var preferOnDeviceWhenMetered: Bool
+        public enum NetworkBehavior: Sendable, Equatable {
+            /// Always fall back to cloud when on-device is unavailable.
+            case alwaysFallback
+            /// Prefer on-device when the network is offline.
+            case preferOnDeviceWhenOffline
+            /// Prefer on-device when the network is metered.
+            case preferOnDeviceWhenMetered
+            /// Prefer on-device when either offline or metered (default).
+            case preferOnDeviceWhenOfflineOrMetered
+        }
 
+        public var privacyBehavior: PrivacyBehavior
+        public var networkBehavior: NetworkBehavior
+
+        public init(
+            privacyBehavior: PrivacyBehavior = .preferOnDevice,
+            networkBehavior: NetworkBehavior = .preferOnDeviceWhenOfflineOrMetered
+        ) {
+            self.privacyBehavior = privacyBehavior
+            self.networkBehavior = networkBehavior
+        }
+
+        /// Deprecated: Use `init(privacyBehavior:networkBehavior:)` instead.
+        @available(*, deprecated, message: "Use init(privacyBehavior:networkBehavior:) instead")
         public init(
             privacyBehavior: PrivacyBehavior = .preferOnDevice,
             preferOnDeviceWhenOffline: Bool = true,
             preferOnDeviceWhenMetered: Bool = true
         ) {
             self.privacyBehavior = privacyBehavior
-            self.preferOnDeviceWhenOffline = preferOnDeviceWhenOffline
-            self.preferOnDeviceWhenMetered = preferOnDeviceWhenMetered
+            switch (preferOnDeviceWhenOffline, preferOnDeviceWhenMetered) {
+            case (true, true):
+                self.networkBehavior = .preferOnDeviceWhenOfflineOrMetered
+            case (true, false):
+                self.networkBehavior = .preferOnDeviceWhenOffline
+            case (false, true):
+                self.networkBehavior = .preferOnDeviceWhenMetered
+            case (false, false):
+                self.networkBehavior = .alwaysFallback
+            }
         }
     }
 
@@ -72,7 +100,7 @@ public struct ColonyModel: Sendable {
         public let capabilities: ColonyModelCapabilities
         public let priority: Int
         public let maxRequestsPerMinute: Int?
-        public let usdPer1KTokens: Double?
+        public let usdPer1KTokens: ColonyCost?
 
         public init(
             id: ProviderID,
@@ -80,7 +108,7 @@ public struct ColonyModel: Sendable {
             capabilities: ColonyModelCapabilities = [],
             priority: Int = 0,
             maxRequestsPerMinute: Int? = nil,
-            usdPer1KTokens: Double? = nil
+            usdPer1KTokens: ColonyCost? = nil
         ) {
             self.id = id
             self.client = client
@@ -98,25 +126,25 @@ public struct ColonyModel: Sendable {
         }
 
         public var maxAttemptsPerProvider: Int
-        public var initialBackoffNanoseconds: UInt64
-        public var maxBackoffNanoseconds: UInt64
+        public var initialBackoff: Duration
+        public var maxBackoff: Duration
         public var globalMaxRequestsPerMinute: Int?
-        public var costCeilingUSD: Double?
+        public var costCeilingUSD: ColonyCost?
         public var estimatedOutputToInputRatio: Double
         public var gracefulDegradation: GracefulDegradationPolicy
 
         public init(
             maxAttemptsPerProvider: Int = 2,
-            initialBackoffNanoseconds: UInt64 = 100_000_000,
-            maxBackoffNanoseconds: UInt64 = 1_000_000_000,
+            initialBackoff: Duration = .milliseconds(100),
+            maxBackoff: Duration = .seconds(1),
             globalMaxRequestsPerMinute: Int? = nil,
-            costCeilingUSD: Double? = nil,
+            costCeilingUSD: ColonyCost? = nil,
             estimatedOutputToInputRatio: Double = 0.5,
             gracefulDegradation: GracefulDegradationPolicy = .fail
         ) {
             self.maxAttemptsPerProvider = max(1, maxAttemptsPerProvider)
-            self.initialBackoffNanoseconds = max(1, initialBackoffNanoseconds)
-            self.maxBackoffNanoseconds = max(self.initialBackoffNanoseconds, maxBackoffNanoseconds)
+            self.initialBackoff = initialBackoff
+            self.maxBackoff = max(initialBackoff, maxBackoff)
             self.globalMaxRequestsPerMinute = globalMaxRequestsPerMinute
             self.costCeilingUSD = costCeilingUSD
             self.estimatedOutputToInputRatio = max(0, estimatedOutputToInputRatio)
@@ -193,19 +221,6 @@ public struct ColonyModel: Sendable {
     }
 }
 
-// MARK: - Backward-Compatible Typealiases
-
-@available(*, deprecated, renamed: "ColonyModel.FoundationModelConfiguration")
-public typealias ColonyFoundationModelConfiguration = ColonyModel.FoundationModelConfiguration
-@available(*, deprecated, renamed: "ColonyModel.OnDevicePolicy")
-public typealias ColonyOnDeviceModelPolicy = ColonyModel.OnDevicePolicy
-@available(*, deprecated, renamed: "ColonyModel.ProviderID")
-public typealias ColonyProviderID = ColonyModel.ProviderID
-@available(*, deprecated, renamed: "ColonyModel.Provider")
-public typealias ColonyProvider = ColonyModel.Provider
-@available(*, deprecated, renamed: "ColonyModel.RoutingPolicy")
-public typealias ColonyProviderRoutingPolicy = ColonyModel.RoutingPolicy
-
 public struct ColonyRuntimeServices: Sendable {
     public var tools: (any ColonyToolRegistry)?
     package var swarmTools: (any ColonySwarmToolBridging)?
@@ -275,26 +290,26 @@ public struct ColonyRuntimeServices: Sendable {
 package struct ColonyRuntimeCreationOptions: Sendable {
     package var profile: ColonyProfile
     package var threadID: ColonyThreadID
-    package var modelName: String
+    package var modelName: ColonyModelName
     package var lane: ColonyLane?
     package var intent: String?
     package var model: ColonyModel
     package var services: ColonyRuntimeServices
-    package var checkpointing: ColonyCheckpointConfiguration
+    package var checkpointing: ColonyRun.CheckpointConfiguration
     package var configure: @Sendable (inout ColonyConfiguration) -> Void
-    package var configureRunOptions: @Sendable (inout ColonyRunOptions) -> Void
+    package var configureRunOptions: @Sendable (inout ColonyRun.Options) -> Void
 
     package init(
         profile: ColonyProfile = .onDevice4k,
         threadID: ColonyThreadID = ColonyThreadID("colony:" + UUID().uuidString),
-        modelName: String,
+        modelName: ColonyModelName,
         lane: ColonyLane? = nil,
         intent: String? = nil,
         model: ColonyModel,
         services: ColonyRuntimeServices = ColonyRuntimeServices(),
-        checkpointing: ColonyCheckpointConfiguration = .inMemory,
+        checkpointing: ColonyRun.CheckpointConfiguration = .inMemory,
         configure: @escaping @Sendable (inout ColonyConfiguration) -> Void = { _ in },
-        configureRunOptions: @escaping @Sendable (inout ColonyRunOptions) -> Void = { _ in }
+        configureRunOptions: @escaping @Sendable (inout ColonyRun.Options) -> Void = { _ in }
     ) {
         self.profile = profile
         self.threadID = threadID

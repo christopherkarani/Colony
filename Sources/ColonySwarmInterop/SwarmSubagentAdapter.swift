@@ -8,7 +8,7 @@ import Swarm
 /// This adapter maps Colony subagent requests to Swarm agent execution:
 /// - `listSubagents()` returns descriptors for all registered Swarm agents.
 /// - `run(_:)` routes the request to the named agent (or the first available)
-///   and returns the agent's output as a `ColonySubagentResult`.
+///   and returns the agent's output as a `ColonySubagent.Result`.
 ///
 /// Swarm agents execute with their own tools, memory, and inference providers,
 /// independent of Colony's graph. This adapter bridges the result back into
@@ -32,9 +32,6 @@ import Swarm
 ///     subagents: adapter
 /// ))
 /// ```
-@available(*, deprecated, renamed: "ColonySwarmSubagentAdapter")
-public typealias SwarmSubagentAdapter = ColonySwarmSubagentAdapter
-
 public struct ColonySwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
     private let agents: [(name: String, agent: any AgentRuntime, description: String)]
 
@@ -45,14 +42,14 @@ public struct ColonySwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
         self.agents = agents
     }
 
-    public func listSubagents() -> [ColonySubagentDescriptor] {
+    public func listSubagents() -> [ColonySubagent.Descriptor] {
         agents.map { entry in
-            ColonySubagentDescriptor(name: entry.name, description: entry.description)
+            ColonySubagent.Descriptor(name: entry.name, description: entry.description)
         }
     }
 
-    public func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
-        let targetName = request.subagentType.trimmingCharacters(in: .whitespacesAndNewlines)
+    public func run(_ request: ColonySubagent.Request) async throws -> ColonySubagent.Result {
+        let targetName = request.subagentType.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Find the agent by name, or fall back to the first registered agent.
         guard let entry = agents.first(where: { $0.name == targetName }) ?? agents.first else {
@@ -61,10 +58,10 @@ public struct ColonySwarmSubagentAdapter: ColonySubagentRegistry, Sendable {
 
         let prompt = buildPrompt(from: request)
         let result = try await entry.agent.run(prompt)
-        return ColonySubagentResult(content: result.output)
+        return ColonySubagent.Result(content: result.output)
     }
 
-    private func buildPrompt(from request: ColonySubagentRequest) -> String {
+    private func buildPrompt(from request: ColonySubagent.Request) -> String {
         var sections: [String] = [request.prompt]
 
         if let context = request.context {

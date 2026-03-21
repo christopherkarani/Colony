@@ -1,62 +1,68 @@
 import Foundation
 
-public enum ColonyControlPlaneTransportKind: String, Codable, Sendable {
-    case rest
-    case sse
-    case webSocket = "web_socket"
-}
+/// Namespace for all Colony control-plane domain types.
+public enum ControlPlane {}
 
-public enum ColonyControlPlaneHTTPMethod: String, Codable, Sendable {
-    case get = "GET"
-    case post = "POST"
-    case delete = "DELETE"
-}
+// MARK: - Nested Types
 
-public enum ColonyControlPlaneOperation: String, Codable, Sendable, CaseIterable {
-    case createProject = "project.create"
-    case getProject = "project.get"
-    case listProjects = "project.list"
-    case deleteProject = "project.delete"
+extension ControlPlane {
+    public enum TransportKind: String, Codable, Sendable {
+        case rest
+        case sse
+        case webSocket = "web_socket"
+    }
 
-    case createSession = "session.create"
-    case getSession = "session.get"
-    case listSessions = "session.list"
-    case deleteSession = "session.delete"
-    case forkSession = "session.fork"
-    case revertSession = "session.revert"
-    case shareSession = "session.share"
+    public enum HTTPMethod: String, Codable, Sendable {
+        case get = "GET"
+        case post = "POST"
+        case delete = "DELETE"
+    }
 
-    case streamSessionEventsSSE = "session.events.sse"
-    case streamSessionEventsWebSocket = "session.events.websocket"
-}
+    public enum Operation: String, Codable, Sendable, CaseIterable {
+        case createProject = "project.create"
+        case getProject = "project.get"
+        case listProjects = "project.list"
+        case deleteProject = "project.delete"
 
-public struct ColonyControlPlaneRouteDescriptor: Codable, Equatable, Sendable {
-    public let operation: ColonyControlPlaneOperation
-    public let transport: ColonyControlPlaneTransportKind
-    public let path: String
-    public let method: ColonyControlPlaneHTTPMethod?
-    public let streamEvent: String?
+        case createSession = "session.create"
+        case getSession = "session.get"
+        case listSessions = "session.list"
+        case deleteSession = "session.delete"
+        case forkSession = "session.fork"
+        case revertSession = "session.revert"
+        case shareSession = "session.share"
 
-    public init(
-        operation: ColonyControlPlaneOperation,
-        transport: ColonyControlPlaneTransportKind,
-        path: String,
-        method: ColonyControlPlaneHTTPMethod? = nil,
-        streamEvent: String? = nil
-    ) {
-        self.operation = operation
-        self.transport = transport
-        self.path = path
-        self.method = method
-        self.streamEvent = streamEvent
+        case streamSessionEventsSSE = "session.events.sse"
+        case streamSessionEventsWebSocket = "session.events.websocket"
+    }
+
+    public struct RouteDescriptor: Codable, Equatable, Sendable {
+        public let operation: ControlPlane.Operation
+        public let transport: ControlPlane.TransportKind
+        public let path: String
+        public let method: ControlPlane.HTTPMethod?
+        public let streamEvent: String?
+
+        public init(
+            operation: ControlPlane.Operation,
+            transport: ControlPlane.TransportKind,
+            path: String,
+            method: ControlPlane.HTTPMethod? = nil,
+            streamEvent: String? = nil
+        ) {
+            self.operation = operation
+            self.transport = transport
+            self.path = path
+            self.method = method
+            self.streamEvent = streamEvent
+        }
     }
 }
 
-public protocol ColonyControlPlaneTransport: Sendable {
-    var transportKind: ColonyControlPlaneTransportKind { get }
-    func register(routes: [ColonyControlPlaneRouteDescriptor]) async throws
+// MARK: - Protocol (top-level, protocols cannot be nested)
+
+public protocol ControlPlaneTransport: Sendable {
+    var transportKind: ControlPlane.TransportKind { get }
+    func register(routes: [ControlPlane.RouteDescriptor]) async throws
 }
 
-public protocol ColonyControlPlaneRESTTransport: ColonyControlPlaneTransport {}
-public protocol ColonyControlPlaneSSETransport: ColonyControlPlaneTransport {}
-public protocol ColonyControlPlaneWebSocketTransport: ColonyControlPlaneTransport {}

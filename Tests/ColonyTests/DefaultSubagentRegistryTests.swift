@@ -257,10 +257,8 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
     )
 
     let configuration = ColonyConfiguration(
-        capabilities: [.subagents],
-        modelName: "test-parent-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        model: .init(name: "test-parent-model", capabilities: [.subagents]),
+        safety: .init(toolApprovalPolicy: .never, mandatoryApprovalRiskLevels: [])
     )
     let context = ColonyContext(
         configuration: configuration,
@@ -320,10 +318,8 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
     )
 
     let configuration = ColonyConfiguration(
-        capabilities: [.subagents],
-        modelName: "test-parent-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        model: .init(name: "test-parent-model", capabilities: [.subagents]),
+        safety: .init(toolApprovalPolicy: .never, mandatoryApprovalRiskLevels: [])
     )
     let context = ColonyContext(
         configuration: configuration,

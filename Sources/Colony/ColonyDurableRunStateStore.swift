@@ -57,7 +57,7 @@ package actor ColonyDurableRunStateStore {
     }
 
     package func appendEvent(
-        _ envelope: ColonyHarnessEventEnvelope,
+        _ envelope: ColonyHarness.EventEnvelope,
         threadID: HiveThreadID
     ) async throws {
         let runDirectory = runDirectoryURL(runID: envelope.runID)
@@ -119,7 +119,7 @@ package actor ColonyDurableRunStateStore {
         return snapshots
     }
 
-    package func loadEvents(runID: UUID, limit: Int? = nil) async throws -> [ColonyHarnessEventEnvelope] {
+    package func loadEvents(runID: UUID, limit: Int? = nil) async throws -> [ColonyHarness.EventEnvelope] {
         if let limit, limit <= 0 {
             return []
         }
@@ -136,10 +136,10 @@ package actor ColonyDurableRunStateStore {
             selectedFiles = files
         }
 
-        var events: [ColonyHarnessEventEnvelope] = []
+        var events: [ColonyHarness.EventEnvelope] = []
         events.reserveCapacity(selectedFiles.count)
         for file in selectedFiles {
-            events.append(try ColonyPersistenceIO.readJSON(ColonyHarnessEventEnvelope.self, from: file, decoder: decoder))
+            events.append(try ColonyPersistenceIO.readJSON(ColonyHarness.EventEnvelope.self, from: file, decoder: decoder))
         }
         return events
     }
@@ -183,7 +183,7 @@ package actor ColonyDurableRunStateStore {
         }
     }
 
-    private func phase(for eventType: ColonyHarnessEventType, fallback: ColonyRunPhase) -> ColonyRunPhase {
+    private func phase(for eventType: ColonyHarness.EventType, fallback: ColonyRunPhase) -> ColonyRunPhase {
         switch eventType {
         case .runStarted, .runResumed:
             return .running

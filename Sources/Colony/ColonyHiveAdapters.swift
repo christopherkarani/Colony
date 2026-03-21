@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-extension ColonyID where Domain == ColonyID.Thread {
+extension ColonyID where Domain == ColonyIDDomain.Thread {
     package init(_ hive: HiveThreadID) {
         self.init(hive.rawValue)
     }
@@ -12,7 +12,7 @@ extension ColonyID where Domain == ColonyID.Thread {
     }
 }
 
-extension ColonyID where Domain == ColonyID.Interrupt {
+extension ColonyID where Domain == ColonyIDDomain.Interrupt {
     package init(_ hive: HiveInterruptID) {
         self.init(hive.rawValue)
     }
@@ -70,10 +70,10 @@ extension ColonyChatMessageOperation {
     }
 }
 
-extension ColonyToolDefinition {
+extension ColonyTool.Definition {
     package init(_ hive: HiveToolDefinition) {
         self.init(
-            name: ColonyToolName(rawValue: hive.name),
+            name: ColonyTool.Name(rawValue: hive.name),
             description: hive.description,
             parametersJSONSchema: hive.parametersJSONSchema
         )
@@ -88,34 +88,34 @@ extension ColonyToolDefinition {
     }
 }
 
-extension ColonyToolCall {
+extension ColonyTool.Call {
     package init(_ hive: HiveToolCall) {
         self.init(
-            id: hive.id,
-            name: ColonyToolName(rawValue: hive.name),
+            id: ColonyToolCallID(hive.id),
+            name: ColonyTool.Name(rawValue: hive.name),
             argumentsJSON: hive.argumentsJSON
         )
     }
 
     package var hive: HiveToolCall {
         HiveToolCall(
-            id: id,
+            id: id.rawValue,
             name: name.rawValue,
             argumentsJSON: argumentsJSON
         )
     }
 }
 
-extension ColonyToolResult {
+extension ColonyTool.Result {
     package init(_ hive: HiveToolResult) {
         self.init(
-            toolCallID: hive.toolCallID,
+            toolCallID: ColonyToolCallID(hive.toolCallID),
             content: hive.content
         )
     }
 
     package var hive: HiveToolResult {
-        HiveToolResult(toolCallID: toolCallID, content: content)
+        HiveToolResult(toolCallID: toolCallID.rawValue, content: content)
     }
 }
 
@@ -152,12 +152,12 @@ extension ColonyStructuredOutputPayload {
 extension ColonyChatMessage {
     package init(_ hive: HiveChatMessage) {
         self.init(
-            id: hive.id,
+            id: ColonyMessageID(hive.id),
             role: ColonyChatRole(hive.role),
             content: hive.content,
-            name: hive.name,
-            toolCallID: hive.toolCallID,
-            toolCalls: hive.toolCalls.map(ColonyToolCall.init),
+            name: hive.name.map { ColonyTool.Name(rawValue: $0) },
+            toolCallID: hive.toolCallID.map { ColonyToolCallID($0) },
+            toolCalls: hive.toolCalls.map(ColonyTool.Call.init),
             structuredOutput: hive.structuredOutput.map(ColonyStructuredOutputPayload.init),
             operation: hive.op.map(ColonyChatMessageOperation.init)
         )
@@ -165,11 +165,11 @@ extension ColonyChatMessage {
 
     package var hive: HiveChatMessage {
         HiveChatMessage(
-            id: id,
+            id: id.rawValue,
             role: role.hive,
             content: content,
-            name: name,
-            toolCallID: toolCallID,
+            name: name?.rawValue,
+            toolCallID: toolCallID?.rawValue,
             toolCalls: toolCalls.map(\.hive),
             structuredOutput: structuredOutput?.hive,
             op: operation?.hive
@@ -180,16 +180,16 @@ extension ColonyChatMessage {
 extension ColonyModelRequest {
     package init(_ hive: HiveChatRequest) {
         self.init(
-            model: hive.model,
+            model: ColonyModelName(rawValue: hive.model),
             messages: hive.messages.map(ColonyChatMessage.init),
-            tools: hive.tools.map(ColonyToolDefinition.init),
+            tools: hive.tools.map(ColonyTool.Definition.init),
             structuredOutput: hive.structuredOutput.map(ColonyStructuredOutput.init)
         )
     }
 
     package var hive: HiveChatRequest {
         HiveChatRequest(
-            model: model,
+            model: model.rawValue,
             messages: messages.map(\.hive),
             tools: tools.map(\.hive),
             structuredOutput: structuredOutput?.hive
@@ -276,7 +276,7 @@ extension ColonyInferenceHints {
         self.init(
             latencyTier: ColonyLatencyTier(hive.latencyTier),
             privacyRequired: hive.privacyRequired,
-            tokenBudget: hive.tokenBudget,
+            tokenBudget: hive.tokenBudget.map { ColonyTokenCount($0) },
             networkState: ColonyNetworkState(hive.networkState)
         )
     }
@@ -285,13 +285,13 @@ extension ColonyInferenceHints {
         HiveInferenceHints(
             latencyTier: latencyTier.hive,
             privacyRequired: privacyRequired,
-            tokenBudget: tokenBudget,
+            tokenBudget: tokenBudget?.rawValue,
             networkState: networkState.hive
         )
     }
 }
 
-extension ColonyRunCheckpointPolicy {
+extension ColonyRun.CheckpointPolicy {
     package init(_ hive: HiveCheckpointPolicy) {
         switch hive {
         case .disabled:
@@ -319,7 +319,7 @@ extension ColonyRunCheckpointPolicy {
     }
 }
 
-extension ColonyRunStreamingMode {
+extension ColonyRun.StreamingMode {
     package init(_ hive: HiveStreamingMode) {
         switch hive {
         case .events:
@@ -347,16 +347,16 @@ extension ColonyRunStreamingMode {
     }
 }
 
-extension ColonyRunOptions {
+extension ColonyRun.Options {
     package init(_ hive: HiveRunOptions) {
         self.init(
             maxSteps: hive.maxSteps,
             maxConcurrentTasks: hive.maxConcurrentTasks,
-            checkpointPolicy: ColonyRunCheckpointPolicy(hive.checkpointPolicy),
+            checkpointPolicy: ColonyRun.CheckpointPolicy(hive.checkpointPolicy),
             debugPayloads: hive.debugPayloads,
             deterministicTokenStreaming: hive.deterministicTokenStreaming,
             eventBufferCapacity: hive.eventBufferCapacity,
-            streamingMode: ColonyRunStreamingMode(hive.streamingMode)
+            streamingMode: ColonyRun.StreamingMode(hive.streamingMode)
         )
     }
 
@@ -414,6 +414,6 @@ package struct ColonyHiveToolRegistryAdapter: HiveToolRegistry, Sendable {
     }
 
     package func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        try await base.invoke(ColonyToolCall(call)).hive
+        try await base.invoke(ColonyTool.Call(call)).hive
     }
 }

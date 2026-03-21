@@ -43,9 +43,9 @@ extension Colony {
     /// - Returns: A ready-to-use `ColonyRuntime`
     public static func agent(
         model: ColonyModel,
-        capabilities: ColonyRuntimeCapabilities = .default,
+        capabilities: ColonyAgentCapabilities = .default,
         threadID: ColonyThreadID = ColonyThreadID("colony:" + UUID().uuidString),
-        @ColonyServiceBuilder services: () -> [ColonyService]
+        @ColonyServiceBuilder services: @Sendable () -> [ColonyService]
     ) async throws -> ColonyRuntime {
         let runtimeServices = ColonyRuntimeServices(services)
         return try await ColonyBootstrap().makeRuntime(
@@ -69,12 +69,12 @@ extension Colony {
         model: ColonyModel,
         profile: ColonyProfile = .onDevice4k,
         lane: ColonyLane? = nil,
-        capabilities: ColonyRuntimeCapabilities = .default,
+        capabilities: ColonyAgentCapabilities = .default,
         threadID: ColonyThreadID = ColonyThreadID("colony:" + UUID().uuidString),
-        checkpointing: ColonyCheckpointConfiguration = .inMemory,
-        @ColonyServiceBuilder services: () -> [ColonyService] = { [] },
+        checkpointing: ColonyRun.CheckpointConfiguration = .inMemory,
+        @ColonyServiceBuilder services: @Sendable () -> [ColonyService] = { [] },
         configure: @escaping @Sendable (inout ColonyConfiguration) -> Void = { _ in },
-        configureRunOptions: @escaping @Sendable (inout ColonyRunOptions) -> Void = { _ in }
+        configureRunOptions: @escaping @Sendable (inout ColonyRun.Options) -> Void = { _ in }
     ) async throws -> ColonyRuntime {
         let runtimeServices = ColonyRuntimeServices(services)
         return try await ColonyBootstrap().makeRuntime(
@@ -107,8 +107,8 @@ extension ColonyRuntime {
     /// ```
     public func send(
         _ text: String,
-        optionsOverride: ColonyRunOptions? = nil
-    ) async -> ColonyRunHandle {
+        optionsOverride: ColonyRun.Options? = nil
+    ) async -> ColonyRun.Handle {
         await sendUserMessage(text, optionsOverride: optionsOverride)
     }
 }

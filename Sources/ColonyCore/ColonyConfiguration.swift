@@ -5,7 +5,7 @@ public struct ColonyConfiguration: Sendable {
     public var prompts: PromptConfiguration
 
     // MARK: - Tier 1: Minimal init
-    public init(modelName: String) {
+    public init(modelName: ColonyModelName) {
         self.model = ModelConfiguration(name: modelName)
         self.safety = .default
         self.context = .default
@@ -14,9 +14,9 @@ public struct ColonyConfiguration: Sendable {
 
     // MARK: - Tier 2: Common customization
     public init(
-        modelName: String,
-        capabilities: ColonyRuntimeCapabilities = .default,
-        toolApprovalPolicy: ColonyToolApprovalPolicy = .allowList(["ls", "read_file", "glob", "grep", "read_todos", "write_todos"]),
+        modelName: ColonyModelName,
+        capabilities: ColonyAgentCapabilities = .default,
+        toolApprovalPolicy: ColonyToolApproval.Policy = .allowList([.ls, .readFile, .glob, .grep, .readTodos, .writeTodos]),
         structuredOutput: ColonyStructuredOutput? = nil
     ) {
         self.model = ModelConfiguration(name: modelName, capabilities: capabilities, structuredOutput: structuredOutput)
@@ -41,13 +41,13 @@ public struct ColonyConfiguration: Sendable {
     // MARK: - Nested Configuration Groups
 
     public struct ModelConfiguration: Sendable {
-        public var name: String
-        public var capabilities: ColonyRuntimeCapabilities
+        public var name: ColonyModelName
+        public var capabilities: ColonyAgentCapabilities
         public var structuredOutput: ColonyStructuredOutput?
 
         public init(
-            name: String,
-            capabilities: ColonyRuntimeCapabilities = .default,
+            name: ColonyModelName,
+            capabilities: ColonyAgentCapabilities = .default,
             structuredOutput: ColonyStructuredOutput? = nil
         ) {
             self.name = name
@@ -57,24 +57,24 @@ public struct ColonyConfiguration: Sendable {
     }
 
     public struct SafetyConfiguration: Sendable {
-        public var toolApprovalPolicy: ColonyToolApprovalPolicy
+        public var toolApprovalPolicy: ColonyToolApproval.Policy
         public var toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)?
-        public var toolRiskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel]
-        public var toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata]
-        public var mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel>
-        public var defaultToolRiskLevel: ColonyToolRiskLevel
-        public var toolAuditRecorder: ColonyToolAuditRecorder?
+        public var toolRiskLevelOverrides: [ColonyTool.Name: ColonyTool.RiskLevel]
+        public var toolPolicyMetadataByName: [ColonyTool.Name: ColonyTool.PolicyMetadata]
+        public var mandatoryApprovalRiskLevels: Set<ColonyTool.RiskLevel>
+        public var defaultToolRiskLevel: ColonyTool.RiskLevel
+        public var toolAuditRecorder: ColonyToolAudit.Recorder?
 
         public static let `default` = SafetyConfiguration()
 
         public init(
-            toolApprovalPolicy: ColonyToolApprovalPolicy = .allowList(["ls", "read_file", "glob", "grep", "read_todos", "write_todos"]),
+            toolApprovalPolicy: ColonyToolApproval.Policy = .allowList([.ls, .readFile, .glob, .grep, .readTodos, .writeTodos]),
             toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)? = nil,
-            toolRiskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel] = [:],
-            toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata] = [:],
-            mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel> = [.mutation, .execution, .network],
-            defaultToolRiskLevel: ColonyToolRiskLevel = .readOnly,
-            toolAuditRecorder: ColonyToolAuditRecorder? = nil
+            toolRiskLevelOverrides: [ColonyTool.Name: ColonyTool.RiskLevel] = [:],
+            toolPolicyMetadataByName: [ColonyTool.Name: ColonyTool.PolicyMetadata] = [:],
+            mandatoryApprovalRiskLevels: Set<ColonyTool.RiskLevel> = [.mutation, .execution, .network],
+            defaultToolRiskLevel: ColonyTool.RiskLevel = .readOnly,
+            toolAuditRecorder: ColonyToolAudit.Recorder? = nil
         ) {
             self.toolApprovalPolicy = toolApprovalPolicy
             self.toolApprovalRuleStore = toolApprovalRuleStore
@@ -111,20 +111,20 @@ public struct ColonyConfiguration: Sendable {
     }
 
     public struct PromptConfiguration: Sendable {
-        public var toolPromptStrategy: ColonyToolPromptStrategy
+        public var toolPromptStrategy: ColonyTool.PromptStrategy
         public var additionalSystemPrompt: String?
-        public var memorySources: [ColonyVirtualPath]
-        public var skillSources: [ColonyVirtualPath]
+        public var memorySources: [ColonyFileSystem.VirtualPath]
+        public var skillSources: [ColonyFileSystem.VirtualPath]
         public var systemPromptMemoryTokenLimit: Int?
         public var systemPromptSkillsTokenLimit: Int?
 
         public static let `default` = PromptConfiguration()
 
         public init(
-            toolPromptStrategy: ColonyToolPromptStrategy = .automatic,
+            toolPromptStrategy: ColonyTool.PromptStrategy = .automatic,
             additionalSystemPrompt: String? = nil,
-            memorySources: [ColonyVirtualPath] = [],
-            skillSources: [ColonyVirtualPath] = [],
+            memorySources: [ColonyFileSystem.VirtualPath] = [],
+            skillSources: [ColonyFileSystem.VirtualPath] = [],
             systemPromptMemoryTokenLimit: Int? = nil,
             systemPromptSkillsTokenLimit: Int? = nil
         ) {

@@ -30,9 +30,6 @@ import Swarm
 ///     memory: adapter
 /// ))
 /// ```
-@available(*, deprecated, renamed: "ColonySwarmMemoryAdapter")
-public typealias SwarmMemoryAdapter = ColonySwarmMemoryAdapter
-
 public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
     private let memory: any Memory
 
@@ -59,7 +56,7 @@ public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
         )
     }
 
-    public func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
+    public func recall(_ request: ColonyMemory.RecallRequest) async throws -> ColonyMemory.RecallResult {
         let limit = request.limit ?? 5
         let normalizedLimit = min(100, max(1, limit))
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,7 +80,7 @@ public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
                 }
                 .prefix(normalizedLimit)
                 .map { entry in
-                    ColonyMemoryItem(
+                    ColonyMemory.Item(
                         id: entry.message.id.uuidString,
                         content: entry.message.formattedContent,
                         tags: Self.tags(from: entry.message.metadata),
@@ -91,17 +88,17 @@ public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
                         score: entry.score
                     )
                 }
-            return ColonyMemoryRecallResult(items: items)
+            return ColonyMemory.RecallResult(items: items)
         }
 
-        guard messages.isEmpty else { return ColonyMemoryRecallResult(items: []) }
+        guard messages.isEmpty else { return ColonyMemory.RecallResult(items: []) }
 
         let tokenBudget = normalizedLimit * 800
         let context = await memory.context(for: request.query, tokenLimit: tokenBudget)
-        guard !context.isEmpty else { return ColonyMemoryRecallResult(items: []) }
+        guard !context.isEmpty else { return ColonyMemory.RecallResult(items: []) }
 
-        return ColonyMemoryRecallResult(items: [
-            ColonyMemoryItem(
+        return ColonyMemory.RecallResult(items: [
+            ColonyMemory.Item(
                 id: "swarm-recall",
                 content: context,
                 tags: [],
@@ -111,7 +108,7 @@ public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
         ])
     }
 
-    public func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
+    public func remember(_ request: ColonyMemory.RememberRequest) async throws -> ColonyMemory.RememberResult {
         var metadata = request.metadata
         for tag in request.tags {
             metadata["tag:\(tag)"] = tag
@@ -125,7 +122,7 @@ public struct ColonySwarmMemoryAdapter: ColonyMemoryBackend, Sendable {
         )
         await memory.add(message)
 
-        return ColonyMemoryRememberResult(id: message.id.uuidString)
+        return ColonyMemory.RememberResult(id: message.id.uuidString)
     }
 
     private static func score(query: String, message: MemoryMessage) -> Double {

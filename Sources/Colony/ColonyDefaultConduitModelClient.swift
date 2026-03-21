@@ -4,7 +4,7 @@ import HiveCore
 import ColonyCore
 
 package struct ColonyDefaultConduitModelClient: HiveModelClient, ColonyCapabilityReportingHiveModelClient, Sendable {
-    package let modelName: String
+    package let modelName: ColonyModelName
 
     package var colonyModelCapabilities: ColonyModelCapabilities {
         []
@@ -14,7 +14,7 @@ package struct ColonyDefaultConduitModelClient: HiveModelClient, ColonyCapabilit
     private let generateConfig: GenerateConfig
 
     package init(
-        modelName: String,
+        modelName: ColonyModelName,
         providerConfiguration: FMConfiguration = .default,
         generateConfig: GenerateConfig = .default
     ) {

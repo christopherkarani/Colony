@@ -1,25 +1,26 @@
 import Foundation
+import ColonyCore
 
-public protocol ColonyProjectStore: Sendable {
-    func createProject(_ input: ColonyProjectCreateInput) async throws -> ColonyProjectRecord
-    func getProject(id: ColonyProjectID) async -> ColonyProjectRecord?
-    func listProjects() async -> [ColonyProjectRecord]
+public protocol ControlPlaneProjectStore: Sendable {
+    func createProject(_ input: ControlPlane.ProjectCreateInput) async throws -> ControlPlane.ProjectRecord
+    func getProject(id: ColonyProjectID) async -> ControlPlane.ProjectRecord?
+    func listProjects() async -> [ControlPlane.ProjectRecord]
     func deleteProject(id: ColonyProjectID) async -> Bool
 }
 
-package actor InMemoryColonyProjectStore: ColonyProjectStore {
-    private var records: [ColonyProjectID: ColonyProjectRecord] = [:]
+package actor InMemoryControlPlaneProjectStore: ControlPlaneProjectStore {
+    private var records: [ColonyProjectID: ControlPlane.ProjectRecord] = [:]
 
     package init() {}
 
-    package func createProject(_ input: ColonyProjectCreateInput) throws -> ColonyProjectRecord {
+    package func createProject(_ input: ControlPlane.ProjectCreateInput) throws -> ControlPlane.ProjectRecord {
         let projectID = input.projectID ?? ColonyProjectID(rawValue: "project:" + UUID().uuidString.lowercased())
         guard records[projectID] == nil else {
-            throw ColonyProjectStoreError.duplicateProjectID(projectID)
+            throw ControlPlane.ProjectStoreError.duplicateProjectID(projectID)
         }
 
         let now = input.createdAt ?? Date()
-        let record = ColonyProjectRecord(
+        let record = ControlPlane.ProjectRecord(
             projectID: projectID,
             name: input.name,
             metadata: input.metadata,
@@ -30,11 +31,11 @@ package actor InMemoryColonyProjectStore: ColonyProjectStore {
         return record
     }
 
-    package func getProject(id: ColonyProjectID) -> ColonyProjectRecord? {
+    package func getProject(id: ColonyProjectID) -> ControlPlane.ProjectRecord? {
         records[id]
     }
 
-    package func listProjects() -> [ColonyProjectRecord] {
+    package func listProjects() -> [ControlPlane.ProjectRecord] {
         records.values.sorted { lhs, rhs in
             if lhs.createdAt == rhs.createdAt {
                 return lhs.projectID.rawValue < rhs.projectID.rawValue
@@ -47,3 +48,4 @@ package actor InMemoryColonyProjectStore: ColonyProjectStore {
         records.removeValue(forKey: id) != nil
     }
 }
+

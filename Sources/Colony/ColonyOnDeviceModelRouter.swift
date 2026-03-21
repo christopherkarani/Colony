@@ -21,19 +21,23 @@ package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityRepor
         case requireOnDevice
     }
 
+    package enum NetworkBehavior: Sendable {
+        case alwaysFallback
+        case preferOnDeviceWhenOffline
+        case preferOnDeviceWhenMetered
+        case preferOnDeviceWhenOfflineOrMetered
+    }
+
     package struct Policy: Sendable {
         package var privacyBehavior: PrivacyBehavior
-        package var preferOnDeviceWhenOffline: Bool
-        package var preferOnDeviceWhenMetered: Bool
+        package var networkBehavior: NetworkBehavior
 
         package init(
             privacyBehavior: PrivacyBehavior = .preferOnDevice,
-            preferOnDeviceWhenOffline: Bool = true,
-            preferOnDeviceWhenMetered: Bool = true
+            networkBehavior: NetworkBehavior = .preferOnDeviceWhenOfflineOrMetered
         ) {
             self.privacyBehavior = privacyBehavior
-            self.preferOnDeviceWhenOffline = preferOnDeviceWhenOffline
-            self.preferOnDeviceWhenMetered = preferOnDeviceWhenMetered
+            self.networkBehavior = networkBehavior
         }
     }
 
@@ -61,7 +65,7 @@ package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityRepor
     ) {
         self.init(
             onDevice: AnyHiveModelClient(
-                ColonyHiveModelClientAdapter(base: AnyColonyModelClient(foundationModels))
+                ColonyHiveModelClientAdapter(base: foundationModels)
             ),
             fallback: fallback,
             onDeviceCapabilities: foundationModels.colonyModelCapabilities,
@@ -73,20 +77,7 @@ package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityRepor
     package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         guard let hints else { return fallback }
 
-        let wantsOnDevice: Bool = {
-            if hints.privacyRequired {
-                return true
-            }
-
-            switch hints.networkState {
-            case .offline:
-                return policy.preferOnDeviceWhenOffline
-            case .metered:
-                return policy.preferOnDeviceWhenMetered
-            case .online:
-                return false
-            }
-        }()
+        let wantsOnDevice = Self.wantsOnDevice(hints: hints, policy: policy)
 
         guard wantsOnDevice else {
             return fallback
@@ -106,20 +97,7 @@ package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityRepor
     package func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
         guard let hints else { return fallbackCapabilities }
 
-        let wantsOnDevice: Bool = {
-            if hints.privacyRequired {
-                return true
-            }
-
-            switch hints.networkState {
-            case .offline:
-                return policy.preferOnDeviceWhenOffline
-            case .metered:
-                return policy.preferOnDeviceWhenMetered
-            case .online:
-                return false
-            }
-        }()
+        let wantsOnDevice = Self.wantsOnDevice(hints: hints, policy: policy)
 
         guard wantsOnDevice else {
             return fallbackCapabilities
@@ -133,6 +111,24 @@ package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityRepor
     }
 
     // MARK: - Private
+
+    private static func wantsOnDevice(hints: HiveInferenceHints, policy: Policy) -> Bool {
+        if hints.privacyRequired {
+            return true
+        }
+
+        switch (hints.networkState, policy.networkBehavior) {
+        case (.offline, .preferOnDeviceWhenOffline),
+             (.offline, .preferOnDeviceWhenOfflineOrMetered),
+             (.metered, .preferOnDeviceWhenMetered),
+             (.metered, .preferOnDeviceWhenOfflineOrMetered):
+            return true
+        case (_, .alwaysFallback):
+            return false
+        default:
+            return false
+        }
+    }
 
     private let onDevice: AnyHiveModelClient?
     private let fallback: AnyHiveModelClient

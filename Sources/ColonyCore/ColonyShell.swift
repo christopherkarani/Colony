@@ -1,205 +1,248 @@
 import Foundation
 
-public enum ColonyShellTerminalMode: String, Sendable, Codable {
-    case pipes
-    case pty
-}
+/// Namespace for shell-related types used by Colony.
+public enum ColonyShell {}
 
-public struct ColonyShellExecutionRequest: Sendable, Equatable {
-    public var command: String
-    public var workingDirectory: ColonyVirtualPath?
-    public var timeoutNanoseconds: UInt64?
-    public var terminalMode: ColonyShellTerminalMode?
+// MARK: - ColonyShell.TerminalMode
 
-    public init(
-        command: String,
-        workingDirectory: ColonyVirtualPath? = nil,
-        timeoutNanoseconds: UInt64? = nil,
-        terminalMode: ColonyShellTerminalMode? = nil
-    ) {
-        self.command = command
-        self.workingDirectory = workingDirectory
-        self.timeoutNanoseconds = timeoutNanoseconds
-        self.terminalMode = terminalMode
+extension ColonyShell {
+    public enum TerminalMode: String, Sendable, Codable {
+        case pipes
+        case pty
     }
 }
 
-public struct ColonyShellExecutionResult: Sendable, Equatable {
-    public var exitCode: Int32
-    public var stdout: String
-    public var stderr: String
-    public var wasTruncated: Bool
+// MARK: - ColonyShell.ExecutionRequest
 
-    public init(
-        exitCode: Int32,
-        stdout: String,
-        stderr: String,
-        wasTruncated: Bool = false
-    ) {
-        self.exitCode = exitCode
-        self.stdout = stdout
-        self.stderr = stderr
-        self.wasTruncated = wasTruncated
-    }
+extension ColonyShell {
+    public struct ExecutionRequest: Sendable, Equatable {
+        public var command: String
+        public var workingDirectory: ColonyFileSystem.VirtualPath?
+        public var timeout: Duration?
+        public var terminalMode: ColonyShell.TerminalMode?
 
-    public var combinedOutput: String {
-        if stdout.isEmpty { return stderr }
-        if stderr.isEmpty { return stdout }
-        return stdout + "\n" + stderr
+        public init(
+            command: String,
+            workingDirectory: ColonyFileSystem.VirtualPath? = nil,
+            timeout: Duration? = nil,
+            terminalMode: ColonyShell.TerminalMode? = nil
+        ) {
+            self.command = command
+            self.workingDirectory = workingDirectory
+            self.timeout = timeout
+            self.terminalMode = terminalMode
+        }
     }
 }
 
-public struct ColonyShellSessionID: Hashable, Codable, Sendable, Equatable {
-    public let rawValue: String
+// MARK: - ColonyShell.ExecutionResult
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+extension ColonyShell {
+    public struct ExecutionResult: Sendable, Equatable {
+        public var exitCode: Int32
+        public var stdout: String
+        public var stderr: String
+        public var wasTruncated: Bool
+
+        public init(
+            exitCode: Int32,
+            stdout: String,
+            stderr: String,
+            wasTruncated: Bool = false
+        ) {
+            self.exitCode = exitCode
+            self.stdout = stdout
+            self.stderr = stderr
+            self.wasTruncated = wasTruncated
+        }
+
+        public var combinedOutput: String {
+            if stdout.isEmpty { return stderr }
+            if stderr.isEmpty { return stdout }
+            return stdout + "\n" + stderr
+        }
     }
 }
 
-public struct ColonyShellSessionOpenRequest: Sendable, Equatable {
-    public var command: String
-    public var workingDirectory: ColonyVirtualPath?
-    public var idleTimeoutNanoseconds: UInt64?
+// MARK: - ColonyShell.SessionID
 
-    public init(
-        command: String,
-        workingDirectory: ColonyVirtualPath? = nil,
-        idleTimeoutNanoseconds: UInt64? = nil
-    ) {
-        self.command = command
-        self.workingDirectory = workingDirectory
-        self.idleTimeoutNanoseconds = idleTimeoutNanoseconds
+extension ColonyShell {
+    public typealias SessionID = ColonyShellSessionID
+}
+
+// MARK: - ColonyShell.SessionOpenRequest
+
+extension ColonyShell {
+    public struct SessionOpenRequest: Sendable, Equatable {
+        public var command: String
+        public var workingDirectory: ColonyFileSystem.VirtualPath?
+        public var idleTimeout: Duration?
+
+        public init(
+            command: String,
+            workingDirectory: ColonyFileSystem.VirtualPath? = nil,
+            idleTimeout: Duration? = nil
+        ) {
+            self.command = command
+            self.workingDirectory = workingDirectory
+            self.idleTimeout = idleTimeout
+        }
     }
 }
 
-public struct ColonyShellSessionReadResult: Sendable, Equatable {
-    public var stdout: String
-    public var stderr: String
-    public var eof: Bool
-    public var wasTruncated: Bool
+// MARK: - ColonyShell.SessionReadResult
 
-    public init(stdout: String, stderr: String = "", eof: Bool, wasTruncated: Bool = false) {
-        self.stdout = stdout
-        self.stderr = stderr
-        self.eof = eof
-        self.wasTruncated = wasTruncated
+extension ColonyShell {
+    public struct SessionReadResult: Sendable, Equatable {
+        public var stdout: String
+        public var stderr: String
+        public var eof: Bool
+        public var wasTruncated: Bool
+
+        public init(stdout: String, stderr: String = "", eof: Bool, wasTruncated: Bool = false) {
+            self.stdout = stdout
+            self.stderr = stderr
+            self.eof = eof
+            self.wasTruncated = wasTruncated
+        }
     }
 }
 
-public struct ColonyShellSessionSnapshot: Sendable, Equatable {
-    public var id: ColonyShellSessionID
-    public var command: String
-    public var workingDirectory: ColonyVirtualPath?
-    public var startedAt: Date
-    public var isRunning: Bool
+// MARK: - ColonyShell.SessionSnapshot
 
-    public init(
-        id: ColonyShellSessionID,
-        command: String,
-        workingDirectory: ColonyVirtualPath?,
-        startedAt: Date,
-        isRunning: Bool
-    ) {
-        self.id = id
-        self.command = command
-        self.workingDirectory = workingDirectory
-        self.startedAt = startedAt
-        self.isRunning = isRunning
+extension ColonyShell {
+    public struct SessionSnapshot: Sendable, Equatable {
+        public var id: ColonyShell.SessionID
+        public var command: String
+        public var workingDirectory: ColonyFileSystem.VirtualPath?
+        public var startedAt: Date
+        public var isRunning: Bool
+
+        public init(
+            id: ColonyShell.SessionID,
+            command: String,
+            workingDirectory: ColonyFileSystem.VirtualPath?,
+            startedAt: Date,
+            isRunning: Bool
+        ) {
+            self.id = id
+            self.command = command
+            self.workingDirectory = workingDirectory
+            self.startedAt = startedAt
+            self.isRunning = isRunning
+        }
     }
 }
 
-public protocol ColonyShellBackend: Sendable {
-    func execute(_ request: ColonyShellExecutionRequest) async throws -> ColonyShellExecutionResult
-    func openSession(_ request: ColonyShellSessionOpenRequest) async throws -> ColonyShellSessionID
-    func writeToSession(_ sessionID: ColonyShellSessionID, data: Data) async throws
+// MARK: - ColonyShellBackend (top-level protocol)
+
+/// A backend that can execute single shell commands.
+public protocol ColonyShellExecutor: Sendable {
+    func execute(_ request: ColonyShell.ExecutionRequest) async throws -> ColonyShell.ExecutionResult
+}
+
+/// A backend that can manage interactive shell sessions.
+public protocol ColonyShellSessionProvider: Sendable {
+    func openSession(_ request: ColonyShell.SessionOpenRequest) async throws -> ColonyShell.SessionID
+    func writeToSession(_ sessionID: ColonyShell.SessionID, data: Data) async throws
     func readFromSession(
-        _ sessionID: ColonyShellSessionID,
+        _ sessionID: ColonyShell.SessionID,
         maxBytes: Int,
-        timeoutNanoseconds: UInt64?
-    ) async throws -> ColonyShellSessionReadResult
-    func closeSession(_ sessionID: ColonyShellSessionID) async
-    func listSessions() async -> [ColonyShellSessionSnapshot]
+        timeout: Duration?
+    ) async throws -> ColonyShell.SessionReadResult
+    func closeSession(_ sessionID: ColonyShell.SessionID) async
+    func listSessions() async -> [ColonyShell.SessionSnapshot]
 }
 
-public extension ColonyShellBackend {
-    func openSession(_ request: ColonyShellSessionOpenRequest) async throws -> ColonyShellSessionID {
+/// A full shell backend that supports both command execution and interactive sessions.
+public protocol ColonyShellBackend: ColonyShellExecutor, ColonyShellSessionProvider {}
+
+public extension ColonyShellSessionProvider {
+    func openSession(_ request: ColonyShell.SessionOpenRequest) async throws -> ColonyShell.SessionID {
         _ = request
-        throw ColonyShellExecutionError.sessionManagementUnsupported
+        throw ColonyShell.ExecutionError.sessionManagementUnsupported
     }
 
-    func writeToSession(_ sessionID: ColonyShellSessionID, data: Data) async throws {
+    func writeToSession(_ sessionID: ColonyShell.SessionID, data: Data) async throws {
         _ = sessionID
         _ = data
-        throw ColonyShellExecutionError.sessionManagementUnsupported
+        throw ColonyShell.ExecutionError.sessionManagementUnsupported
     }
 
     func readFromSession(
-        _ sessionID: ColonyShellSessionID,
+        _ sessionID: ColonyShell.SessionID,
         maxBytes: Int,
-        timeoutNanoseconds: UInt64?
-    ) async throws -> ColonyShellSessionReadResult {
+        timeout: Duration?
+    ) async throws -> ColonyShell.SessionReadResult {
         _ = sessionID
         _ = maxBytes
-        _ = timeoutNanoseconds
-        throw ColonyShellExecutionError.sessionManagementUnsupported
+        _ = timeout
+        throw ColonyShell.ExecutionError.sessionManagementUnsupported
     }
 
-    func closeSession(_ sessionID: ColonyShellSessionID) async {
+    func closeSession(_ sessionID: ColonyShell.SessionID) async {
         _ = sessionID
     }
 
-    func listSessions() async -> [ColonyShellSessionSnapshot] {
+    func listSessions() async -> [ColonyShell.SessionSnapshot] {
         []
     }
 }
 
-public enum ColonyShellExecutionError: Error, Sendable, Equatable {
-    case invalidConfinementRoot(String)
-    case invalidWorkingDirectory(ColonyVirtualPath)
-    case workingDirectoryDenied(ColonyVirtualPath)
-    case workingDirectoryOutsideConfinement(ColonyVirtualPath)
-    case launchFailed(String)
-    case sessionNotFound(ColonyShellSessionID)
-    case sessionManagementUnsupported
-}
+// MARK: - ColonyShell.ExecutionError
 
-public struct ColonyShellConfinementPolicy: Sendable, Equatable {
-    public let allowedRoot: URL
-    public let deniedPrefixes: [ColonyVirtualPath]
-
-    public init(
-        allowedRoot: URL,
-        deniedPrefixes: [ColonyVirtualPath] = []
-    ) throws {
-        guard allowedRoot.isFileURL else {
-            throw ColonyShellExecutionError.invalidConfinementRoot("Confinement root must be a file URL.")
-        }
-        self.allowedRoot = allowedRoot.resolvingSymlinksInPath().standardizedFileURL
-        self.deniedPrefixes = deniedPrefixes
-    }
-
-    public func resolveWorkingDirectory(_ workingDirectory: ColonyVirtualPath?) throws -> URL {
-        let requested = workingDirectory ?? .root
-
-        for denied in deniedPrefixes where Self.hasPathPrefix(requested.rawValue, prefix: denied.rawValue) {
-            throw ColonyShellExecutionError.workingDirectoryDenied(requested)
-        }
-
-        let relative = requested.rawValue == "/" ? "" : String(requested.rawValue.dropFirst())
-        let resolved = allowedRoot
-            .appendingPathComponent(relative, isDirectory: true)
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-
-        guard Self.isWithinRoot(resolved, root: allowedRoot) else {
-            throw ColonyShellExecutionError.workingDirectoryOutsideConfinement(requested)
-        }
-        return resolved
+extension ColonyShell {
+    public enum ExecutionError: Error, Sendable, Equatable {
+        case invalidConfinementRoot(String)
+        case invalidWorkingDirectory(ColonyFileSystem.VirtualPath)
+        case workingDirectoryDenied(ColonyFileSystem.VirtualPath)
+        case workingDirectoryOutsideConfinement(ColonyFileSystem.VirtualPath)
+        case launchFailed(String)
+        case sessionNotFound(ColonyShell.SessionID)
+        case sessionManagementUnsupported
     }
 }
 
-extension ColonyShellConfinementPolicy {
+// MARK: - ColonyShell.ConfinementPolicy
+
+extension ColonyShell {
+    public struct ConfinementPolicy: Sendable, Equatable {
+        public let allowedRoot: URL
+        public let deniedPrefixes: [ColonyFileSystem.VirtualPath]
+
+        public init(
+            allowedRoot: URL,
+            deniedPrefixes: [ColonyFileSystem.VirtualPath] = []
+        ) throws {
+            guard allowedRoot.isFileURL else {
+                throw ColonyShell.ExecutionError.invalidConfinementRoot("Confinement root must be a file URL.")
+            }
+            self.allowedRoot = allowedRoot.resolvingSymlinksInPath().standardizedFileURL
+            self.deniedPrefixes = deniedPrefixes
+        }
+
+        public func resolveWorkingDirectory(_ workingDirectory: ColonyFileSystem.VirtualPath?) throws -> URL {
+            let requested = workingDirectory ?? .root
+
+            for denied in deniedPrefixes where Self.hasPathPrefix(requested.rawValue, prefix: denied.rawValue) {
+                throw ColonyShell.ExecutionError.workingDirectoryDenied(requested)
+            }
+
+            let relative = requested.rawValue == "/" ? "" : String(requested.rawValue.dropFirst())
+            let resolved = allowedRoot
+                .appendingPathComponent(relative, isDirectory: true)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+
+            guard Self.isWithinRoot(resolved, root: allowedRoot) else {
+                throw ColonyShell.ExecutionError.workingDirectoryOutsideConfinement(requested)
+            }
+            return resolved
+        }
+    }
+}
+
+extension ColonyShell.ConfinementPolicy {
     private static func hasPathPrefix(_ path: String, prefix: String) -> Bool {
         if prefix == "/" { return true }
         guard path.hasPrefix(prefix) else { return false }
@@ -215,3 +258,4 @@ extension ColonyShellConfinementPolicy {
         return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
     }
 }
+

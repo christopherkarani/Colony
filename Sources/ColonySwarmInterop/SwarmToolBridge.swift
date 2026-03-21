@@ -4,9 +4,6 @@ import ColonyCore
 import Colony
 import Swarm
 
-@available(*, deprecated, renamed: "ColonySwarmToolRegistration")
-public typealias SwarmToolRegistration = ColonySwarmToolRegistration
-
 /// A registration entry for a Swarm tool within Colony's capability-gated system.
 ///
 /// Associates a Swarm `AnyJSONTool` with a Colony capability and risk level,
@@ -18,16 +15,16 @@ public struct ColonySwarmToolRegistration: Sendable {
 
     /// The Colony capability required for this tool to be injected into the prompt.
     /// The tool will only appear when this capability is enabled in the configuration.
-    public let capability: ColonyRuntimeCapabilities
+    public let capability: ColonyAgentCapabilities
 
     /// The risk level for Colony's safety policy engine.
     /// Controls whether the tool requires human approval before execution.
-    public let riskLevel: ColonyToolRiskLevel
+    public let riskLevel: ColonyTool.RiskLevel
 
     public init(
         tool: any AnyJSONTool,
-        capability: ColonyRuntimeCapabilities,
-        riskLevel: ColonyToolRiskLevel = .readOnly
+        capability: ColonyAgentCapabilities,
+        riskLevel: ColonyTool.RiskLevel = .readOnly
     ) {
         self.tool = tool
         self.capability = capability
@@ -35,15 +32,12 @@ public struct ColonySwarmToolRegistration: Sendable {
     }
 }
 
-@available(*, deprecated, renamed: "ColonySwarmToolBridge")
-public typealias SwarmToolBridge = ColonySwarmToolBridge
-
 /// Bridges Swarm's `@Tool`-defined tools into Colony's capability-gated tool system.
 ///
 /// `ColonySwarmToolBridge` wraps a `SwarmToolRegistry` (which handles the `AnyJSONTool` → `HiveToolDefinition`
 /// conversion and execution) and layers Colony's safety model on top:
 ///
-/// 1. **Capability gating:** Tools are only listed when their associated `ColonyRuntimeCapabilities` flag
+/// 1. **Capability gating:** Tools are only listed when their associated `ColonyAgentCapabilities` flag
 ///    is enabled in the current configuration.
 /// 2. **Risk-level overrides:** Each registered tool's risk level is injected into
 ///    `ColonyToolSafetyPolicyEngine` so approval policies apply correctly.
@@ -70,19 +64,19 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
     private let registry: ColonySwarmToolRegistry
 
     /// Mapping from tool name to the capability required to expose it.
-    private let capabilityMap: [String: ColonyRuntimeCapabilities]
+    private let capabilityMap: [String: ColonyAgentCapabilities]
 
     /// Risk-level overrides for Colony's safety policy engine.
-    public let riskLevelOverrides: [ColonyToolName: ColonyToolRiskLevel]
+    public let riskLevelOverrides: [ColonyTool.Name: ColonyTool.RiskLevel]
 
     /// Policy metadata derived from Swarm tool execution semantics.
-    public let toolPolicyMetadataByName: [ColonyToolName: ColonyToolPolicyMetadata]
+    public let toolPolicyMetadataByName: [ColonyTool.Name: ColonyTool.PolicyMetadata]
 
     /// Union of all capabilities required by this bridge's registered tools.
-    public let requiredCapabilities: ColonyRuntimeCapabilities
+    public let requiredCapabilities: ColonyAgentCapabilities
 
     /// All tool definitions (pre-filtered by capability gating happens at query time).
-    private let allDefinitions: [ColonyToolDefinition]
+    private let allDefinitions: [ColonyTool.Definition]
 
     /// Creates a bridge from an array of tool registrations.
     ///
@@ -92,12 +86,12 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
         let tools = registrations.map(\.tool)
         self.registry = try ColonySwarmToolRegistry(tools: tools)
 
-        var capMap: [String: ColonyRuntimeCapabilities] = [:]
-        var riskMap: [ColonyToolName: ColonyToolRiskLevel] = [:]
-        var policyMap: [ColonyToolName: ColonyToolPolicyMetadata] = [:]
-        var required: ColonyRuntimeCapabilities = []
+        var capMap: [String: ColonyAgentCapabilities] = [:]
+        var riskMap: [ColonyTool.Name: ColonyTool.RiskLevel] = [:]
+        var policyMap: [ColonyTool.Name: ColonyTool.PolicyMetadata] = [:]
+        var required: ColonyAgentCapabilities = []
         for reg in registrations {
-            let toolName = ColonyToolName(rawValue: reg.tool.name)
+            let toolName = ColonyTool.Name(rawValue: reg.tool.name)
             capMap[reg.tool.name] = reg.capability
             let metadata = Self.policyMetadata(for: reg)
             riskMap[toolName] = metadata.riskLevel ?? reg.riskLevel
@@ -122,8 +116,8 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
     ///   - riskLevel: The risk level for all tools.
     public init(
         tools: [any AnyJSONTool],
-        capability: ColonyRuntimeCapabilities,
-        riskLevel: ColonyToolRiskLevel = .readOnly
+        capability: ColonyAgentCapabilities,
+        riskLevel: ColonyTool.RiskLevel = .readOnly
     ) throws {
         let registrations = tools.map { tool in
             ColonySwarmToolRegistration(tool: tool, capability: capability, riskLevel: riskLevel)
@@ -135,7 +129,7 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
     ///
     /// Only tools whose associated capability is present in `activeCapabilities`
     /// will be included. Call with the current `ColonyConfiguration.model.capabilities`.
-    public func listTools(filteredBy activeCapabilities: ColonyRuntimeCapabilities) -> [ColonyToolDefinition] {
+    public func listTools(filteredBy activeCapabilities: ColonyAgentCapabilities) -> [ColonyTool.Definition] {
         allDefinitions.filter { def in
             guard let required = capabilityMap[def.name.rawValue] else { return false }
             return activeCapabilities.contains(required)
@@ -143,7 +137,7 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
     }
 
     /// Returns all tool definitions regardless of capability gating.
-    public func listTools() -> [ColonyToolDefinition] {
+    public func listTools() -> [ColonyTool.Definition] {
         allDefinitions
     }
 
@@ -151,24 +145,24 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
     ///
     /// Colony's approval and safety policies should be checked *before* calling this.
     /// The `ColonyAgent` graph's tool-execution node handles approval gating.
-    public func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
+    public func invoke(_ call: ColonyTool.Call) async throws -> ColonyTool.Result {
         try await registry.invoke(call)
     }
 
-    package func listHiveTools(filteredBy activeCapabilities: ColonyRuntimeCapabilities) -> [HiveToolDefinition] {
+    package func listHiveTools(filteredBy activeCapabilities: ColonyAgentCapabilities) -> [HiveToolDefinition] {
         listTools(filteredBy: activeCapabilities).map(\.hive)
     }
 
     package func invokeHive(_ call: HiveToolCall) async throws -> HiveToolResult {
-        try await invoke(ColonyToolCall(call)).hive
+        try await invoke(ColonyTool.Call(call)).hive
     }
 
-    private static func policyMetadata(for registration: ColonySwarmToolRegistration) -> ColonyToolPolicyMetadata {
+    private static func policyMetadata(for registration: ColonySwarmToolRegistration) -> ColonyTool.PolicyMetadata {
         let semantics = registration.tool.executionSemantics
         let semanticRiskLevel = riskLevel(for: semantics.sideEffectLevel)
         let resolvedRiskLevel = max(registration.riskLevel, semanticRiskLevel)
 
-        return ColonyToolPolicyMetadata(
+        return ColonyTool.PolicyMetadata(
             riskLevel: resolvedRiskLevel,
             approvalDisposition: approvalDisposition(for: semantics.approvalRequirement),
             retryDisposition: retryDisposition(for: semantics.retryPolicy),
@@ -176,7 +170,7 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
         )
     }
 
-    private static func riskLevel(for sideEffectLevel: ToolSideEffectLevel) -> ColonyToolRiskLevel {
+    private static func riskLevel(for sideEffectLevel: ToolSideEffectLevel) -> ColonyTool.RiskLevel {
         switch sideEffectLevel {
         case .unspecified, .readOnly:
             return .readOnly
@@ -187,7 +181,7 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
         }
     }
 
-    private static func approvalDisposition(for requirement: ToolApprovalRequirement) -> ColonyToolApprovalDisposition {
+    private static func approvalDisposition(for requirement: ToolApprovalRequirement) -> ColonyToolApproval.Disposition {
         switch requirement {
         case .automatic:
             return .automatic
@@ -198,7 +192,7 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
         }
     }
 
-    private static func retryDisposition(for retryPolicy: ToolRetryPolicy) -> ColonyToolRetryDisposition {
+    private static func retryDisposition(for retryPolicy: ToolRetryPolicy) -> ColonyToolApproval.RetryDisposition {
         switch retryPolicy {
         case .automatic:
             return .inherit
@@ -211,7 +205,7 @@ public struct ColonySwarmToolBridge: ColonySwarmToolBridging, ColonyToolRegistry
         }
     }
 
-    private static func resultDurability(for durability: ToolResultDurability) -> ColonyToolResultDurability {
+    private static func resultDurability(for durability: ToolResultDurability) -> ColonyToolApproval.ResultDurability {
         switch durability {
         case .unspecified, .transcriptOnly:
             return .transient
@@ -233,7 +227,7 @@ private enum ColonySwarmToolRegistryError: Error, Equatable, Sendable {
 
 private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
     private let registry: ToolRegistry
-    private let toolDefinitions: [ColonyToolDefinition]
+    private let toolDefinitions: [ColonyTool.Definition]
 
     init(tools: [any AnyJSONTool]) throws {
         self.registry = try ToolRegistry(tools: tools)
@@ -242,11 +236,11 @@ private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
             .sorted { $0.name.rawValue.utf8.lexicographicallyPrecedes($1.name.rawValue.utf8) }
     }
 
-    func listTools() -> [ColonyToolDefinition] {
+    func listTools() -> [ColonyTool.Definition] {
         toolDefinitions
     }
 
-    func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult {
+    func invoke(_ call: ColonyTool.Call) async throws -> ColonyTool.Result {
         let arguments = try Self.parseArgumentsJSON(call.argumentsJSON)
         guard await registry.contains(named: call.name.rawValue) else {
             throw ColonySwarmToolRegistryError.toolNotFound(name: call.name.rawValue)
@@ -254,7 +248,7 @@ private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
 
         let output = try await registry.execute(toolNamed: call.name.rawValue, arguments: arguments)
         let content = try Self.encodeJSONFragment(output)
-        return ColonyToolResult(toolCallID: call.id, content: content)
+        return ColonyTool.Result(toolCallID: call.id, content: content)
     }
 
     private static func parseArgumentsJSON(_ json: String) throws -> [String: SendableValue] {
@@ -293,14 +287,14 @@ private struct ColonySwarmToolRegistry: ColonyToolRegistry, Sendable {
         return json
     }
 
-    private static func makeToolDefinition(for schema: ToolSchema) throws -> ColonyToolDefinition {
+    private static func makeToolDefinition(for schema: ToolSchema) throws -> ColonyTool.Definition {
         let schemaObject = makeParametersSchema(toolName: schema.name, parameters: schema.parameters)
         let data = try JSONSerialization.data(withJSONObject: schemaObject, options: [.sortedKeys])
         guard let json = String(data: data, encoding: .utf8) else {
             throw ColonySwarmToolRegistryError.schemaEncodingFailed
         }
-        return ColonyToolDefinition(
-            name: ColonyToolName(rawValue: schema.name),
+        return ColonyTool.Definition(
+            name: ColonyTool.Name(rawValue: schema.name),
             description: schema.description,
             parametersJSONSchema: json
         )

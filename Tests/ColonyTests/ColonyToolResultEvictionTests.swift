@@ -90,8 +90,8 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .never
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -123,7 +123,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     #expect(persisted == largeOutput)
 
     let messages = try store.get(ColonySchema.Channels.messages)
-    let toolMessage = messages.first { $0.role == HiveChatRole.tool && $0.toolCallID == "evict-1" }
+    let toolMessage = messages.first { $0.role == .tool && $0.toolCallID == "evict-1" }
     #expect(toolMessage != nil)
     #expect(toolMessage?.content.contains("/large_tool_results/evict-1") == true)
     #expect(toolMessage?.content.contains("Result too large") == true)
@@ -143,10 +143,9 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
     let previewCharBudget = evictionTokenLimit * charsPerToken
 
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        toolResultEvictionTokenLimit: evictionTokenLimit
+        model: .init(name: "test-model", capabilities: [.filesystem]),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(toolResultEvictionTokenLimit: evictionTokenLimit)
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
@@ -198,10 +197,9 @@ func colonyToolEvictionPreviewTrimming_isDeterministic() async throws {
         let fs = ColonyInMemoryFileSystemBackend()
 
         let configuration = ColonyConfiguration(
-            capabilities: [.filesystem],
-            modelName: "test-model",
-            toolApprovalPolicy: .never,
-            toolResultEvictionTokenLimit: evictionTokenLimit
+            model: .init(name: "test-model", capabilities: [.filesystem]),
+            safety: .init(toolApprovalPolicy: .never),
+            context: .init(toolResultEvictionTokenLimit: evictionTokenLimit)
         )
         let context = ColonyContext(configuration: configuration, filesystem: fs)
 

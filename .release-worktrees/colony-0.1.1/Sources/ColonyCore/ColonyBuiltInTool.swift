@@ -1,0 +1,41 @@
+public enum ColonyBuiltInTool: String, CaseIterable, Codable, Sendable {
+    case ls
+    case readFile = "read_file"
+    case writeFile = "write_file"
+    case editFile = "edit_file"
+    case glob
+    case grep
+    case writeTodos = "write_todos"
+    case readTodos = "read_todos"
+    case execute
+    case shellOpen = "shell_open"
+    case shellWrite = "shell_write"
+    case shellRead = "shell_read"
+    case shellClose = "shell_close"
+    case applyPatch = "apply_patch"
+    case webSearch = "web_search"
+    case codeSearch = "code_search"
+    case memoryRecall = "wax_recall"
+    case memoryRemember = "wax_remember"
+    case mcpListResources = "mcp_list_resources"
+    case mcpReadResource = "mcp_read_resource"
+    case pluginListTools = "plugin_list_tools"
+    case pluginInvoke = "plugin_invoke"
+    case gitStatus = "git_status"
+    case gitDiff = "git_diff"
+    case gitCommit = "git_commit"
+    case gitBranch = "git_branch"
+    case gitPush = "git_push"
+    case gitPreparePullRequest = "git_prepare_pr"
+    case lspSymbols = "lsp_symbols"
+    case lspDiagnostics = "lsp_diagnostics"
+    case lspReferences = "lsp_references"
+    case lspApplyEdit = "lsp_apply_edit"
+    case scratchRead = "scratch_read"
+    case scratchAdd = "scratch_add"
+    case scratchUpdate = "scratch_update"
+    case scratchComplete = "scratch_complete"
+    case scratchPin = "scratch_pin"
+    case scratchUnpin = "scratch_unpin"
+    case task
+}

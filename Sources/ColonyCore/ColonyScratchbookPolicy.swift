@@ -1,11 +1,11 @@
 public struct ColonyScratchbookPolicy: Sendable {
-    public var pathPrefix: ColonyVirtualPath
+    public var pathPrefix: ColonyFileSystem.VirtualPath
     public var viewTokenLimit: Int
     public var maxRenderedItems: Int
     public var autoCompact: Bool?
 
     public init(
-        pathPrefix: ColonyVirtualPath = Self.defaultPathPrefix,
+        pathPrefix: ColonyFileSystem.VirtualPath = Self.defaultPathPrefix,
         viewTokenLimit: Int = 800,
         maxRenderedItems: Int = 40,
         autoCompact: Bool? = true
@@ -16,9 +16,9 @@ public struct ColonyScratchbookPolicy: Sendable {
         self.autoCompact = autoCompact
     }
 
-    public static var defaultPathPrefix: ColonyVirtualPath {
+    public static var defaultPathPrefix: ColonyFileSystem.VirtualPath {
         // swiftlint:disable:next force_try
-        try! ColonyVirtualPath("/scratchbook")
+        try! ColonyFileSystem.VirtualPath("/scratchbook")
     }
 }
 

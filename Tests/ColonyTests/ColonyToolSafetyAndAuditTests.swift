@@ -175,8 +175,8 @@ func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .never
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -217,8 +217,8 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .never
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
@@ -397,10 +397,8 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
     let recorder = ColonyToolAuditRecorder(store: store, signer: signer)
 
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        toolAuditRecorder: recorder
+        model: .init(name: "test-model", capabilities: [.filesystem]),
+        safety: .init(toolApprovalPolicy: .never, toolAuditRecorder: recorder)
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 

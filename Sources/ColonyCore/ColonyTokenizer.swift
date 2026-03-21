@@ -15,10 +15,10 @@ package struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
     package func countTokens(_ messages: [ColonyChatMessage]) -> Int {
         let chars = messages.reduce(into: 0) { partial, message in
             partial += message.content.count
-            partial += message.name?.count ?? 0
-            partial += message.toolCallID?.count ?? 0
+            partial += message.name?.rawValue.count ?? 0
+            partial += message.toolCallID?.rawValue.count ?? 0
             partial += message.toolCalls.reduce(into: 0) { toolPartial, call in
-                toolPartial += call.id.count + call.name.rawValue.count + call.argumentsJSON.count
+                toolPartial += call.id.rawValue.count + call.name.rawValue.count + call.argumentsJSON.count
             }
         }
         return max(1, chars / 4)

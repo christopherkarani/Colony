@@ -61,11 +61,9 @@ func contextBudget_enforcesStrictRequestLevelCap() async throws {
     let hardCap = 220
 
     let configuration = ColonyConfiguration(
-        capabilities: [],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .disabled,
-        requestHardTokenLimit: hardCap
+        model: .init(name: "test-model", capabilities: []),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(compactionPolicy: .disabled, requestHardTokenLimit: hardCap)
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
@@ -105,12 +103,10 @@ func contextBudget_trimsOversizedSystemPromptToFitHardCap() async throws {
     let oversizedAdditionalSystemPrompt = String(repeating: "s", count: 20_000)
 
     let configuration = ColonyConfiguration(
-        capabilities: [],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .disabled,
-        additionalSystemPrompt: oversizedAdditionalSystemPrompt,
-        requestHardTokenLimit: hardCap
+        model: .init(name: "test-model", capabilities: []),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(compactionPolicy: .disabled, requestHardTokenLimit: hardCap),
+        prompts: .init(additionalSystemPrompt: oversizedAdditionalSystemPrompt)
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
@@ -166,11 +162,9 @@ func contextBudget_includesToolDefinitionPayloadInHardCap() async throws {
     )
 
     let configuration = ColonyConfiguration(
-        capabilities: [],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .disabled,
-        requestHardTokenLimit: hardCap
+        model: .init(name: "test-model", capabilities: []),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(compactionPolicy: .disabled, requestHardTokenLimit: hardCap)
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
@@ -207,11 +201,9 @@ func contextBudget_trimsOldestFirstAndPreservesNewestMessages() async throws {
     let hardCap = 200
 
     let configuration = ColonyConfiguration(
-        capabilities: [],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .disabled,
-        requestHardTokenLimit: hardCap
+        model: .init(name: "test-model", capabilities: []),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(compactionPolicy: .disabled, requestHardTokenLimit: hardCap)
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 

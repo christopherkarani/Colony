@@ -20,14 +20,14 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }()
 
     private let profile: ColonyProfile
-    private let modelName: String
+    private let modelName: ColonyModelName
     private let model: AnyHiveModelClient
     private let clock: any HiveClock
     private let logger: any HiveLogger
     private let filesystem: (any ColonyFileSystemBackend)?
 
     package init(
-        modelName: String,
+        modelName: ColonyModelName,
         model: AnyHiveModelClient,
         clock: any HiveClock,
         logger: any HiveLogger,
@@ -45,7 +45,7 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
 
     package init(
         profile: ColonyProfile,
-        modelName: String,
+        modelName: ColonyModelName,
         model: AnyHiveModelClient,
         clock: any HiveClock,
         logger: any HiveLogger,
@@ -59,20 +59,20 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         self.filesystem = filesystem
     }
 
-    package func listSubagents() -> [ColonySubagentDescriptor] {
+    package func listSubagents() -> [ColonySubagent.Descriptor] {
         [
-            ColonySubagentDescriptor(
+            ColonySubagent.Descriptor(
                 name: "general-purpose",
                 description: "General-purpose helper."
             ),
-            ColonySubagentDescriptor(
+            ColonySubagent.Descriptor(
                 name: "compactor",
                 description: "Compacts offloaded history into a dense summary + next actions."
             ),
         ]
     }
 
-    package func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
+    package func run(_ request: ColonySubagent.Request) async throws -> ColonySubagent.Result {
         let type = request.subagentType
         guard type == .generalPurpose || type == .compactor else {
             throw RegistryError.unsupportedSubagentType(request.subagentType.rawValue)
@@ -137,14 +137,14 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         let messages = try store.get(ColonySchema.Channels.messages)
         let toolMessages = messages.filter { $0.role == HiveChatRole.tool }
         if let toolError = toolMessages.first(where: { $0.content.hasPrefix("Error:") }) {
-            return ColonySubagentResult(content: toolError.content)
+            return ColonySubagent.Result(content: toolError.content)
         }
 
         let finalAnswer = try store.get(ColonySchema.Channels.finalAnswer)
-        return ColonySubagentResult(content: finalAnswer ?? "")
+        return ColonySubagent.Result(content: finalAnswer ?? "")
     }
 
-    private func renderDelegatedPrompt(_ request: ColonySubagentRequest) async throws -> String {
+    private func renderDelegatedPrompt(_ request: ColonySubagent.Request) async throws -> String {
         var sections: [String] = [request.prompt]
 
         if let context = request.context {
@@ -158,7 +158,7 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         return sections.joined(separator: "\n\n")
     }
 
-    private func renderStructuredContext(_ context: ColonySubagentContext) -> String {
+    private func renderStructuredContext(_ context: ColonySubagent.Context) -> String {
         var lines: [String] = ["Structured context:"]
 
         if let objective = context.objective, objective.isEmpty == false {
@@ -190,7 +190,7 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }
 
     private func renderFileContextSnippets(
-        _ references: [ColonySubagentFileReference]
+        _ references: [ColonySubagent.FileReference]
     ) async throws -> String {
         var blocks: [String] = ["File context snippets:"]
 
@@ -236,10 +236,10 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }
 
     private func subagentCapabilities(
-        base: ColonyRuntimeCapabilities,
+        base: ColonyAgentCapabilities,
         filesystem: (any ColonyFileSystemBackend)?
-    ) -> ColonyRuntimeCapabilities {
-        var capabilities: ColonyRuntimeCapabilities = [.planning]
+    ) -> ColonyAgentCapabilities {
+        var capabilities: ColonyAgentCapabilities = [.planning]
         if filesystem != nil, base.contains(.filesystem) {
             capabilities.insert(.filesystem)
         }

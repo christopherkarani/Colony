@@ -3,36 +3,62 @@ import Dispatch
 import Foundation
 
 // SAFETY: All mutable state is isolated to ColonyShellSessionManager (an actor).
-// Immutable stored properties (confinement, defaultTimeoutNanoseconds, maxOutputBytes,
+// Immutable stored properties (confinement, defaultTimeout, maxOutputBytes,
 // environmentWhitelist, defaultTerminalMode) are all Sendable value types.
 public final class ColonyHardenedShellBackend: ColonyShellBackend, @unchecked Sendable {
-    public let confinement: ColonyShellConfinementPolicy
-    public let defaultTimeoutNanoseconds: UInt64?
+    public let confinement: ColonyShell.ConfinementPolicy
+    public let defaultTimeout: Duration?
     public let maxOutputBytes: Int
     public let environmentWhitelist: Set<String>?
-    public let defaultTerminalMode: ColonyShellTerminalMode
+    public let defaultTerminalMode: ColonyShell.TerminalMode
     private let sessionManager = ColonyShellSessionManager()
 
     public init(
-        confinement: ColonyShellConfinementPolicy,
-        defaultTimeoutNanoseconds: UInt64? = nil,
+        confinement: ColonyShell.ConfinementPolicy,
+        defaultTimeout: Duration? = nil,
         maxOutputBytes: Int = 64 * 1024,
         environmentWhitelist: Set<String>? = nil,
-        defaultTerminalMode: ColonyShellTerminalMode = .pipes
+        defaultTerminalMode: ColonyShell.TerminalMode = .pipes
     ) {
         self.confinement = confinement
-        self.defaultTimeoutNanoseconds = defaultTimeoutNanoseconds
+        self.defaultTimeout = defaultTimeout
         self.maxOutputBytes = max(1, maxOutputBytes)
         self.environmentWhitelist = environmentWhitelist
         self.defaultTerminalMode = defaultTerminalMode
     }
 
-    public func execute(_ request: ColonyShellExecutionRequest) async throws -> ColonyShellExecutionResult {
+    /// Create a sandboxed shell backend confined to the given root directory.
+    ///
+    /// ```swift
+    /// let shell = try ColonyHardenedShellBackend.sandbox(root: URL(filePath: "/tmp/workspace"))
+    /// ```
+    public static func sandbox(
+        root: URL,
+        deniedPrefixes: [ColonyFileSystem.VirtualPath] = [],
+        defaultTimeout: Duration? = nil,
+        maxOutputBytes: Int = 64 * 1024,
+        environmentWhitelist: Set<String>? = nil,
+        defaultTerminalMode: ColonyShell.TerminalMode = .pipes
+    ) throws -> ColonyHardenedShellBackend {
+        let confinement = try ColonyShell.ConfinementPolicy(
+            allowedRoot: root,
+            deniedPrefixes: deniedPrefixes
+        )
+        return ColonyHardenedShellBackend(
+            confinement: confinement,
+            defaultTimeout: defaultTimeout,
+            maxOutputBytes: maxOutputBytes,
+            environmentWhitelist: environmentWhitelist,
+            defaultTerminalMode: defaultTerminalMode
+        )
+    }
+
+    public func execute(_ request: ColonyShell.ExecutionRequest) async throws -> ColonyShell.ExecutionResult {
         let workingDirectory = try confinement.resolveWorkingDirectory(request.workingDirectory)
         try validateWorkingDirectoryExists(workingDirectory, requestedPath: request.workingDirectory ?? .root)
 
         let terminalMode = request.terminalMode ?? defaultTerminalMode
-        let timeout = request.timeoutNanoseconds ?? defaultTimeoutNanoseconds
+        let timeout = request.timeout ?? defaultTimeout
         let environment = buildEnvironment()
 
         let launched = try Self.launch(
@@ -44,13 +70,13 @@ public final class ColonyHardenedShellBackend: ColonyShellBackend, @unchecked Se
         )
 
         return try await withTaskCancellationHandler {
-            try await Self.waitForCompletion(launched, timeoutNanoseconds: timeout)
+            try await Self.waitForCompletion(launched, timeout: timeout)
         } onCancel: {
             launched.terminateTree()
         }
     }
 
-    public func openSession(_ request: ColonyShellSessionOpenRequest) async throws -> ColonyShellSessionID {
+    public func openSession(_ request: ColonyShell.SessionOpenRequest) async throws -> ColonyShell.SessionID {
         let workingDirectory = try confinement.resolveWorkingDirectory(request.workingDirectory)
         try validateWorkingDirectoryExists(workingDirectory, requestedPath: request.workingDirectory ?? .root)
 
@@ -62,7 +88,7 @@ public final class ColonyHardenedShellBackend: ColonyShellBackend, @unchecked Se
             maxOutputBytes: maxOutputBytes
         )
 
-        let snapshot = ColonyShellSessionSnapshot(
+        let snapshot = ColonyShell.SessionSnapshot(
             id: launched.id,
             command: request.command,
             workingDirectory: request.workingDirectory,
@@ -73,33 +99,33 @@ public final class ColonyHardenedShellBackend: ColonyShellBackend, @unchecked Se
         await sessionManager.insert(
             launched,
             snapshot: snapshot,
-            idleTimeoutNanoseconds: request.idleTimeoutNanoseconds
+            idleTimeout: request.idleTimeout
         )
 
         return launched.id
     }
 
-    public func writeToSession(_ sessionID: ColonyShellSessionID, data: Data) async throws {
+    public func writeToSession(_ sessionID: ColonyShell.SessionID, data: Data) async throws {
         try await sessionManager.write(to: sessionID, data: data)
     }
 
     public func readFromSession(
-        _ sessionID: ColonyShellSessionID,
+        _ sessionID: ColonyShell.SessionID,
         maxBytes: Int,
-        timeoutNanoseconds: UInt64?
-    ) async throws -> ColonyShellSessionReadResult {
+        timeout: Duration?
+    ) async throws -> ColonyShell.SessionReadResult {
         try await sessionManager.read(
             from: sessionID,
             maxBytes: max(1, maxBytes),
-            timeoutNanoseconds: timeoutNanoseconds
+            timeout: timeout
         )
     }
 
-    public func closeSession(_ sessionID: ColonyShellSessionID) async {
+    public func closeSession(_ sessionID: ColonyShell.SessionID) async {
         await sessionManager.close(sessionID)
     }
 
-    public func listSessions() async -> [ColonyShellSessionSnapshot] {
+    public func listSessions() async -> [ColonyShell.SessionSnapshot] {
         await sessionManager.listSnapshots()
     }
 }
@@ -108,7 +134,7 @@ private extension ColonyHardenedShellBackend {
     static func launch(
         command: String,
         workingDirectory: URL,
-        terminalMode: ColonyShellTerminalMode,
+        terminalMode: ColonyShell.TerminalMode,
         environment: [String: String]?,
         maxOutputBytes: Int
     ) throws -> RunningProcess {
@@ -145,7 +171,7 @@ private extension ColonyHardenedShellBackend {
             var masterFD: Int32 = -1
             var slaveFD: Int32 = -1
             guard openpty(&masterFD, &slaveFD, nil, nil, nil) == 0 else {
-                throw ColonyShellExecutionError.launchFailed(String(cString: strerror(errno)))
+                throw ColonyShell.ExecutionError.launchFailed(String(cString: strerror(errno)))
             }
             let master = FileHandle(fileDescriptor: masterFD, closeOnDealloc: true)
             let slave = FileHandle(fileDescriptor: slaveFD, closeOnDealloc: true)
@@ -165,7 +191,7 @@ private extension ColonyHardenedShellBackend {
             try process.run()
         } catch {
             standardIO.teardownHandlersAndClose()
-            throw ColonyShellExecutionError.launchFailed(error.localizedDescription)
+            throw ColonyShell.ExecutionError.launchFailed(error.localizedDescription)
         }
 
         if case let .pty(_, slave) = standardIO {
@@ -178,13 +204,13 @@ private extension ColonyHardenedShellBackend {
 
     static func waitForCompletion(
         _ launched: RunningProcess,
-        timeoutNanoseconds: UInt64?
-    ) async throws -> ColonyShellExecutionResult {
-        let deadline: UInt64? = timeoutNanoseconds.map { DispatchTime.now().uptimeNanoseconds &+ $0 }
+        timeout: Duration?
+    ) async throws -> ColonyShell.ExecutionResult {
+        let deadlineNanoseconds: UInt64? = timeout.map { DispatchTime.now().uptimeNanoseconds &+ Self.durationToNanoseconds($0) }
         var timedOut = false
 
         while launched.isRunning {
-            if let deadline, DispatchTime.now().uptimeNanoseconds >= deadline {
+            if let deadlineNanoseconds, DispatchTime.now().uptimeNanoseconds >= deadlineNanoseconds {
                 timedOut = true
                 launched.terminateTree()
                 break
@@ -209,12 +235,19 @@ private extension ColonyHardenedShellBackend {
         let output = launched.finishAndCollectOutput()
         let stderr = timedOut ? mergeTimeoutMessage(into: output.stderr) : output.stderr
         let exitCode: Int32 = timedOut ? 124 : launched.exitCode
-        return ColonyShellExecutionResult(
+        return ColonyShell.ExecutionResult(
             exitCode: exitCode,
             stdout: output.stdout,
             stderr: stderr,
             wasTruncated: output.wasTruncated
         )
+    }
+
+    static func durationToNanoseconds(_ duration: Duration) -> UInt64 {
+        let components = duration.components
+        let secondsNanos = UInt64(clamping: components.seconds) &* 1_000_000_000
+        let attosecondsNanos = UInt64(clamping: components.attoseconds / 1_000_000_000)
+        return secondsNanos &+ attosecondsNanos
     }
 
     static func mergeTimeoutMessage(into stderr: String) -> String {
@@ -226,7 +259,7 @@ private extension ColonyHardenedShellBackend {
     static func launchInteractiveSession(
         command: String,
         workingDirectory: URL,
-        workingDirectoryPath: ColonyVirtualPath?,
+        workingDirectoryPath: ColonyFileSystem.VirtualPath?,
         environment: [String: String]?,
         maxOutputBytes: Int
     ) throws -> ManagedShellSession {
@@ -239,7 +272,7 @@ private extension ColonyHardenedShellBackend {
         var masterFD: Int32 = -1
         var slaveFD: Int32 = -1
         guard openpty(&masterFD, &slaveFD, nil, nil, nil) == 0 else {
-            throw ColonyShellExecutionError.launchFailed(String(cString: strerror(errno)))
+            throw ColonyShell.ExecutionError.launchFailed(String(cString: strerror(errno)))
         }
 
         let master = FileHandle(fileDescriptor: masterFD, closeOnDealloc: true)
@@ -263,14 +296,14 @@ private extension ColonyHardenedShellBackend {
             master.readabilityHandler = nil
             try? master.close()
             try? slave.close()
-            throw ColonyShellExecutionError.launchFailed(error.localizedDescription)
+            throw ColonyShell.ExecutionError.launchFailed(error.localizedDescription)
         }
 
         // Parent closes slave so EOF propagates correctly.
         try? slave.close()
 
         return ManagedShellSession(
-            id: ColonyShellSessionID(rawValue: "pty:" + UUID().uuidString.lowercased()),
+            id: ColonyShell.SessionID(rawValue: "pty:" + UUID().uuidString.lowercased()),
             command: command,
             workingDirectory: workingDirectoryPath,
             process: process,
@@ -281,12 +314,12 @@ private extension ColonyHardenedShellBackend {
 }
 
 private extension ColonyHardenedShellBackend {
-    func validateWorkingDirectoryExists(_ url: URL, requestedPath: ColonyVirtualPath) throws {
+    func validateWorkingDirectoryExists(_ url: URL, requestedPath: ColonyFileSystem.VirtualPath) throws {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
               isDirectory.boolValue
         else {
-            throw ColonyShellExecutionError.invalidWorkingDirectory(requestedPath)
+            throw ColonyShell.ExecutionError.invalidWorkingDirectory(requestedPath)
         }
     }
 
@@ -466,17 +499,17 @@ private actor SessionOutputBuffer {
 }
 
 private final class ManagedShellSession: @unchecked Sendable {
-    let id: ColonyShellSessionID
+    let id: ColonyShell.SessionID
     let command: String
-    let workingDirectory: ColonyVirtualPath?
+    let workingDirectory: ColonyFileSystem.VirtualPath?
     let process: Process
     let master: FileHandle
     let outputBuffer: SessionOutputBuffer
 
     init(
-        id: ColonyShellSessionID,
+        id: ColonyShell.SessionID,
         command: String,
-        workingDirectory: ColonyVirtualPath?,
+        workingDirectory: ColonyFileSystem.VirtualPath?,
         process: Process,
         master: FileHandle,
         outputBuffer: SessionOutputBuffer
@@ -498,7 +531,7 @@ private final class ManagedShellSession: @unchecked Sendable {
         do {
             try master.write(contentsOf: data)
         } catch {
-            throw ColonyShellExecutionError.launchFailed(error.localizedDescription)
+            throw ColonyShell.ExecutionError.launchFailed(error.localizedDescription)
         }
     }
 
@@ -514,31 +547,31 @@ private final class ManagedShellSession: @unchecked Sendable {
 private actor ColonyShellSessionManager {
     private struct Entry {
         var session: ManagedShellSession
-        var snapshot: ColonyShellSessionSnapshot
+        var snapshot: ColonyShell.SessionSnapshot
         var lastActivityNanoseconds: UInt64
         var idleTimeoutNanoseconds: UInt64?
     }
 
-    private var entriesByID: [ColonyShellSessionID: Entry] = [:]
+    private var entriesByID: [ColonyShell.SessionID: Entry] = [:]
 
     func insert(
         _ session: ManagedShellSession,
-        snapshot: ColonyShellSessionSnapshot,
-        idleTimeoutNanoseconds: UInt64?
+        snapshot: ColonyShell.SessionSnapshot,
+        idleTimeout: Duration?
     ) {
         let now = DispatchTime.now().uptimeNanoseconds
         entriesByID[session.id] = Entry(
             session: session,
             snapshot: snapshot,
             lastActivityNanoseconds: now,
-            idleTimeoutNanoseconds: idleTimeoutNanoseconds
+            idleTimeoutNanoseconds: idleTimeout.map { ColonyHardenedShellBackend.durationToNanoseconds($0) }
         )
     }
 
-    func write(to sessionID: ColonyShellSessionID, data: Data) async throws {
+    func write(to sessionID: ColonyShell.SessionID, data: Data) async throws {
         await pruneExpiredSessions()
         guard var entry = entriesByID[sessionID] else {
-            throw ColonyShellExecutionError.sessionNotFound(sessionID)
+            throw ColonyShell.ExecutionError.sessionNotFound(sessionID)
         }
 
         try entry.session.write(data)
@@ -548,16 +581,16 @@ private actor ColonyShellSessionManager {
     }
 
     func read(
-        from sessionID: ColonyShellSessionID,
+        from sessionID: ColonyShell.SessionID,
         maxBytes: Int,
-        timeoutNanoseconds: UInt64?
-    ) async throws -> ColonyShellSessionReadResult {
+        timeout: Duration?
+    ) async throws -> ColonyShell.SessionReadResult {
         await pruneExpiredSessions()
         guard var entry = entriesByID[sessionID] else {
-            throw ColonyShellExecutionError.sessionNotFound(sessionID)
+            throw ColonyShell.ExecutionError.sessionNotFound(sessionID)
         }
 
-        let deadline = timeoutNanoseconds.map { DispatchTime.now().uptimeNanoseconds &+ $0 }
+        let deadline = timeout.map { DispatchTime.now().uptimeNanoseconds &+ ColonyHardenedShellBackend.durationToNanoseconds($0) }
         while true {
             let chunk = await entry.session.outputBuffer.drain(maxBytes: maxBytes)
             if chunk.data.isEmpty == false {
@@ -565,7 +598,7 @@ private actor ColonyShellSessionManager {
                 entry.snapshot.isRunning = entry.session.isRunning
                 entriesByID[sessionID] = entry
                 let hasRemainingBufferedOutput = await entry.session.outputBuffer.hasData()
-                return ColonyShellSessionReadResult(
+                return ColonyShell.SessionReadResult(
                     stdout: String(decoding: chunk.data, as: UTF8.self),
                     stderr: "",
                     eof: entry.session.isRunning == false && hasRemainingBufferedOutput == false,
@@ -576,33 +609,33 @@ private actor ColonyShellSessionManager {
             if entry.session.isRunning == false {
                 entry.snapshot.isRunning = false
                 entriesByID[sessionID] = entry
-                return ColonyShellSessionReadResult(stdout: "", stderr: "", eof: true, wasTruncated: false)
+                return ColonyShell.SessionReadResult(stdout: "", stderr: "", eof: true, wasTruncated: false)
             }
 
             if let deadline, DispatchTime.now().uptimeNanoseconds >= deadline {
                 entry.snapshot.isRunning = entry.session.isRunning
                 entriesByID[sessionID] = entry
-                return ColonyShellSessionReadResult(stdout: "", stderr: "", eof: false, wasTruncated: false)
+                return ColonyShell.SessionReadResult(stdout: "", stderr: "", eof: false, wasTruncated: false)
             }
 
             try? await Task.sleep(nanoseconds: 10_000_000)
 
             guard let refreshed = entriesByID[sessionID] else {
-                throw ColonyShellExecutionError.sessionNotFound(sessionID)
+                throw ColonyShell.ExecutionError.sessionNotFound(sessionID)
             }
             entry = refreshed
         }
     }
 
-    func close(_ sessionID: ColonyShellSessionID) async {
+    func close(_ sessionID: ColonyShell.SessionID) async {
         await pruneExpiredSessions()
         guard let entry = entriesByID.removeValue(forKey: sessionID) else { return }
         entry.session.close()
     }
 
-    func listSnapshots() async -> [ColonyShellSessionSnapshot] {
+    func listSnapshots() async -> [ColonyShell.SessionSnapshot] {
         await pruneExpiredSessions()
-        var snapshots: [ColonyShellSessionSnapshot] = []
+        var snapshots: [ColonyShell.SessionSnapshot] = []
         snapshots.reserveCapacity(entriesByID.count)
         let ids = entriesByID.keys.sorted { $0.rawValue.utf8.lexicographicallyPrecedes($1.rawValue.utf8) }
         for id in ids {
@@ -621,7 +654,7 @@ private actor ColonyShellSessionManager {
 
     private func pruneExpiredSessions() async {
         let now = DispatchTime.now().uptimeNanoseconds
-        let expiredIDs = entriesByID.compactMap { sessionID, entry -> ColonyShellSessionID? in
+        let expiredIDs = entriesByID.compactMap { sessionID, entry -> ColonyShell.SessionID? in
             guard let timeout = entry.idleTimeoutNanoseconds else { return nil }
             return (now &- entry.lastActivityNanoseconds) >= timeout ? sessionID : nil
         }

@@ -10,7 +10,7 @@ package enum ColonyHarnessSessionError: Error, Sendable {
 package actor ColonyHarnessSession {
     package let sessionID: ColonyHarnessSessionID
 
-    package var lifecycleState: ColonyHarnessLifecycleState {
+    package var lifecycleState: ColonyHarness.LifecycleState {
         lifecycleStateStorage
     }
 
@@ -28,7 +28,7 @@ package actor ColonyHarnessSession {
         )
     }
 
-    package func stream() -> AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> {
+    package func stream() -> AsyncThrowingStream<ColonyHarness.EventEnvelope, Error> {
         let subscriberID = UUID()
         return AsyncThrowingStream { continuation in
             Task { await self.addSubscriber(id: subscriberID, continuation: continuation) }
@@ -59,15 +59,15 @@ package actor ColonyHarnessSession {
         beginAttemptMonitoring(handle: handle, runID: runID)
     }
 
-    package func interrupted() -> ColonyHarnessInterruption? {
+    package func interrupted() -> ColonyHarness.Interruption? {
         interruptionQueue.first
     }
 
-    package func pendingInterruptions() -> [ColonyHarnessInterruption] {
+    package func pendingInterruptions() -> [ColonyHarness.Interruption] {
         interruptionQueue
     }
 
-    package func resume(decision: ColonyToolApprovalDecision) async throws {
+    package func resume(decision: ColonyToolApproval.Decision) async throws {
         guard activeAttemptID == nil else {
             throw ColonyHarnessSessionError.runAlreadyActive
         }
@@ -85,7 +85,7 @@ package actor ColonyHarnessSession {
                     runID: interruptedState.runID,
                     eventType: .toolDenied,
                     payload: .toolDenied(
-                        ColonyHarnessToolDeniedPayload(
+                        ColonyHarness.ToolDeniedPayload(
                             toolCallID: call.id,
                             toolName: call.name.rawValue,
                             reason: decision == .cancelled ? "cancelled" : "rejected"
@@ -126,8 +126,8 @@ package actor ColonyHarnessSession {
     private let runStateStore: ColonyDurableRunStateStore?
     private let observabilityEmitter: ColonyObservabilityEmitter?
 
-    private var lifecycleStateStorage: ColonyHarnessLifecycleState = .idle
-    private var interruptionQueue: [ColonyHarnessInterruption] = []
+    private var lifecycleStateStorage: ColonyHarness.LifecycleState = .idle
+    private var interruptionQueue: [ColonyHarness.Interruption] = []
     private var stopRequested: Bool = false
 
     private var activeAttemptID: HiveRunAttemptID?
@@ -136,7 +136,7 @@ package actor ColonyHarnessSession {
     private var outcomeMonitorTask: Task<Void, Never>?
 
     private var sequenceCounter: Int = 0
-    private var subscribers: [UUID: AsyncThrowingStream<ColonyHarnessEventEnvelope, Error>.Continuation] = [:]
+    private var subscribers: [UUID: AsyncThrowingStream<ColonyHarness.EventEnvelope, Error>.Continuation] = [:]
 
     private init(
         runtime: ColonyRuntime,
@@ -193,11 +193,11 @@ package actor ColonyHarnessSession {
             await emit(
                 runID: runID,
                 eventType: .assistantDelta,
-                payload: .assistantDelta(ColonyHarnessAssistantDeltaPayload(delta: text))
+                payload: .assistantDelta(ColonyHarness.AssistantDeltaPayload(delta: text))
             )
 
         case .toolInvocationFinished(let name, let success):
-            guard let toolCallID = event.metadata["toolCallID"], toolCallID.isEmpty == false else {
+            guard let toolCallIDString = event.metadata["toolCallID"], toolCallIDString.isEmpty == false else {
                 return
             }
 
@@ -205,8 +205,8 @@ package actor ColonyHarnessSession {
                 runID: runID,
                 eventType: .toolResult,
                 payload: .toolResult(
-                    ColonyHarnessToolResultPayload(
-                        toolCallID: toolCallID,
+                    ColonyHarness.ToolResultPayload(
+                        toolCallID: ColonyToolCallID(toolCallIDString),
                         toolName: name,
                         success: success
                     )
@@ -235,7 +235,7 @@ package actor ColonyHarnessSession {
         case .interrupted(let interruption):
             switch interruption.interrupt.payload {
             case .toolApprovalRequired(let toolCalls):
-                let queuedInterruption = ColonyHarnessInterruption(
+                let queuedInterruption = ColonyHarness.Interruption(
                     runID: runID,
                     interruptID: ColonyInterruptID(interruption.interrupt.id),
                     toolCalls: toolCalls
@@ -247,7 +247,7 @@ package actor ColonyHarnessSession {
                         runID: runID,
                         eventType: .toolRequest,
                         payload: .toolRequest(
-                            ColonyHarnessToolRequestPayload(
+                            ColonyHarness.ToolRequestPayload(
                                 toolCallID: toolCall.id,
                                 toolName: toolCall.name.rawValue,
                                 argumentsJSON: toolCall.argumentsJSON
@@ -260,9 +260,9 @@ package actor ColonyHarnessSession {
         }
     }
 
-    private func emit(runID: UUID, eventType: ColonyHarnessEventType, payload: ColonyHarnessEventPayload) async {
+    private func emit(runID: UUID, eventType: ColonyHarness.EventType, payload: ColonyHarness.EventPayload) async {
         sequenceCounter += 1
-        let envelope = ColonyHarnessEventEnvelope(
+        let envelope = ColonyHarness.EventEnvelope(
             protocolVersion: .v1,
             eventType: eventType,
             sequence: sequenceCounter,
@@ -300,7 +300,7 @@ package actor ColonyHarnessSession {
 
     private func addSubscriber(
         id: UUID,
-        continuation: AsyncThrowingStream<ColonyHarnessEventEnvelope, Error>.Continuation
+        continuation: AsyncThrowingStream<ColonyHarness.EventEnvelope, Error>.Continuation
     ) async {
         subscribers[id] = continuation
     }

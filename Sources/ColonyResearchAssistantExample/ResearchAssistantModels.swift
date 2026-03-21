@@ -80,7 +80,7 @@ final class MockResearchModel: ColonyModelClient, @unchecked Sendable {
         if isSubagentRequest(request) {
             return ColonyModelResponse(
                 message: ColonyChatMessage(
-                    id: UUID().uuidString,
+                    id: ColonyMessageID(UUID().uuidString),
                     role: .assistant,
                     content: makeSubagentFindings(for: latestUserPrompt(in: request)),
                     toolCalls: []
@@ -93,7 +93,7 @@ final class MockResearchModel: ColonyModelClient, @unchecked Sendable {
         }) {
             return ColonyModelResponse(
                 message: ColonyChatMessage(
-                    id: UUID().uuidString,
+                    id: ColonyMessageID(UUID().uuidString),
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\nTool execution was rejected by the user; no additional evidence was collected.",
                     toolCalls: []
@@ -104,7 +104,7 @@ final class MockResearchModel: ColonyModelClient, @unchecked Sendable {
         guard let latest = latestNonSystemMessage(in: request) else {
             return ColonyModelResponse(
                 message: ColonyChatMessage(
-                    id: UUID().uuidString,
+                    id: ColonyMessageID(UUID().uuidString),
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\nNo user input was provided.",
                     toolCalls: []
@@ -132,7 +132,7 @@ Return:
 
             return ColonyModelResponse(
                 message: ColonyChatMessage(
-                    id: UUID().uuidString,
+                    id: ColonyMessageID(UUID().uuidString),
                     role: .assistant,
                     content: "Delegating research to a focused subagent.",
                     toolCalls: [call]
@@ -144,7 +144,7 @@ Return:
             let body = synthesized.isEmpty ? "(subagent returned no content)" : synthesized
             return ColonyModelResponse(
                 message: ColonyChatMessage(
-                    id: UUID().uuidString,
+                    id: ColonyMessageID(UUID().uuidString),
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\n\(body)",
                     toolCalls: []
@@ -154,7 +154,7 @@ Return:
         case .assistant, .system:
             return ColonyModelResponse(
                 message: ColonyChatMessage(
-                    id: UUID().uuidString,
+                    id: ColonyMessageID(UUID().uuidString),
                     role: .assistant,
                     content: "MOCK_RESEARCH_SUMMARY\n\nWaiting for user research prompt.",
                     toolCalls: []
@@ -163,11 +163,11 @@ Return:
         }
     }
 
-    private func nextToolCallID() -> String {
+    private func nextToolCallID() -> ColonyToolCallID {
         lock.lock()
         defer { lock.unlock() }
         toolCallCounter += 1
-        return "mock-task-\(toolCallCounter)"
+        return ColonyToolCallID("mock-task-\(toolCallCounter)")
     }
 
     private func latestNonSystemMessage(in request: ColonyModelRequest) -> ColonyChatMessage? {

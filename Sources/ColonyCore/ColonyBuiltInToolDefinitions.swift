@@ -307,7 +307,7 @@ package enum ColonyBuiltInToolDefinitions {
         """
     )
 
-    package static func task(availableSubagents: [ColonySubagentDescriptor]) -> HiveToolDefinition {
+    package static func task(availableSubagents: [ColonySubagent.Descriptor]) -> HiveToolDefinition {
         let available: String
         if availableSubagents.isEmpty {
             available = "(none configured)"

@@ -1,0 +1,157 @@
+import Foundation
+import HiveCore
+import ColonyCore
+
+package enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvertible {
+    case onDeviceRequiredButUnavailable
+
+    public var description: String {
+        switch self {
+        case .onDeviceRequiredButUnavailable:
+            "On-device execution was required but no on-device model is available."
+        }
+    }
+}
+
+package struct ColonyOnDeviceModelRouter: HiveModelRouter, ColonyCapabilityReportingHiveModelRouter, Sendable {
+    package enum PrivacyBehavior: Sendable {
+        /// Prefer on-device, but allow fallback when unavailable.
+        case preferOnDevice
+        /// Require on-device; when unavailable, the routed model client fails deterministically.
+        case requireOnDevice
+    }
+
+    package struct Policy: Sendable {
+        package var privacyBehavior: PrivacyBehavior
+        package var preferOnDeviceWhenOffline: Bool
+        package var preferOnDeviceWhenMetered: Bool
+
+        package init(
+            privacyBehavior: PrivacyBehavior = .preferOnDevice,
+            preferOnDeviceWhenOffline: Bool = true,
+            preferOnDeviceWhenMetered: Bool = true
+        ) {
+            self.privacyBehavior = privacyBehavior
+            self.preferOnDeviceWhenOffline = preferOnDeviceWhenOffline
+            self.preferOnDeviceWhenMetered = preferOnDeviceWhenMetered
+        }
+    }
+
+    package init(
+        onDevice: AnyHiveModelClient?,
+        fallback: AnyHiveModelClient,
+        onDeviceCapabilities: ColonyModelCapabilities = [],
+        fallbackCapabilities: ColonyModelCapabilities = [],
+        policy: Policy = Policy(),
+        isOnDeviceAvailable: @escaping @Sendable () -> Bool = { true }
+    ) {
+        self.onDevice = onDevice
+        self.fallback = fallback
+        self.onDeviceCapabilities = onDeviceCapabilities
+        self.fallbackCapabilities = fallbackCapabilities
+        self.policy = policy
+        self.isOnDeviceAvailable = isOnDeviceAvailable
+    }
+
+    /// Convenience initializer that wires `ColonyFoundationModelsClient` as the on-device model.
+    package init(
+        fallback: AnyHiveModelClient,
+        policy: Policy = Policy(),
+        foundationModels: ColonyFoundationModelsClient = ColonyFoundationModelsClient()
+    ) {
+        self.init(
+            onDevice: AnyHiveModelClient(
+                ColonyHiveModelClientAdapter(base: AnyColonyModelClient(foundationModels))
+            ),
+            fallback: fallback,
+            onDeviceCapabilities: foundationModels.colonyModelCapabilities,
+            policy: policy,
+            isOnDeviceAvailable: { ColonyFoundationModelsClient.isAvailable }
+        )
+    }
+
+    package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+        guard let hints else { return fallback }
+
+        let wantsOnDevice: Bool = {
+            if hints.privacyRequired {
+                return true
+            }
+
+            switch hints.networkState {
+            case .offline:
+                return policy.preferOnDeviceWhenOffline
+            case .metered:
+                return policy.preferOnDeviceWhenMetered
+            case .online:
+                return false
+            }
+        }()
+
+        guard wantsOnDevice else {
+            return fallback
+        }
+
+        if let onDevice, isOnDeviceAvailable() {
+            return onDevice
+        }
+
+        if hints.privacyRequired, policy.privacyBehavior == .requireOnDevice {
+            return AnyHiveModelClient(ColonyFailingModelClient(error: .onDeviceRequiredButUnavailable))
+        }
+
+        return fallback
+    }
+
+    package func colonyModelCapabilities(hints: HiveInferenceHints?) -> ColonyModelCapabilities {
+        guard let hints else { return fallbackCapabilities }
+
+        let wantsOnDevice: Bool = {
+            if hints.privacyRequired {
+                return true
+            }
+
+            switch hints.networkState {
+            case .offline:
+                return policy.preferOnDeviceWhenOffline
+            case .metered:
+                return policy.preferOnDeviceWhenMetered
+            case .online:
+                return false
+            }
+        }()
+
+        guard wantsOnDevice else {
+            return fallbackCapabilities
+        }
+
+        if onDevice != nil, isOnDeviceAvailable() {
+            return onDeviceCapabilities
+        }
+
+        return fallbackCapabilities
+    }
+
+    // MARK: - Private
+
+    private let onDevice: AnyHiveModelClient?
+    private let fallback: AnyHiveModelClient
+    private let policy: Policy
+    private let isOnDeviceAvailable: @Sendable () -> Bool
+    private let onDeviceCapabilities: ColonyModelCapabilities
+    private let fallbackCapabilities: ColonyModelCapabilities
+}
+
+private struct ColonyFailingModelClient: HiveModelClient, Sendable {
+    let error: ColonyOnDeviceModelRouterError
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        throw error
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: error)
+        }
+    }
+}

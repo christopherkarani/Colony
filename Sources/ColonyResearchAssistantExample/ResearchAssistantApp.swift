@@ -34,7 +34,7 @@ struct ResearchAssistantApp: Sendable {
         }
 
         let rootURL = URL(fileURLWithPath: options.root, isDirectory: true)
-        let filesystem = ColonyDiskFileSystemBackend(root: rootURL)
+        let filesystem = ColonyFileSystem.DiskBackend(root: rootURL)
 
         let runtime = try await Colony.agent(
             model: resolved.model,
@@ -45,13 +45,13 @@ struct ResearchAssistantApp: Sendable {
             .filesystem(filesystem)
         } configure: { config in
             config.safety.toolApprovalPolicy = .allowList([
-                ColonyBuiltInTool.ls.rawValue,
-                ColonyBuiltInTool.readFile.rawValue,
-                ColonyBuiltInTool.glob.rawValue,
-                ColonyBuiltInTool.grep.rawValue,
-                ColonyBuiltInTool.readTodos.rawValue,
-                ColonyBuiltInTool.writeTodos.rawValue,
-                ColonyBuiltInTool.task.rawValue,
+                .ls,
+                .readFile,
+                .glob,
+                .grep,
+                .readTodos,
+                .writeTodos,
+                .task,
             ])
             config.context.summarizationPolicy = nil
             config.context.toolResultEvictionTokenLimit = nil

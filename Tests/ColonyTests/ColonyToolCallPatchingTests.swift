@@ -103,8 +103,8 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
     let fs = ColonyInMemoryFileSystemBackend()
 
     let configuration = ColonyConfiguration(
-        capabilities: [.filesystem],
         modelName: "test-model",
+        capabilities: [.filesystem],
         toolApprovalPolicy: .always
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)

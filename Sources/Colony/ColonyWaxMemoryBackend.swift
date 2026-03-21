@@ -21,7 +21,7 @@ public actor ColonyWaxMemoryBackend: ColonyMemoryBackend {
         ColonyWaxMemoryBackend(storage: try await WaxStorageBackend.create(at: url))
     }
 
-    public func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
+    public func recall(_ request: ColonyMemory.RecallRequest) async throws -> ColonyMemory.RecallResult {
         let limit = max(1, min(100, request.limit ?? 5))
         let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let searchQuery = query.isEmpty ? "memory" : query
@@ -31,7 +31,7 @@ public actor ColonyWaxMemoryBackend: ColonyMemoryBackend {
             includePointerPayloads: false
         )
 
-        let items = results.items.compactMap { item -> ColonyMemoryItem? in
+        let items = results.items.compactMap { item -> ColonyMemory.Item? in
             guard item.metadata[MetadataKey.entry] == "true" else {
                 return nil
             }
@@ -41,7 +41,7 @@ public actor ColonyWaxMemoryBackend: ColonyMemoryBackend {
             metadata[MetadataKey.provenanceRecordID] = String(item.frameId)
             metadata[MetadataKey.provenanceKind] = item.metadata["membrane.kind"] ?? "colony.memory"
 
-            return ColonyMemoryItem(
+            return ColonyMemory.Item(
                 id: metadata[MetadataKey.logicalID] ?? String(item.frameId),
                 content: item.text,
                 tags: Self.tags(from: metadata),
@@ -50,10 +50,10 @@ public actor ColonyWaxMemoryBackend: ColonyMemoryBackend {
             )
         }
 
-        return ColonyMemoryRecallResult(items: Array(items.prefix(limit)))
+        return ColonyMemory.RecallResult(items: Array(items.prefix(limit)))
     }
 
-    public func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
+    public func remember(_ request: ColonyMemory.RememberRequest) async throws -> ColonyMemory.RememberResult {
         let logicalID = "wax-" + UUID().uuidString.lowercased()
         var metadata = request.metadata
         metadata[MetadataKey.entry] = "true"
@@ -64,7 +64,7 @@ public actor ColonyWaxMemoryBackend: ColonyMemoryBackend {
         }
 
         try await storage.memory.save(request.content, metadata: metadata)
-        return ColonyMemoryRememberResult(id: logicalID)
+        return ColonyMemory.RememberResult(id: logicalID)
     }
 
     private static func tags(from metadata: [String: String]) -> [String] {

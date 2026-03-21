@@ -103,7 +103,7 @@ package enum ColonySchema: HiveSchema {
         inputContext: HiveInputContext
     ) throws -> [AnyHiveWrite<ColonySchema>] {
         let message = HiveChatMessage(
-            id: ColonyMessageID.userMessageID(runID: inputContext.runID, stepIndex: inputContext.stepIndex),
+            id: ColonyMessageIDFactory.userMessageID(runID: inputContext.runID, stepIndex: inputContext.stepIndex),
             role: .user,
             content: input
         )
@@ -338,7 +338,7 @@ package enum ColonyAgent {
             tokenizer: input.context.tokenizer
         )
         let request = HiveChatRequest(
-            model: input.context.configuration.model.name,
+            model: input.context.configuration.model.name.rawValue,
             messages: requestMessages,
             tools: tools,
             structuredOutput: input.context.configuration.model.structuredOutput?.hive
@@ -628,7 +628,7 @@ package enum ColonyAgent {
             mandatoryApprovalRiskLevels: input.context.configuration.safety.mandatoryApprovalRiskLevels,
             defaultRiskLevel: input.context.configuration.safety.defaultToolRiskLevel
         )
-        let assessments = safety.assess(toolCalls: calls.map(ColonyToolCall.init))
+        let assessments = safety.assess(toolCalls: calls.map(ColonyTool.Call.init))
         let assessmentsByCallID = Dictionary(uniqueKeysWithValues: assessments.map { ($0.toolCallID, $0) })
         let persistedRuleDecisions = try await resolvePersistedRuleDecisions(
             calls: calls,
@@ -652,14 +652,14 @@ package enum ColonyAgent {
                 continue
             }
 
-            let requiresApproval = assessmentsByCallID[call.id]?.requiresApproval == true
+            let requiresApproval = assessmentsByCallID[ColonyToolCallID(call.id)]?.requiresApproval == true
             if requiresApproval == false {
                 preApprovedIDs.insert(call.id)
             }
         }
 
         let approvalRequiredCalls = calls.filter {
-            assessmentsByCallID[$0.id]?.requiresApproval == true
+            assessmentsByCallID[ColonyToolCallID($0.id)]?.requiresApproval == true
                 && preApprovedIDs.contains($0.id) == false
                 && preDeniedIDs.contains($0.id) == false
         }
@@ -675,7 +675,7 @@ package enum ColonyAgent {
                 cancelledIDs.reserveCapacity(calls.count)
 
                 for call in approvalRequiredCalls {
-                    switch decision.decision(forToolCallID: call.id) {
+                    switch decision.decision(forToolCallID: ColonyToolCallID(call.id)) {
                     case .approved:
                         approvedIDs.insert(call.id)
                     case .cancelled:
@@ -740,7 +740,7 @@ package enum ColonyAgent {
             return HiveNodeOutput(
                 next: .nodes([nodeTools]),
                 interrupt: HiveInterruptRequest(
-                    payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls.map(ColonyToolCall.init))
+                    payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls.map(ColonyTool.Call.init))
                 )
             )
         }
@@ -789,7 +789,7 @@ package enum ColonyAgent {
 
         if rejectedCalls.isEmpty == false {
             let rejectedSystem = HiveChatMessage(
-                id: ColonyMessageID.systemMessageID(taskID: taskID),
+                id: ColonyMessageIDFactory.systemMessageID(taskID: taskID),
                 role: .system,
                 content: "Tool execution rejected by user."
             )
@@ -810,7 +810,7 @@ package enum ColonyAgent {
 
         if cancelledCalls.isEmpty == false {
             let cancelledSystem = HiveChatMessage(
-                id: ColonyMessageID.systemMessageID(taskID: taskID) + ":cancelled",
+                id: ColonyMessageIDFactory.systemMessageID(taskID: taskID) + ":cancelled",
                 role: .system,
                 content: "Tool execution cancelled by user."
             )
@@ -845,20 +845,21 @@ package enum ColonyAgent {
 
     private static func recordToolAuditEvents(
         calls: [HiveToolCall],
-        decision: ColonyToolAuditDecisionKind,
-        assessmentsByCallID: [String: ColonyToolSafetyAssessment],
+        decision: ColonyToolAudit.DecisionKind,
+        assessmentsByCallID: [ColonyToolCallID: ColonyToolSafetyAssessment],
         input: HiveNodeInput<ColonySchema>
     ) async throws {
         guard calls.isEmpty == false else { return }
         guard let recorder = input.context.configuration.safety.toolAuditRecorder else { return }
 
         for call in calls {
-            guard let assessment = assessmentsByCallID[call.id] else { continue }
-            let event = ColonyToolAuditEvent(
+            let callID = ColonyToolCallID(call.id)
+            guard let assessment = assessmentsByCallID[callID] else { continue }
+            let event = ColonyToolAudit.Event(
                 timestampNanoseconds: input.environment.clock.nowNanoseconds(),
                 threadID: input.run.threadID.rawValue,
                 taskID: input.run.taskID.rawValue,
-                toolCallID: call.id,
+                toolCallID: callID,
                 toolName: call.name,
                 riskLevel: assessment.riskLevel,
                 decision: decision,
@@ -870,7 +871,7 @@ package enum ColonyAgent {
 
     private static func resolvePersistedRuleDecisions(
         calls: [HiveToolCall],
-        assessmentsByCallID: [String: ColonyToolSafetyAssessment],
+        assessmentsByCallID: [ColonyToolCallID: ColonyToolSafetyAssessment],
         store: (any ColonyToolApprovalRuleStore)?
     ) async throws -> [String: ColonyToolApprovalRuleDecision] {
         guard let store else {
@@ -881,7 +882,7 @@ package enum ColonyAgent {
         decisions.reserveCapacity(calls.count)
 
         for call in calls {
-            guard assessmentsByCallID[call.id]?.requiresApproval == true else { continue }
+            guard assessmentsByCallID[ColonyToolCallID(call.id)]?.requiresApproval == true else { continue }
             if let resolved = try await store.resolveDecision(forToolName: call.name, consumeOneShot: true) {
                 decisions[call.id] = resolved.decision
             }
@@ -1116,7 +1117,7 @@ package enum ColonyAgent {
         guard messages.count > keepLastMessages else { return nil }
 
         let threadSlug = sanitizePathComponent(threadID.rawValue)
-        let historyPath = try ColonyVirtualPath(policy.historyPathPrefix.rawValue + "/" + threadSlug + ".md")
+        let historyPath = try ColonyFileSystem.VirtualPath(policy.historyPathPrefix.rawValue + "/" + threadSlug + ".md")
 
         let offloaded = Array(messages.prefix(messages.count - keepLastMessages))
         let tail = Array(messages.suffix(keepLastMessages))
@@ -1158,7 +1159,7 @@ package enum ColonyAgent {
                 """
 
                 _ = try await subagents.run(
-                    ColonySubagentRequest(
+                    ColonySubagent.Request(
                         prompt: prompt,
                         subagentType: "compactor"
                     )
@@ -1184,7 +1185,7 @@ package enum ColonyAgent {
         filesystem: any ColonyFileSystemBackend,
         threadID: HiveThreadID,
         policy: ColonyScratchbookPolicy,
-        historyPath: ColonyVirtualPath
+        historyPath: ColonyFileSystem.VirtualPath
     ) async throws {
         let scratchbook = try await ColonyScratchbookStore.load(
             filesystem: filesystem,
@@ -1236,7 +1237,7 @@ package enum ColonyAgent {
     }
 
     private static func loadAgentsMemory(
-        sources: [ColonyVirtualPath],
+        sources: [ColonyFileSystem.VirtualPath],
         tokenLimit: Int?,
         filesystem: any ColonyFileSystemBackend
     ) async throws -> String? {
@@ -1260,13 +1261,13 @@ package enum ColonyAgent {
     }
 
     private static func loadSkillsCatalogMetadata(
-        sources: [ColonyVirtualPath],
+        sources: [ColonyFileSystem.VirtualPath],
         tokenLimit: Int?,
         filesystem: any ColonyFileSystemBackend
     ) async throws -> String? {
         guard sources.isEmpty == false else { return nil }
 
-        var skillPaths: Set<ColonyVirtualPath> = []
+        var skillPaths: Set<ColonyFileSystem.VirtualPath> = []
         for root in sources {
             if root.rawValue.hasSuffix("/SKILL.md") {
                 skillPaths.insert(root)
@@ -1367,9 +1368,9 @@ package enum ColonyAgent {
         guard content.count > threshold else { return content }
 
         let sanitizedID = sanitizeToolCallID(toolCall.id)
-        let path: ColonyVirtualPath
+        let path: ColonyFileSystem.VirtualPath
         do {
-            path = try ColonyVirtualPath("/large_tool_results/" + sanitizedID)
+            path = try ColonyFileSystem.VirtualPath("/large_tool_results/" + sanitizedID)
         } catch {
             return content
         }
@@ -1442,7 +1443,7 @@ Preview:
 
     private static func appendFile(
         filesystem: any ColonyFileSystemBackend,
-        path: ColonyVirtualPath,
+        path: ColonyFileSystem.VirtualPath,
         content: String
     ) async throws {
         if let existing = try? await filesystem.read(at: path) {
@@ -1459,12 +1460,12 @@ Preview:
 
     private static func writeOrOverwrite(
         filesystem: any ColonyFileSystemBackend,
-        path: ColonyVirtualPath,
+        path: ColonyFileSystem.VirtualPath,
         content: String
     ) async throws {
         do {
             try await filesystem.write(at: path, content: content)
-        } catch let error as ColonyFileSystemError {
+        } catch let error as ColonyFileSystem.Error {
             switch error {
             case .alreadyExists:
                 if let existing = try? await filesystem.read(at: path), existing.isEmpty == false {
@@ -1599,7 +1600,7 @@ enum ColonyMessages {
         taskID: HiveTaskID
     ) -> HiveChatMessage {
         HiveChatMessage(
-            id: ColonyMessageID.assistantMessageID(taskID: taskID),
+            id: ColonyMessageIDFactory.assistantMessageID(taskID: taskID),
             role: .assistant,
             content: message.content,
             toolCalls: message.toolCalls,
@@ -1608,7 +1609,7 @@ enum ColonyMessages {
     }
 }
 
-enum ColonyMessageID {
+enum ColonyMessageIDFactory {
     static func userMessageID(runID: HiveRunID, stepIndex: Int) -> String {
         var bytes = Data()
         bytes.append(contentsOf: "HMSG1".utf8)
@@ -1914,7 +1915,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: LSArgs.self, defaultingToEmptyObject: true)
-            let path = try ColonyVirtualPath(args.path ?? "/")
+            let path = try ColonyFileSystem.VirtualPath(args.path ?? "/")
             let infos = try await fs.list(at: path)
             let lines = infos.map { info in
                 info.isDirectory ? (info.path.rawValue + "/") : info.path.rawValue
@@ -1926,7 +1927,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: ReadFileArgs.self)
-            let path = try ColonyVirtualPath(args.path)
+            let path = try ColonyFileSystem.VirtualPath(args.path)
             let text = try await fs.read(at: path)
             let offset = max(0, args.offset ?? 0)
             let limit = max(1, args.limit ?? 100)
@@ -1941,7 +1942,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: WriteFileArgs.self)
-            let path = try ColonyVirtualPath(args.path)
+            let path = try ColonyFileSystem.VirtualPath(args.path)
             try await fs.write(at: path, content: args.content)
             return ColonyToolOutcome(success: true, content: "OK: wrote \(path.rawValue)", writes: [])
 
@@ -1950,7 +1951,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: EditFileArgs.self)
-            let path = try ColonyVirtualPath(args.path)
+            let path = try ColonyFileSystem.VirtualPath(args.path)
             let occurrences = try await fs.edit(
                 at: path,
                 oldString: args.oldString,
@@ -1985,19 +1986,19 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: ExecuteArgs.self)
-            let cwd: ColonyVirtualPath?
+            let cwd: ColonyFileSystem.VirtualPath?
             if let rawCWD = args.cwd, rawCWD.isEmpty == false {
-                cwd = try ColonyVirtualPath(rawCWD)
+                cwd = try ColonyFileSystem.VirtualPath(rawCWD)
             } else {
                 cwd = nil
             }
-            let timeoutNanoseconds = args.timeoutMilliseconds.map { millis -> UInt64 in
-                UInt64(max(0, millis)) * 1_000_000
+            let timeout = args.timeoutMilliseconds.map { millis -> Duration in
+                .milliseconds(max(0, millis))
             }
-            let request = ColonyShellExecutionRequest(
+            let request = ColonyShell.ExecutionRequest(
                 command: args.command,
                 workingDirectory: cwd,
-                timeoutNanoseconds: timeoutNanoseconds
+                timeout: timeout
             )
             let result = try await shell.execute(request)
             return ColonyToolOutcome(
@@ -2015,12 +2016,12 @@ enum ColonyTools {
             }
             let args = try decode(call.argumentsJSON, as: ShellOpenArgs.self)
             let cwd = try virtualPath(from: args.cwd)
-            let idleTimeout = args.idleTimeoutMilliseconds.map { UInt64(max(0, $0)) * 1_000_000 }
+            let idleTimeout = args.idleTimeoutMilliseconds.map { Duration.milliseconds(max(0, $0)) }
             let sessionID = try await shell.openSession(
-                ColonyShellSessionOpenRequest(
+                ColonyShell.SessionOpenRequest(
                     command: args.command,
                     workingDirectory: cwd,
-                    idleTimeoutNanoseconds: idleTimeout
+                    idleTimeout: idleTimeout
                 )
             )
             return ColonyToolOutcome(
@@ -2038,7 +2039,7 @@ enum ColonyTools {
             }
             let args = try decode(call.argumentsJSON, as: ShellWriteArgs.self)
             try await shell.writeToSession(
-                ColonyShellSessionID(rawValue: args.sessionID),
+                ColonyShell.SessionID(rawValue: args.sessionID),
                 data: Data(args.input.utf8)
             )
             return ColonyToolOutcome(success: true, content: "OK: wrote to \(args.sessionID)", writes: [])
@@ -2051,11 +2052,11 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: ShellReadArgs.self)
-            let timeout = args.timeoutMilliseconds.map { UInt64(max(0, $0)) * 1_000_000 }
+            let readTimeout = args.timeoutMilliseconds.map { Duration.milliseconds(max(0, $0)) }
             let result = try await shell.readFromSession(
-                ColonyShellSessionID(rawValue: args.sessionID),
+                ColonyShell.SessionID(rawValue: args.sessionID),
                 maxBytes: max(1, args.maxBytes ?? 4_096),
-                timeoutNanoseconds: timeout
+                timeout: readTimeout
             )
             return ColonyToolOutcome(success: true, content: formatShellSessionReadResult(result), writes: [])
 
@@ -2067,7 +2068,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Shell backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: ShellCloseArgs.self)
-            await shell.closeSession(ColonyShellSessionID(rawValue: args.sessionID))
+            await shell.closeSession(ColonyShell.SessionID(rawValue: args.sessionID))
             return ColonyToolOutcome(success: true, content: "OK: closed \(args.sessionID)", writes: [])
 
         case ColonyBuiltInToolDefinitions.applyPatch.name:
@@ -2114,7 +2115,7 @@ enum ColonyTools {
             }
             let args = try decode(call.argumentsJSON, as: MemoryRecallArgs.self)
             let result = try await backend.recall(
-                ColonyMemoryRecallRequest(
+                ColonyMemory.RecallRequest(
                     query: args.query,
                     limit: args.limit
                 )
@@ -2130,7 +2131,7 @@ enum ColonyTools {
             }
             let args = try decode(call.argumentsJSON, as: MemoryRememberArgs.self)
             let result = try await backend.remember(
-                ColonyMemoryRememberRequest(
+                ColonyMemory.RememberRequest(
                     content: args.content,
                     tags: args.tags ?? [],
                     metadata: args.metadata ?? [:]
@@ -2184,8 +2185,13 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: plugin registry not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: PluginInvokeArgs.self)
-            let output = try await plugins.invoke(name: args.name, argumentsJSON: args.argumentsJSON)
-            return ColonyToolOutcome(success: true, content: output, writes: [])
+            let pluginCall = ColonyTool.Call(
+                id: ColonyToolCallID(call.id),
+                name: ColonyTool.Name(rawValue: args.name),
+                argumentsJSON: args.argumentsJSON
+            )
+            let result = try await plugins.invoke(pluginCall)
+            return ColonyToolOutcome(success: true, content: result.content, writes: [])
 
         case ColonyBuiltInToolDefinitions.gitStatus.name:
             guard input.context.configuration.model.capabilities.contains(.git) else {
@@ -2195,7 +2201,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: GitStatusArgs.self, defaultingToEmptyObject: true)
-            let request = ColonyGitStatusRequest(
+            let request = ColonyGit.StatusRequest(
                 repositoryPath: try virtualPath(from: args.repoPath),
                 includeUntracked: args.includeUntracked ?? true
             )
@@ -2210,7 +2216,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: GitDiffArgs.self, defaultingToEmptyObject: true)
-            let request = ColonyGitDiffRequest(
+            let request = ColonyGit.DiffRequest(
                 repositoryPath: try virtualPath(from: args.repoPath),
                 baseRef: args.baseRef,
                 headRef: args.headRef,
@@ -2228,7 +2234,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: GitCommitArgs.self)
-            let request = ColonyGitCommitRequest(
+            let request = ColonyGit.CommitRequest(
                 repositoryPath: try virtualPath(from: args.repoPath),
                 message: args.message,
                 includeAll: args.includeAll ?? true,
@@ -2246,7 +2252,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: GitBranchArgs.self)
-            let request = ColonyGitBranchRequest(
+            let request = ColonyGit.BranchRequest(
                 repositoryPath: try virtualPath(from: args.repoPath),
                 operation: args.operation,
                 name: args.name,
@@ -2264,7 +2270,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: GitPushArgs.self, defaultingToEmptyObject: true)
-            let request = ColonyGitPushRequest(
+            let request = ColonyGit.PushRequest(
                 repositoryPath: try virtualPath(from: args.repoPath),
                 remote: args.remote ?? "origin",
                 branch: args.branch,
@@ -2282,7 +2288,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Git backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: GitPreparePRArgs.self)
-            let request = ColonyGitPreparePullRequestRequest(
+            let request = ColonyGit.PreparePullRequestRequest(
                 repositoryPath: try virtualPath(from: args.repoPath),
                 baseBranch: args.baseBranch,
                 headBranch: args.headBranch,
@@ -2301,7 +2307,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: LSPSymbolsArgs.self, defaultingToEmptyObject: true)
-            let request = ColonyLSPSymbolsRequest(
+            let request = ColonyLSP.SymbolsRequest(
                 path: try virtualPath(from: args.path),
                 query: args.query
             )
@@ -2316,7 +2322,7 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: LSPDiagnosticsArgs.self, defaultingToEmptyObject: true)
-            let request = ColonyLSPDiagnosticsRequest(path: try virtualPath(from: args.path))
+            let request = ColonyLSP.DiagnosticsRequest(path: try virtualPath(from: args.path))
             let diagnostics = try await lsp.diagnostics(request)
             return ColonyToolOutcome(success: true, content: formatLSPDiagnostics(diagnostics), writes: [])
 
@@ -2328,9 +2334,9 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: LSP backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: LSPReferencesArgs.self)
-            let request = ColonyLSPReferencesRequest(
-                path: try ColonyVirtualPath(args.path),
-                position: ColonyLSPPosition(line: args.line, character: args.character),
+            let request = ColonyLSP.ReferencesRequest(
+                path: try ColonyFileSystem.VirtualPath(args.path),
+                position: ColonyLSP.Position(line: args.line, character: args.character),
                 includeDeclaration: args.includeDeclaration ?? true
             )
             let references = try await lsp.references(request)
@@ -2345,16 +2351,16 @@ enum ColonyTools {
             }
             let args = try decode(call.argumentsJSON, as: LSPApplyEditArgs.self)
             let edits = try args.edits.map { edit in
-                ColonyLSPTextEdit(
-                    path: try ColonyVirtualPath(edit.path),
-                    range: ColonyLSPRange(
-                        start: ColonyLSPPosition(line: edit.startLine, character: edit.startCharacter),
-                        end: ColonyLSPPosition(line: edit.endLine, character: edit.endCharacter)
+                ColonyLSP.TextEdit(
+                    path: try ColonyFileSystem.VirtualPath(edit.path),
+                    range: ColonyLSP.Range(
+                        start: ColonyLSP.Position(line: edit.startLine, character: edit.startCharacter),
+                        end: ColonyLSP.Position(line: edit.endLine, character: edit.endCharacter)
                     ),
                     newText: edit.newText
                 )
             }
-            let result = try await lsp.applyEdit(ColonyLSPApplyEditRequest(edits: edits))
+            let result = try await lsp.applyEdit(ColonyLSP.ApplyEditRequest(edits: edits))
             return ColonyToolOutcome(success: true, content: formatLSPApplyEditResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.taskName:
@@ -2365,7 +2371,7 @@ enum ColonyTools {
             let trimmed = args.subagentType?.trimmingCharacters(in: .whitespacesAndNewlines)
             let selectedType: ColonySubagentType = (trimmed?.isEmpty == false) ? ColonySubagentType(trimmed!) : .generalPurpose
             let result = try await subagents.run(
-                ColonySubagentRequest(
+                ColonySubagent.Request(
                     prompt: args.prompt,
                     subagentType: selectedType,
                     context: args.context,
@@ -2417,7 +2423,7 @@ enum ColonyTools {
         return result.joined(separator: "\n")
     }
 
-    private static func formatShellResult(_ result: ColonyShellExecutionResult) -> String {
+    private static func formatShellResult(_ result: ColonyShell.ExecutionResult) -> String {
         var sections: [String] = ["exit_code: \(result.exitCode)"]
         if result.stdout.isEmpty == false {
             sections.append("stdout:\n\(result.stdout)")
@@ -2431,7 +2437,7 @@ enum ColonyTools {
         return sections.joined(separator: "\n\n")
     }
 
-    private static func formatShellSessionReadResult(_ result: ColonyShellSessionReadResult) -> String {
+    private static func formatShellSessionReadResult(_ result: ColonyShell.SessionReadResult) -> String {
         var sections: [String] = [
             "eof: \(result.eof ? "true" : "false")",
         ]
@@ -2447,7 +2453,7 @@ enum ColonyTools {
         return sections.joined(separator: "\n\n")
     }
 
-    private static func formatGitStatusResult(_ result: ColonyGitStatusResult) -> String {
+    private static func formatGitStatusResult(_ result: ColonyGit.StatusResult) -> String {
         var lines: [String] = []
         if let branch = result.currentBranch {
             lines.append("branch: \(branch)")
@@ -2468,7 +2474,7 @@ enum ColonyTools {
         return lines.joined(separator: "\n")
     }
 
-    private static func gitStatusCode(for state: ColonyGitStatusEntry.State) -> String {
+    private static func gitStatusCode(for state: ColonyGit.StatusEntry.State) -> String {
         switch state {
         case .added: "A"
         case .modified: "M"
@@ -2480,14 +2486,14 @@ enum ColonyTools {
         }
     }
 
-    private static func formatGitCommitResult(_ result: ColonyGitCommitResult) -> String {
+    private static func formatGitCommitResult(_ result: ColonyGit.CommitResult) -> String {
         [
             "commit: \(result.commitHash)",
             "summary: \(result.summary)",
         ].joined(separator: "\n")
     }
 
-    private static func formatGitBranchResult(_ result: ColonyGitBranchResult) -> String {
+    private static func formatGitBranchResult(_ result: ColonyGit.BranchResult) -> String {
         var lines: [String] = []
         if let currentBranch = result.currentBranch {
             lines.append("current: \(currentBranch)")
@@ -2504,7 +2510,7 @@ enum ColonyTools {
         return lines.joined(separator: "\n")
     }
 
-    private static func formatGitPushResult(_ result: ColonyGitPushResult) -> String {
+    private static func formatGitPushResult(_ result: ColonyGit.PushResult) -> String {
         [
             "remote: \(result.remote)",
             "branch: \(result.branch)",
@@ -2512,7 +2518,7 @@ enum ColonyTools {
         ].joined(separator: "\n")
     }
 
-    private static func formatGitPreparePRResult(_ result: ColonyGitPreparePullRequestResult) -> String {
+    private static func formatGitPreparePRResult(_ result: ColonyGit.PreparePullRequestResult) -> String {
         var lines = [
             "base: \(result.baseBranch)",
             "head: \(result.headBranch)",
@@ -2527,7 +2533,7 @@ enum ColonyTools {
         return lines.joined(separator: "\n")
     }
 
-    private static func formatLSPSymbols(_ symbols: [ColonyLSPSymbol]) -> String {
+    private static func formatLSPSymbols(_ symbols: [ColonyLSP.Symbol]) -> String {
         guard symbols.isEmpty == false else { return "(No symbols)" }
         return symbols.map { symbol in
             let line = symbol.range.start.line + 1
@@ -2536,7 +2542,7 @@ enum ColonyTools {
         }.joined(separator: "\n")
     }
 
-    private static func formatLSPDiagnostics(_ diagnostics: [ColonyLSPDiagnostic]) -> String {
+    private static func formatLSPDiagnostics(_ diagnostics: [ColonyLSP.Diagnostic]) -> String {
         guard diagnostics.isEmpty == false else { return "(No diagnostics)" }
         return diagnostics.map { diagnostic in
             let line = diagnostic.range.start.line + 1
@@ -2546,7 +2552,7 @@ enum ColonyTools {
         }.joined(separator: "\n")
     }
 
-    private static func formatLSPReferences(_ references: [ColonyLSPReference]) -> String {
+    private static func formatLSPReferences(_ references: [ColonyLSP.Reference]) -> String {
         guard references.isEmpty == false else { return "(No references)" }
         return references.map { reference in
             let line = reference.range.start.line + 1
@@ -2558,7 +2564,7 @@ enum ColonyTools {
         }.joined(separator: "\n")
     }
 
-    private static func formatLSPApplyEditResult(_ result: ColonyLSPApplyEditResult) -> String {
+    private static func formatLSPApplyEditResult(_ result: ColonyLSP.ApplyEditResult) -> String {
         var lines = ["applied_edits: \(result.appliedEditCount)"]
         if let summary = result.summary, summary.isEmpty == false {
             lines.append("summary: \(summary)")
@@ -2566,7 +2572,7 @@ enum ColonyTools {
         return lines.joined(separator: "\n")
     }
 
-    private static func formatMemoryRecallResult(_ result: ColonyMemoryRecallResult) -> String {
+    private static func formatMemoryRecallResult(_ result: ColonyMemory.RecallResult) -> String {
         guard result.items.isEmpty == false else { return "(No memory matches)" }
 
         let blocks = result.items.map { item in
@@ -2594,15 +2600,15 @@ enum ColonyTools {
         return blocks.joined(separator: "\n\n")
     }
 
-    private static func formatMemoryRememberResult(_ result: ColonyMemoryRememberResult) -> String {
+    private static func formatMemoryRememberResult(_ result: ColonyMemory.RememberResult) -> String {
         "OK: remembered \(result.id)"
     }
 
-    private static func virtualPath(from value: String?) throws -> ColonyVirtualPath? {
+    private static func virtualPath(from value: String?) throws -> ColonyFileSystem.VirtualPath? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return nil }
-        return try ColonyVirtualPath(trimmed)
+        return try ColonyFileSystem.VirtualPath(trimmed)
     }
 
     private static func decode<T: Decodable>(
@@ -2808,7 +2814,7 @@ private struct GitCommitArgs: Decodable, Sendable {
 
 private struct GitBranchArgs: Decodable, Sendable {
     let repoPath: String?
-    let operation: ColonyGitBranchRequest.Operation
+    let operation: ColonyGit.BranchRequest.Operation
     let name: String?
     let startPoint: String?
     let force: Bool?
@@ -2904,8 +2910,8 @@ private struct LSPApplyEditArgs: Decodable, Sendable {
 private struct TaskArgs: Decodable, Sendable {
     let prompt: String
     let subagentType: String?
-    let context: ColonySubagentContext?
-    let fileReferences: [ColonySubagentFileReference]?
+    let context: ColonySubagent.Context?
+    let fileReferences: [ColonySubagent.FileReference]?
 
     private enum CodingKeys: String, CodingKey {
         case prompt
@@ -2924,13 +2930,13 @@ private struct TaskArgs: Decodable, Sendable {
         let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
 
         self.prompt = try container.decode(String.self, forKey: .prompt)
-        self.context = try container.decodeIfPresent(ColonySubagentContext.self, forKey: .context)
+        self.context = try container.decodeIfPresent(ColonySubagent.Context.self, forKey: .context)
         self.subagentType =
             try container.decodeIfPresent(String.self, forKey: .subagentType)
             ?? legacyContainer.decodeIfPresent(String.self, forKey: .subagentType)
         self.fileReferences =
-            try container.decodeIfPresent([ColonySubagentFileReference].self, forKey: .fileReferences)
-            ?? legacyContainer.decodeIfPresent([ColonySubagentFileReference].self, forKey: .fileReferences)
+            try container.decodeIfPresent([ColonySubagent.FileReference].self, forKey: .fileReferences)
+            ?? legacyContainer.decodeIfPresent([ColonySubagent.FileReference].self, forKey: .fileReferences)
     }
 }
 

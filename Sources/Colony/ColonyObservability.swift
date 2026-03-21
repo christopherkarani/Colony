@@ -96,7 +96,7 @@ public actor ColonyObservabilityEmitter {
         }
     }
 
-    public func emitHarnessEnvelope(_ envelope: ColonyHarnessEventEnvelope, threadID: ColonyThreadID) async {
+    public func emitHarnessEnvelope(_ envelope: ColonyHarness.EventEnvelope, threadID: ColonyThreadID) async {
         var attributes: [String: String] = [
             "event_type": envelope.eventType.rawValue,
             "sequence": String(envelope.sequence),
@@ -119,25 +119,25 @@ public actor ColonyObservabilityEmitter {
         await emit(event)
     }
 
-    private func flatten(payload: ColonyHarnessEventPayload) -> [String: String] {
+    private func flatten(payload: ColonyHarness.EventPayload) -> [String: String] {
         switch payload {
         case .assistantDelta(let payload):
             return ["delta": payload.delta]
         case .toolRequest(let payload):
             return [
-                "tool_call_id": payload.toolCallID,
+                "tool_call_id": payload.toolCallID.rawValue,
                 "tool_name": payload.toolName,
                 "arguments_json": payload.argumentsJSON,
             ]
         case .toolResult(let payload):
             return [
-                "tool_call_id": payload.toolCallID,
+                "tool_call_id": payload.toolCallID.rawValue,
                 "tool_name": payload.toolName,
                 "success": payload.success ? "true" : "false",
             ]
         case .toolDenied(let payload):
             return [
-                "tool_call_id": payload.toolCallID,
+                "tool_call_id": payload.toolCallID.rawValue,
                 "tool_name": payload.toolName,
                 "reason": payload.reason,
             ]

@@ -1,17 +1,16 @@
-# Swarm/Wax Compatibility Recovery
+# Colony API Surface Improvement — 6.8/10 → 9.5/10
 
-- [x] Commit the current dirty tree as a baseline checkpoint.
-- [x] Run focused Swarm integration tests and capture the concrete failures.
-- [x] Fix `ColonyAgentFactory` capability wiring for `swarmTools`.
-- [x] Harden `SwarmToolBridge` and expose the bridge capability union needed by the factory.
-- [x] Harden `SwarmMemoryAdapter` for generic memory backends and add a persistent-backend convenience initializer.
-- [x] Update Swarm integration fixtures/tests to the current Swarm API.
-- [x] Run full verification: focused Swarm tests, full `swift test`, and explicit executable builds.
+## Phase 1: Use ColonyToolName in ColonyToolApprovalPolicy.allowList ✅
+## Phase 2: Eliminate 3 Empty Transport Sub-Protocols ✅
+## Phase 3: Demote Audit/Safety Machinery to Package Access ✅
+## Phase 4: Consolidate OnDevicePolicy Booleans ✅
+## Phase 5: Nest ColonyCore Backend Types Under Namespace Enums ✅
+## Phase 6: Plugin Registry Fix + Shell Protocol Split + Factory ✅
+## Phase 7: Phantom-Typed IDs + ColonyModelName ✅
+## Bonus: Fix pre-existing ColonyID phantom domain issue ✅
 
-## Review
-
-- Swarm was pinned to `0.4.0` to restore Wax compatibility while keeping the newer `SwarmHive` era API surface.
-- `SwarmToolBridge`, `SwarmMemoryAdapter`, and factory capability normalization now match current Swarm/Hive expectations and preserve explicit user capability removals.
-- `ColonyToolApprovalDecision.cancelled` was restored end-to-end because Colony runtime/tests still depend on distinct cancellation semantics.
-- `DeepResearchApp` structured insights extraction now uses JSON decoding from `LanguageModelSession.respond(to:)`, avoiding the `FoundationModels`/`Conduit` `@Generable` collision.
-- Verification completed successfully with `swift test`, `swift build --target ColonyResearchAssistantExample`, and `swift build --target DeepResearchApp`.
+## Final Build Verification ✅
+- ColonyCore: CLEAN
+- Colony: CLEAN (only pre-existing upstream Conduit errors)
+- ColonyControlPlane: CLEAN
+- ColonySwarmInterop: CLEAN

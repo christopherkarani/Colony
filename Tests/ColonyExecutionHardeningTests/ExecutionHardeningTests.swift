@@ -120,7 +120,7 @@ func hardenedShellBackend_timesOutLongRunningCommand() async throws {
     let backend = ColonyHardenedShellBackend(confinement: policy)
     let request = ColonyShellExecutionRequest(
         command: "/bin/sleep 2",
-        timeoutNanoseconds: 100_000_000
+        timeout: .milliseconds(100)
     )
 
     let result = try await backend.execute(request)
@@ -181,7 +181,7 @@ func hardenedShellBackend_managedPTYSessionsRoundTrip() async throws {
     let read = try await backend.readFromSession(
         sessionID,
         maxBytes: 4096,
-        timeoutNanoseconds: 500_000_000
+        timeout: .milliseconds(500)
     )
     #expect(read.stdout.contains("hello-session"))
     #expect(read.eof == false)
@@ -192,7 +192,7 @@ func hardenedShellBackend_managedPTYSessionsRoundTrip() async throws {
         _ = try await backend.readFromSession(
             sessionID,
             maxBytes: 16,
-            timeoutNanoseconds: 50_000_000
+            timeout: .milliseconds(50)
         )
     }
 }
@@ -211,7 +211,7 @@ func hardenedShellBackend_closesIdleManagedSessions() async throws {
     _ = try await backend.openSession(
         ColonyShellSessionOpenRequest(
             command: "/bin/cat",
-            idleTimeoutNanoseconds: 50_000_000
+            idleTimeout: .milliseconds(50)
         )
     )
     try await Task.sleep(nanoseconds: 120_000_000)

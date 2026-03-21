@@ -15,37 +15,49 @@ public enum ColonyChatMessageOperation: String, Codable, Sendable {
     case removeAll
 }
 
-public struct ColonyToolDefinition: Codable, Sendable, Equatable {
-    public let name: ColonyToolName
-    public let description: String
-    public let parametersJSONSchema: String
+// MARK: - ColonyTool.Definition
 
-    public init(name: ColonyToolName, description: String, parametersJSONSchema: String) {
-        self.name = name
-        self.description = description
-        self.parametersJSONSchema = parametersJSONSchema
+extension ColonyTool {
+    public struct Definition: Codable, Sendable, Equatable {
+        public let name: ColonyTool.Name
+        public let description: String
+        public let parametersJSONSchema: String
+
+        public init(name: ColonyTool.Name, description: String, parametersJSONSchema: String) {
+            self.name = name
+            self.description = description
+            self.parametersJSONSchema = parametersJSONSchema
+        }
     }
 }
 
-public struct ColonyToolCall: Codable, Sendable, Equatable {
-    public let id: String
-    public let name: ColonyToolName
-    public let argumentsJSON: String
+// MARK: - ColonyTool.Call
 
-    public init(id: String, name: ColonyToolName, argumentsJSON: String) {
-        self.id = id
-        self.name = name
-        self.argumentsJSON = argumentsJSON
+extension ColonyTool {
+    public struct Call: Codable, Sendable, Equatable {
+        public let id: ColonyToolCallID
+        public let name: ColonyTool.Name
+        public let argumentsJSON: String
+
+        public init(id: ColonyToolCallID, name: ColonyTool.Name, argumentsJSON: String) {
+            self.id = id
+            self.name = name
+            self.argumentsJSON = argumentsJSON
+        }
     }
 }
 
-public struct ColonyToolResult: Codable, Sendable, Equatable {
-    public let toolCallID: String
-    public let content: String
+// MARK: - ColonyTool.Result
 
-    public init(toolCallID: String, content: String) {
-        self.toolCallID = toolCallID
-        self.content = content
+extension ColonyTool {
+    public struct Result: Codable, Sendable, Equatable {
+        public let toolCallID: ColonyToolCallID
+        public let content: String
+
+        public init(toolCallID: ColonyToolCallID, content: String) {
+            self.toolCallID = toolCallID
+            self.content = content
+        }
     }
 }
 
@@ -101,22 +113,22 @@ public struct ColonyStructuredOutputPayload: Codable, Sendable, Equatable {
 }
 
 public struct ColonyChatMessage: Codable, Sendable, Equatable {
-    public let id: String
+    public let id: ColonyMessageID
     public let role: ColonyChatRole
     public let content: String
-    public let name: String?
-    public let toolCallID: String?
-    public let toolCalls: [ColonyToolCall]
+    public let name: ColonyTool.Name?
+    public let toolCallID: ColonyToolCallID?
+    public let toolCalls: [ColonyTool.Call]
     public let structuredOutput: ColonyStructuredOutputPayload?
     public let operation: ColonyChatMessageOperation?
 
     public init(
-        id: String,
+        id: ColonyMessageID,
         role: ColonyChatRole,
         content: String,
-        name: String? = nil,
-        toolCallID: String? = nil,
-        toolCalls: [ColonyToolCall] = [],
+        name: ColonyTool.Name? = nil,
+        toolCallID: ColonyToolCallID? = nil,
+        toolCalls: [ColonyTool.Call] = [],
         structuredOutput: ColonyStructuredOutputPayload? = nil,
         operation: ColonyChatMessageOperation? = nil
     ) {
@@ -132,15 +144,15 @@ public struct ColonyChatMessage: Codable, Sendable, Equatable {
 }
 
 public struct ColonyModelRequest: Codable, Sendable, Equatable {
-    public let model: String
+    public let model: ColonyModelName
     public let messages: [ColonyChatMessage]
-    public let tools: [ColonyToolDefinition]
+    public let tools: [ColonyTool.Definition]
     public let structuredOutput: ColonyStructuredOutput?
 
     public init(
-        model: String,
+        model: ColonyModelName,
         messages: [ColonyChatMessage],
-        tools: [ColonyToolDefinition],
+        tools: [ColonyTool.Definition],
         structuredOutput: ColonyStructuredOutput? = nil
     ) {
         self.model = model
@@ -197,8 +209,8 @@ public extension ColonyModelClient {
 }
 
 public protocol ColonyToolRegistry: Sendable {
-    func listTools() -> [ColonyToolDefinition]
-    func invoke(_ call: ColonyToolCall) async throws -> ColonyToolResult
+    func listTools() -> [ColonyTool.Definition]
+    func invoke(_ call: ColonyTool.Call) async throws -> ColonyTool.Result
 }
 
 public protocol ColonyModelRouter: Sendable {
@@ -219,13 +231,13 @@ public enum ColonyNetworkState: String, Codable, Sendable {
 public struct ColonyInferenceHints: Codable, Sendable, Equatable {
     public let latencyTier: ColonyLatencyTier
     public let privacyRequired: Bool
-    public let tokenBudget: Int?
+    public let tokenBudget: ColonyTokenCount?
     public let networkState: ColonyNetworkState
 
     public init(
         latencyTier: ColonyLatencyTier = .interactive,
         privacyRequired: Bool = false,
-        tokenBudget: Int? = nil,
+        tokenBudget: ColonyTokenCount? = nil,
         networkState: ColonyNetworkState = .online
     ) {
         self.latencyTier = latencyTier

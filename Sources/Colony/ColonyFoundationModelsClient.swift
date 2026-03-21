@@ -79,11 +79,11 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         }
     }
 
-    private func messageID() -> String {
-        UUID().uuidString
+    private func messageID() -> ColonyMessageID {
+        ColonyMessageID(UUID().uuidString)
     }
 
-    private func toolCallID(name: String, argumentsJSON: String, index: Int) -> String {
+    private func toolCallID(name: String, argumentsJSON: String, index: Int) -> ColonyToolCallID {
         var bytes = Data()
         bytes.append(contentsOf: "FMTC1".utf8)
         bytes.append(contentsOf: name.utf8)
@@ -93,7 +93,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         var indexBE = UInt32(index).bigEndian
         withUnsafeBytes(of: &indexBE) { bytes.append(contentsOf: $0) }
         let hash = SHA256.hash(data: bytes)
-        return "fm:" + hash.map { String(format: "%02x", $0) }.joined()
+        return ColonyToolCallID("fm:" + hash.map { String(format: "%02x", $0) }.joined())
     }
 
     private func makeResponse(
@@ -157,7 +157,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
                 promptLines.append("Assistant:\n\(assistantBlock)")
 
             case .tool:
-                let toolName = message.name ?? "tool"
+                let toolName = message.name?.rawValue ?? "tool"
                 let callID = message.toolCallID ?? "unknown"
                 promptLines.append("Tool(\(toolName)) [id: \(callID)]:\n\(message.content)")
             }
@@ -189,7 +189,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         )
     }
 
-    func makeToolInstructions(tools: [ColonyToolDefinition]) -> String? {
+    func makeToolInstructions(tools: [ColonyTool.Definition]) -> String? {
         guard tools.isEmpty == false else { return nil }
 
         switch configuration.toolInstructionVerbosity {
@@ -263,8 +263,8 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         return summary
     }
 
-    private func renderToolCallMarkup(from call: ColonyToolCall) -> String {
-        "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id))\",\"name\":\"\(jsonEscaped(call.name.rawValue))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
+    private func renderToolCallMarkup(from call: ColonyTool.Call) -> String {
+        "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id.rawValue))\",\"name\":\"\(jsonEscaped(call.name.rawValue))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
     }
 
     private func makeStructuredOutputInstructions(format: ColonyStructuredOutput?) -> String? {
@@ -307,7 +307,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
 
     private struct ParsedAssistantOutput: Sendable {
         let visibleText: String
-        let toolCalls: [ColonyToolCall]
+        let toolCalls: [ColonyTool.Call]
     }
 
     private func parseFinalAssistantOutput(
@@ -316,7 +316,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
     ) throws -> ParsedAssistantOutput {
         let parsed = parseToolCallBlocks(raw: raw, requireClosedTags: true)
 
-        var toolCalls: [ColonyToolCall] = []
+        var toolCalls: [ColonyTool.Call] = []
         toolCalls.reserveCapacity(parsed.blocks.count)
 
         for (index, innerJSON) in parsed.blocks.enumerated() {
@@ -377,7 +377,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
         _ innerJSON: String,
         index: Int,
         toolsAllowed: Set<String>
-    ) throws -> ColonyToolCall {
+    ) throws -> ColonyTool.Call {
         if innerJSON == "__UNTERMINATED__" {
             throw ColonyFoundationModelsClientError.invalidToolCallFormat("Unterminated \(Self.toolCallOpenTag) block.")
         }
@@ -406,7 +406,7 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
             throw ColonyFoundationModelsClientError.invalidToolCallFormat("Unknown tool name: \(name)")
         }
 
-        let id = (dict["id"] as? String) ?? (dict["tool_call_id"] as? String)
+        let id: ColonyToolCallID? = ((dict["id"] as? String) ?? (dict["tool_call_id"] as? String)).map { ColonyToolCallID($0) }
 
         let argumentsValue: Any = dict["arguments"] ?? dict["args"] ?? [:]
         let argumentsJSON: String
@@ -427,9 +427,9 @@ package struct ColonyFoundationModelsClient: ColonyModelClient, ColonyCapability
             }
         }
 
-        return ColonyToolCall(
+        return ColonyTool.Call(
             id: id ?? toolCallID(name: name, argumentsJSON: argumentsJSON, index: index),
-            name: ColonyToolName(rawValue: name),
+            name: ColonyTool.Name(rawValue: name),
             argumentsJSON: argumentsJSON
         )
     }

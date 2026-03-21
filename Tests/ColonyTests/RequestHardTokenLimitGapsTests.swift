@@ -90,12 +90,10 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
     let hardCap = toolTokenCount + messageTokenLimit
 
     let configuration = ColonyConfiguration(
-        capabilities: [],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxTokens(0),
-        additionalSystemPrompt: String(repeating: "x", count: 20_000),
-        requestHardTokenLimit: hardCap
+        model: .init(name: "test-model", capabilities: []),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(compactionPolicy: .maxTokens(0), requestHardTokenLimit: hardCap),
+        prompts: .init(additionalSystemPrompt: String(repeating: "x", count: 20_000))
     )
     let context = ColonyContext(
         configuration: configuration,

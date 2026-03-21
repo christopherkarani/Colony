@@ -1,7 +1,7 @@
 public enum ColonyInterruptPayload: Codable, Sendable {
-    case toolApprovalRequired(toolCalls: [ColonyToolCall])
+    case toolApprovalRequired(toolCalls: [ColonyTool.Call])
 }
 
 public enum ColonyResumePayload: Codable, Sendable {
-    case toolApproval(decision: ColonyToolApprovalDecision)
+    case toolApproval(decision: ColonyToolApproval.Decision)
 }

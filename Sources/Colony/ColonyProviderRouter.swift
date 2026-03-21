@@ -26,7 +26,7 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
         package let capabilities: ColonyModelCapabilities
         package let priority: Int
         package let maxRequestsPerMinute: Int?
-        package let usdPer1KTokens: Double?
+        package let usdPer1KTokens: ColonyCost?
 
         package init(
             id: String,
@@ -34,7 +34,7 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
             capabilities: ColonyModelCapabilities = [],
             priority: Int = 0,
             maxRequestsPerMinute: Int? = nil,
-            usdPer1KTokens: Double? = nil
+            usdPer1KTokens: ColonyCost? = nil
         ) {
             self.id = id
             self.client = client
@@ -52,25 +52,25 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
 
     package struct Policy: Sendable {
         package var maxAttemptsPerProvider: Int
-        package var initialBackoffNanoseconds: UInt64
-        package var maxBackoffNanoseconds: UInt64
+        package var initialBackoff: Duration
+        package var maxBackoff: Duration
         package var globalMaxRequestsPerMinute: Int?
-        package var costCeilingUSD: Double?
+        package var costCeilingUSD: ColonyCost?
         package var estimatedOutputToInputRatio: Double
         package var gracefulDegradation: GracefulDegradationPolicy
 
         package init(
             maxAttemptsPerProvider: Int = 2,
-            initialBackoffNanoseconds: UInt64 = 100_000_000,
-            maxBackoffNanoseconds: UInt64 = 1_000_000_000,
+            initialBackoff: Duration = .milliseconds(100),
+            maxBackoff: Duration = .seconds(1),
             globalMaxRequestsPerMinute: Int? = nil,
-            costCeilingUSD: Double? = nil,
+            costCeilingUSD: ColonyCost? = nil,
             estimatedOutputToInputRatio: Double = 0.5,
             gracefulDegradation: GracefulDegradationPolicy = .fail
         ) {
             self.maxAttemptsPerProvider = max(1, maxAttemptsPerProvider)
-            self.initialBackoffNanoseconds = max(1, initialBackoffNanoseconds)
-            self.maxBackoffNanoseconds = max(self.initialBackoffNanoseconds, maxBackoffNanoseconds)
+            self.initialBackoff = initialBackoff
+            self.maxBackoff = max(initialBackoff, maxBackoff)
             self.globalMaxRequestsPerMinute = globalMaxRequestsPerMinute
             self.costCeilingUSD = costCeilingUSD
             self.estimatedOutputToInputRatio = max(0, estimatedOutputToInputRatio)
@@ -80,14 +80,14 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
 
     private struct SleepClock: Sendable {
         let now: @Sendable () -> Date
-        let sleep: @Sendable (UInt64) async throws -> Void
+        let sleep: @Sendable (Duration) async throws -> Void
     }
 
     package init(
         providers: [Provider],
         policy: Policy = Policy(),
         now: @escaping @Sendable () -> Date = Date.init,
-        sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.providers = providers.sorted { lhs, rhs in
             if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
@@ -157,7 +157,7 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
 
     private func attemptProvider(_ provider: Provider, request: HiveChatRequest) async throws -> HiveChatResponse {
         let maxAttempts = policy.maxAttemptsPerProvider
-        var currentBackoff = policy.initialBackoffNanoseconds
+        var currentBackoff = policy.initialBackoff
         var lastError: Error?
 
         for attempt in 1 ... maxAttempts {
@@ -167,15 +167,15 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
                 lastError = error
                 guard attempt < maxAttempts else { break }
                 try await clock.sleep(currentBackoff)
-                currentBackoff = min(policy.maxBackoffNanoseconds, currentBackoff &* 2)
+                currentBackoff = min(policy.maxBackoff, currentBackoff * 2)
             }
         }
 
         throw lastError ?? ColonyProviderRouterError.noEligibleProvider(reasons: [provider.id + ":unknown failure"])
     }
 
-    private func estimatedRequestCostUSD(for request: HiveChatRequest, provider: Provider) -> Double {
-        guard let usdPer1KTokens = provider.usdPer1KTokens else { return 0 }
+    private func estimatedRequestCostUSD(for request: HiveChatRequest, provider: Provider) -> ColonyCost {
+        guard let usdPer1KTokens = provider.usdPer1KTokens else { return .zero }
 
         let tokenizer = ColonyApproximateTokenizer()
         let messageTokens = tokenizer.countTokens(request.messages)
@@ -189,7 +189,7 @@ package struct ColonyProviderRouter: HiveModelRouter, ColonyCapabilityReportingH
         let inputTokens = messageTokens + toolTokens
         let outputTokens = Int((Double(inputTokens) * policy.estimatedOutputToInputRatio).rounded(.up))
         let totalTokens = inputTokens + max(0, outputTokens)
-        return (Double(totalTokens) / 1_000.0) * usdPer1KTokens
+        return ColonyCost((Double(totalTokens) / 1_000.0) * usdPer1KTokens.rawValue)
     }
 
     private let providers: [Provider]
@@ -229,11 +229,11 @@ private actor ColonyProviderBudgetState {
 
     private var requestTimestampsByProvider: [String: [Date]] = [:]
     private var globalRequestTimestamps: [Date] = []
-    private var spentCostUSD: Double = 0
+    private var spentCostUSD: ColonyCost = .zero
 
     func checkEligibility(
         provider: ColonyProviderRouter.Provider,
-        estimatedCostUSD: Double,
+        estimatedCostUSD: ColonyCost,
         policy: ColonyProviderRouter.Policy,
         now: Date
     ) -> Eligibility {
@@ -259,7 +259,7 @@ private actor ColonyProviderBudgetState {
         return Eligibility(allowed: true, reason: "eligible")
     }
 
-    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: Double, now: Date) {
+    func recordUsage(provider: ColonyProviderRouter.Provider, costUSD: ColonyCost, now: Date) {
         prune(now: now)
         globalRequestTimestamps.append(now)
         requestTimestampsByProvider[provider.id, default: []].append(now)

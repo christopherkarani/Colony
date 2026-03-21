@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ColonyCore
 @testable import ColonyControlPlane
 
 @Test("Project store supports deterministic CRUD semantics")

@@ -1,254 +1,313 @@
-public struct ColonyGitStatusRequest: Sendable, Equatable, Codable {
-    public var repositoryPath: ColonyVirtualPath?
-    public var includeUntracked: Bool
+// MARK: - ColonyGit Namespace
 
-    public init(
-        repositoryPath: ColonyVirtualPath? = nil,
-        includeUntracked: Bool = true
-    ) {
-        self.repositoryPath = repositoryPath
-        self.includeUntracked = includeUntracked
+public enum ColonyGit {}
+
+// MARK: - StatusRequest
+
+extension ColonyGit {
+    public struct StatusRequest: Sendable, Equatable, Codable {
+        public var repositoryPath: ColonyFileSystem.VirtualPath?
+        public var includeUntracked: Bool
+
+        public init(
+            repositoryPath: ColonyFileSystem.VirtualPath? = nil,
+            includeUntracked: Bool = true
+        ) {
+            self.repositoryPath = repositoryPath
+            self.includeUntracked = includeUntracked
+        }
     }
 }
 
-public struct ColonyGitStatusEntry: Sendable, Equatable, Codable {
-    public enum State: String, Sendable, Codable, CaseIterable {
-        case added
-        case modified
-        case deleted
-        case renamed
-        case copied
-        case conflicted
-        case untracked
-    }
+// MARK: - StatusEntry
 
-    public var path: String
-    public var state: State
+extension ColonyGit {
+    public struct StatusEntry: Sendable, Equatable, Codable {
+        public enum State: String, Sendable, Codable, CaseIterable {
+            case added
+            case modified
+            case deleted
+            case renamed
+            case copied
+            case conflicted
+            case untracked
+        }
 
-    public init(path: String, state: State) {
-        self.path = path
-        self.state = state
-    }
-}
+        public var path: String
+        public var state: State
 
-public struct ColonyGitStatusResult: Sendable, Equatable, Codable {
-    public var currentBranch: String?
-    public var upstreamBranch: String?
-    public var aheadBy: Int
-    public var behindBy: Int
-    public var entries: [ColonyGitStatusEntry]
-
-    public init(
-        currentBranch: String? = nil,
-        upstreamBranch: String? = nil,
-        aheadBy: Int = 0,
-        behindBy: Int = 0,
-        entries: [ColonyGitStatusEntry] = []
-    ) {
-        self.currentBranch = currentBranch
-        self.upstreamBranch = upstreamBranch
-        self.aheadBy = aheadBy
-        self.behindBy = behindBy
-        self.entries = entries
+        public init(path: String, state: State) {
+            self.path = path
+            self.state = state
+        }
     }
 }
 
-public struct ColonyGitDiffRequest: Sendable, Equatable, Codable {
-    public var repositoryPath: ColonyVirtualPath?
-    public var baseRef: String?
-    public var headRef: String?
-    public var pathspec: String?
-    public var staged: Bool
+// MARK: - StatusResult
 
-    public init(
-        repositoryPath: ColonyVirtualPath? = nil,
-        baseRef: String? = nil,
-        headRef: String? = nil,
-        pathspec: String? = nil,
-        staged: Bool = false
-    ) {
-        self.repositoryPath = repositoryPath
-        self.baseRef = baseRef
-        self.headRef = headRef
-        self.pathspec = pathspec
-        self.staged = staged
+extension ColonyGit {
+    public struct StatusResult: Sendable, Equatable, Codable {
+        public var currentBranch: String?
+        public var upstreamBranch: String?
+        public var aheadBy: Int
+        public var behindBy: Int
+        public var entries: [ColonyGit.StatusEntry]
+
+        public init(
+            currentBranch: String? = nil,
+            upstreamBranch: String? = nil,
+            aheadBy: Int = 0,
+            behindBy: Int = 0,
+            entries: [ColonyGit.StatusEntry] = []
+        ) {
+            self.currentBranch = currentBranch
+            self.upstreamBranch = upstreamBranch
+            self.aheadBy = aheadBy
+            self.behindBy = behindBy
+            self.entries = entries
+        }
     }
 }
 
-public struct ColonyGitDiffResult: Sendable, Equatable, Codable {
-    public var patch: String
+// MARK: - DiffRequest
 
-    public init(patch: String) {
-        self.patch = patch
+extension ColonyGit {
+    public struct DiffRequest: Sendable, Equatable, Codable {
+        public var repositoryPath: ColonyFileSystem.VirtualPath?
+        public var baseRef: String?
+        public var headRef: String?
+        public var pathspec: String?
+        public var staged: Bool
+
+        public init(
+            repositoryPath: ColonyFileSystem.VirtualPath? = nil,
+            baseRef: String? = nil,
+            headRef: String? = nil,
+            pathspec: String? = nil,
+            staged: Bool = false
+        ) {
+            self.repositoryPath = repositoryPath
+            self.baseRef = baseRef
+            self.headRef = headRef
+            self.pathspec = pathspec
+            self.staged = staged
+        }
     }
 }
 
-public struct ColonyGitCommitRequest: Sendable, Equatable, Codable {
-    public var repositoryPath: ColonyVirtualPath?
-    public var message: String
-    public var includeAll: Bool
-    public var amend: Bool
-    public var signoff: Bool
+// MARK: - DiffResult
 
-    public init(
-        repositoryPath: ColonyVirtualPath? = nil,
-        message: String,
-        includeAll: Bool = true,
-        amend: Bool = false,
-        signoff: Bool = false
-    ) {
-        self.repositoryPath = repositoryPath
-        self.message = message
-        self.includeAll = includeAll
-        self.amend = amend
-        self.signoff = signoff
+extension ColonyGit {
+    public struct DiffResult: Sendable, Equatable, Codable {
+        public var patch: String
+
+        public init(patch: String) {
+            self.patch = patch
+        }
     }
 }
 
-public struct ColonyGitCommitResult: Sendable, Equatable, Codable {
-    public var commitHash: String
-    public var summary: String
+// MARK: - CommitRequest
 
-    public init(commitHash: String, summary: String) {
-        self.commitHash = commitHash
-        self.summary = summary
+extension ColonyGit {
+    public struct CommitRequest: Sendable, Equatable, Codable {
+        public var repositoryPath: ColonyFileSystem.VirtualPath?
+        public var message: String
+        public var includeAll: Bool
+        public var amend: Bool
+        public var signoff: Bool
+
+        public init(
+            repositoryPath: ColonyFileSystem.VirtualPath? = nil,
+            message: String,
+            includeAll: Bool = true,
+            amend: Bool = false,
+            signoff: Bool = false
+        ) {
+            self.repositoryPath = repositoryPath
+            self.message = message
+            self.includeAll = includeAll
+            self.amend = amend
+            self.signoff = signoff
+        }
     }
 }
 
-public struct ColonyGitBranchRequest: Sendable, Equatable, Codable {
-    public enum Operation: String, Sendable, Codable, CaseIterable {
-        case list
-        case create
-        case checkout
-        case delete
-    }
+// MARK: - CommitResult
 
-    public var repositoryPath: ColonyVirtualPath?
-    public var operation: Operation
-    public var name: String?
-    public var startPoint: String?
-    public var force: Bool
+extension ColonyGit {
+    public struct CommitResult: Sendable, Equatable, Codable {
+        public var commitHash: String
+        public var summary: String
 
-    public init(
-        repositoryPath: ColonyVirtualPath? = nil,
-        operation: Operation,
-        name: String? = nil,
-        startPoint: String? = nil,
-        force: Bool = false
-    ) {
-        self.repositoryPath = repositoryPath
-        self.operation = operation
-        self.name = name
-        self.startPoint = startPoint
-        self.force = force
+        public init(commitHash: String, summary: String) {
+            self.commitHash = commitHash
+            self.summary = summary
+        }
     }
 }
 
-public struct ColonyGitBranchResult: Sendable, Equatable, Codable {
-    public var currentBranch: String?
-    public var branches: [String]
-    public var detail: String?
+// MARK: - BranchRequest
 
-    public init(
-        currentBranch: String? = nil,
-        branches: [String] = [],
-        detail: String? = nil
-    ) {
-        self.currentBranch = currentBranch
-        self.branches = branches
-        self.detail = detail
+extension ColonyGit {
+    public struct BranchRequest: Sendable, Equatable, Codable {
+        public enum Operation: String, Sendable, Codable, CaseIterable {
+            case list
+            case create
+            case checkout
+            case delete
+        }
+
+        public var repositoryPath: ColonyFileSystem.VirtualPath?
+        public var operation: Operation
+        public var name: String?
+        public var startPoint: String?
+        public var force: Bool
+
+        public init(
+            repositoryPath: ColonyFileSystem.VirtualPath? = nil,
+            operation: Operation,
+            name: String? = nil,
+            startPoint: String? = nil,
+            force: Bool = false
+        ) {
+            self.repositoryPath = repositoryPath
+            self.operation = operation
+            self.name = name
+            self.startPoint = startPoint
+            self.force = force
+        }
     }
 }
 
-public struct ColonyGitPushRequest: Sendable, Equatable, Codable {
-    public var repositoryPath: ColonyVirtualPath?
-    public var remote: String
-    public var branch: String?
-    public var setUpstream: Bool
-    public var forceWithLease: Bool
+// MARK: - BranchResult
 
-    public init(
-        repositoryPath: ColonyVirtualPath? = nil,
-        remote: String = "origin",
-        branch: String? = nil,
-        setUpstream: Bool = false,
-        forceWithLease: Bool = false
-    ) {
-        self.repositoryPath = repositoryPath
-        self.remote = remote
-        self.branch = branch
-        self.setUpstream = setUpstream
-        self.forceWithLease = forceWithLease
+extension ColonyGit {
+    public struct BranchResult: Sendable, Equatable, Codable {
+        public var currentBranch: String?
+        public var branches: [String]
+        public var detail: String?
+
+        public init(
+            currentBranch: String? = nil,
+            branches: [String] = [],
+            detail: String? = nil
+        ) {
+            self.currentBranch = currentBranch
+            self.branches = branches
+            self.detail = detail
+        }
     }
 }
 
-public struct ColonyGitPushResult: Sendable, Equatable, Codable {
-    public var remote: String
-    public var branch: String
-    public var summary: String
+// MARK: - PushRequest
 
-    public init(remote: String, branch: String, summary: String) {
-        self.remote = remote
-        self.branch = branch
-        self.summary = summary
+extension ColonyGit {
+    public struct PushRequest: Sendable, Equatable, Codable {
+        public var repositoryPath: ColonyFileSystem.VirtualPath?
+        public var remote: String
+        public var branch: String?
+        public var setUpstream: Bool
+        public var forceWithLease: Bool
+
+        public init(
+            repositoryPath: ColonyFileSystem.VirtualPath? = nil,
+            remote: String = "origin",
+            branch: String? = nil,
+            setUpstream: Bool = false,
+            forceWithLease: Bool = false
+        ) {
+            self.repositoryPath = repositoryPath
+            self.remote = remote
+            self.branch = branch
+            self.setUpstream = setUpstream
+            self.forceWithLease = forceWithLease
+        }
     }
 }
 
-public struct ColonyGitPreparePullRequestRequest: Sendable, Equatable, Codable {
-    public var repositoryPath: ColonyVirtualPath?
-    public var baseBranch: String
-    public var headBranch: String
-    public var title: String
-    public var body: String
-    public var draft: Bool
+// MARK: - PushResult
 
-    public init(
-        repositoryPath: ColonyVirtualPath? = nil,
-        baseBranch: String,
-        headBranch: String,
-        title: String,
-        body: String,
-        draft: Bool = false
-    ) {
-        self.repositoryPath = repositoryPath
-        self.baseBranch = baseBranch
-        self.headBranch = headBranch
-        self.title = title
-        self.body = body
-        self.draft = draft
+extension ColonyGit {
+    public struct PushResult: Sendable, Equatable, Codable {
+        public var remote: String
+        public var branch: String
+        public var summary: String
+
+        public init(remote: String, branch: String, summary: String) {
+            self.remote = remote
+            self.branch = branch
+            self.summary = summary
+        }
     }
 }
 
-public struct ColonyGitPreparePullRequestResult: Sendable, Equatable, Codable {
-    public var baseBranch: String
-    public var headBranch: String
-    public var title: String
-    public var body: String
-    public var draft: Bool
-    public var summary: String?
+// MARK: - PreparePullRequestRequest
 
-    public init(
-        baseBranch: String,
-        headBranch: String,
-        title: String,
-        body: String,
-        draft: Bool = false,
-        summary: String? = nil
-    ) {
-        self.baseBranch = baseBranch
-        self.headBranch = headBranch
-        self.title = title
-        self.body = body
-        self.draft = draft
-        self.summary = summary
+extension ColonyGit {
+    public struct PreparePullRequestRequest: Sendable, Equatable, Codable {
+        public var repositoryPath: ColonyFileSystem.VirtualPath?
+        public var baseBranch: String
+        public var headBranch: String
+        public var title: String
+        public var body: String
+        public var draft: Bool
+
+        public init(
+            repositoryPath: ColonyFileSystem.VirtualPath? = nil,
+            baseBranch: String,
+            headBranch: String,
+            title: String,
+            body: String,
+            draft: Bool = false
+        ) {
+            self.repositoryPath = repositoryPath
+            self.baseBranch = baseBranch
+            self.headBranch = headBranch
+            self.title = title
+            self.body = body
+            self.draft = draft
+        }
     }
 }
+
+// MARK: - PreparePullRequestResult
+
+extension ColonyGit {
+    public struct PreparePullRequestResult: Sendable, Equatable, Codable {
+        public var baseBranch: String
+        public var headBranch: String
+        public var title: String
+        public var body: String
+        public var draft: Bool
+        public var summary: String?
+
+        public init(
+            baseBranch: String,
+            headBranch: String,
+            title: String,
+            body: String,
+            draft: Bool = false,
+            summary: String? = nil
+        ) {
+            self.baseBranch = baseBranch
+            self.headBranch = headBranch
+            self.title = title
+            self.body = body
+            self.draft = draft
+            self.summary = summary
+        }
+    }
+}
+
+// MARK: - ColonyGitBackend Protocol (top-level)
 
 public protocol ColonyGitBackend: Sendable {
-    func status(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResult
-    func diff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResult
-    func commit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResult
-    func branch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResult
-    func push(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResult
-    func preparePullRequest(_ request: ColonyGitPreparePullRequestRequest) async throws -> ColonyGitPreparePullRequestResult
+    func status(_ request: ColonyGit.StatusRequest) async throws -> ColonyGit.StatusResult
+    func diff(_ request: ColonyGit.DiffRequest) async throws -> ColonyGit.DiffResult
+    func commit(_ request: ColonyGit.CommitRequest) async throws -> ColonyGit.CommitResult
+    func branch(_ request: ColonyGit.BranchRequest) async throws -> ColonyGit.BranchResult
+    func push(_ request: ColonyGit.PushRequest) async throws -> ColonyGit.PushResult
+    func preparePullRequest(_ request: ColonyGit.PreparePullRequestRequest) async throws -> ColonyGit.PreparePullRequestResult
 }
+

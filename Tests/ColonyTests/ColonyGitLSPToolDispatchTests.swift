@@ -281,10 +281,8 @@ func gitAndLspToolsDispatchToTypedBackends() async throws {
     let sourcePath = try ColonyVirtualPath("/Sources/App.swift")
 
     let configuration = ColonyConfiguration(
-        capabilities: [.git, .lsp],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        mandatoryApprovalRiskLevels: []
+        model: .init(name: "test-model", capabilities: [.git, .lsp]),
+        safety: .init(toolApprovalPolicy: .never, mandatoryApprovalRiskLevels: [])
     )
     let context = ColonyContext(
         configuration: configuration,

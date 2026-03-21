@@ -23,22 +23,27 @@ public struct ColonyModelCapabilities: OptionSet, Sendable {
     }
 }
 
-public enum ColonyToolPromptStrategy: Sendable, Equatable {
-    /// Decide based on the routed model capabilities at runtime.
-    case automatic
-    /// Always include the tool list in Colony's system prompt.
-    case includeInSystemPrompt
-    /// Never include the tool list in Colony's system prompt.
-    case omitFromSystemPrompt
+// MARK: - ColonyTool.PromptStrategy
 
-    public func includesToolList(for capabilities: ColonyModelCapabilities) -> Bool {
-        switch self {
-        case .automatic:
-            return capabilities.handlesToolDefinitionsWithoutSystemPrompt == false
-        case .includeInSystemPrompt:
-            return true
-        case .omitFromSystemPrompt:
-            return false
+extension ColonyTool {
+    public enum PromptStrategy: Sendable, Equatable {
+        /// Decide based on the routed model capabilities at runtime.
+        case automatic
+        /// Always include the tool list in Colony's system prompt.
+        case includeInSystemPrompt
+        /// Never include the tool list in Colony's system prompt.
+        case omitFromSystemPrompt
+
+        public func includesToolList(for capabilities: ColonyModelCapabilities) -> Bool {
+            switch self {
+            case .automatic:
+                return capabilities.handlesToolDefinitionsWithoutSystemPrompt == false
+            case .includeInSystemPrompt:
+                return true
+            case .omitFromSystemPrompt:
+                return false
+            }
         }
     }
 }
+

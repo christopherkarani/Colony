@@ -1,5 +1,5 @@
 {
-  "originHash" : "632afb04533a558475ead9d015df00a2ef605e300f83a67a8472fad62abfe601",
+  "originHash" : "18b0a4f1e534228463304f8ffce9193b8e959a73446a8b52f9852284d48fb407",
   "pins" : [
     {
       "identity" : "conduit",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "b7ccafa44c8bb19d0f74aeb45d9dbd05563a55c5",
         "version" : "0.3.5"
+      }
+    },
+    {
+      "identity" : "contextcore",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/ContextCore.git",
+      "state" : {
+        "revision" : "96713f7f11abf29ef9f8f5ed52e32324883351b5",
+        "version" : "0.1.0"
       }
     },
     {
@@ -24,25 +33,26 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/groue/GRDB.swift.git",
       "state" : {
-        "revision" : "2cf6c756e1e5ef6901ebae16576a7e4e4b834622",
-        "version" : "6.29.3"
+        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
+        "version" : "7.10.0"
       }
     },
     {
-      "identity" : "hive",
+      "identity" : "metalanns",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/christopherkarani/Hive",
+      "location" : "https://github.com/christopherkarani/MetalANNS.git",
       "state" : {
-        "revision" : "3bec1b2b8f2c3b2f24765656e83f31c27b9ff4f2"
+        "revision" : "ea4586fff3f89fd655529927688aa910a85ed641",
+        "version" : "0.1.3"
       }
     },
     {
-      "identity" : "swarm",
+      "identity" : "swift-asn1",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/christopherkarani/Swarm.git",
+      "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "64bcf0f8c0794c3db7d005d13cab5734b60a86a0",
-        "version" : "0.4.0"
+        "revision" : "9f542610331815e29cc3821d3b6f488db8715517",
+        "version" : "1.6.0"
       }
     },
     {
@@ -73,12 +83,30 @@
       }
     },
     {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
+        "version" : "3.15.1"
+      }
+    },
+    {
+      "identity" : "swift-huggingface",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-huggingface.git",
+      "state" : {
+        "revision" : "b721959445b617d0bf03910b2b4aced345fd93bf",
+        "version" : "0.9.0"
+      }
+    },
+    {
       "identity" : "swift-jinja",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/huggingface/swift-jinja.git",
       "state" : {
-        "revision" : "d81197f35f41445bc10e94600795e68c6f5e94b0",
-        "version" : "2.3.1"
+        "revision" : "f731f03bf746481d4fda07f817c3774390c4d5b9",
+        "version" : "2.3.2"
       }
     },
     {
@@ -127,21 +155,21 @@
       }
     },
     {
-      "identity" : "swift-tiktoken",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/DePasqualeOrg/swift-tiktoken.git",
-      "state" : {
-        "revision" : "e088d534d80dd1875ca3edfd69a16a6c25ab84c4",
-        "version" : "0.0.1"
-      }
-    },
-    {
       "identity" : "swift-transformers",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/huggingface/swift-transformers",
       "state" : {
-        "revision" : "573e5c9036c2f136b3a8a071da8e8907322403d0",
-        "version" : "1.1.6"
+        "revision" : "eed7264ac5e4ec5dfa6165c6e5c5577364344fe4",
+        "version" : "1.2.0"
+      }
+    },
+    {
+      "identity" : "swiftsoup",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/scinfu/SwiftSoup.git",
+      "state" : {
+        "revision" : "fd541c4b3fa7dcec2e7cfe049505b6e4382cd66b",
+        "version" : "2.13.2"
       }
     },
     {
@@ -158,8 +186,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Wax.git",
       "state" : {
-        "revision" : "aeb28ac8e7386c42bb229d5a1d23aea245e5f7bb",
-        "version" : "0.1.7"
+        "revision" : "08ee2ecb63ea0429d57f7191091689ed21f32831",
+        "version" : "0.1.19"
+      }
+    },
+    {
+      "identity" : "yyjson",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ibireme/yyjson.git",
+      "state" : {
+        "revision" : "8b4a38dc994a110abaec8a400615567bd996105f",
+        "version" : "0.12.0"
       }
     }
   ],

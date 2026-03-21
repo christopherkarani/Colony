@@ -95,10 +95,9 @@ func colonyCompactsBeforeSecondModelTurnAfterTools() async throws {
     let graph = try ColonyAgent.compile()
 
     let configuration = ColonyConfiguration(
-        capabilities: [],
-        modelName: "test-model",
-        toolApprovalPolicy: .never,
-        compactionPolicy: .maxMessages(2)
+        model: .init(name: "test-model", capabilities: []),
+        safety: .init(toolApprovalPolicy: .never),
+        context: .init(compactionPolicy: .maxMessages(2))
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 

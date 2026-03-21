@@ -5,7 +5,7 @@ public struct ColonyRuntime: Sendable {
     package let runControl: ColonyRunControl
 
     public var threadID: ColonyThreadID { ColonyThreadID(runControl.threadID) }
-    public var options: ColonyRunOptions { ColonyRunOptions(runControl.options) }
+    public var options: ColonyRun.Options { ColonyRun.Options(runControl.options) }
 
     package init(
         threadID: HiveThreadID,
@@ -25,17 +25,17 @@ public struct ColonyRuntime: Sendable {
 
     public func sendUserMessage(
         _ text: String,
-        optionsOverride: ColonyRunOptions? = nil
-    ) async -> ColonyRunHandle {
+        optionsOverride: ColonyRun.Options? = nil
+    ) async -> ColonyRun.Handle {
         let handle = await runControl.startRaw(input: text, optionsOverride: optionsOverride?.hive)
         return makePublicHandle(from: handle)
     }
 
     public func resumeToolApproval(
         interruptID: ColonyInterruptID,
-        decision: ColonyToolApprovalDecision,
-        optionsOverride: ColonyRunOptions? = nil
-    ) async -> ColonyRunHandle {
+        decision: ColonyToolApproval.Decision,
+        optionsOverride: ColonyRun.Options? = nil
+    ) async -> ColonyRun.Handle {
         let handle = await runControl.resumeRaw(
             interruptID: interruptID.hive,
             decision: decision,
@@ -46,15 +46,15 @@ public struct ColonyRuntime: Sendable {
 
     public func resumeToolApproval(
         interruptID: ColonyInterruptID,
-        perToolDecisions: [String: ColonyPerToolApprovalDecision],
-        optionsOverride: ColonyRunOptions? = nil
-    ) async -> ColonyRunHandle {
+        perToolDecisions: [ColonyToolCallID: ColonyToolApproval.PerToolDecision],
+        optionsOverride: ColonyRun.Options? = nil
+    ) async -> ColonyRun.Handle {
         await resumeToolApproval(
             interruptID: interruptID,
             decision: .perTool(
                 perToolDecisions
-                    .map { ColonyPerToolApproval(toolCallID: $0.key, decision: $0.value) }
-                    .sorted { $0.toolCallID.utf8.lexicographicallyPrecedes($1.toolCallID.utf8) }
+                    .map { ColonyToolApproval.PerToolEntry(toolCallID: $0.key, decision: $0.value) }
+                    .sorted { $0.toolCallID.rawValue.utf8.lexicographicallyPrecedes($1.toolCallID.rawValue.utf8) }
             ),
             optionsOverride: optionsOverride
         )
@@ -66,7 +66,7 @@ public struct ColonyRuntime: Sendable {
 
     package func resumeToolApprovalRaw(
         interruptID: HiveInterruptID,
-        decision: ColonyToolApprovalDecision,
+        decision: ColonyToolApproval.Decision,
         optionsOverride: HiveRunOptions? = nil
     ) async -> HiveRunHandle<ColonySchema> {
         await runControl.resumeRaw(
@@ -76,17 +76,17 @@ public struct ColonyRuntime: Sendable {
         )
     }
 
-    private func makePublicHandle(from handle: HiveRunHandle<ColonySchema>) -> ColonyRunHandle {
-        ColonyRunHandle(
-            runID: handle.runID.rawValue,
-            attemptID: handle.attemptID.rawValue,
+    private func makePublicHandle(from handle: HiveRunHandle<ColonySchema>) -> ColonyRun.Handle {
+        ColonyRun.Handle(
+            runID: ColonyRunID(handle.runID.rawValue.uuidString),
+            attemptID: ColonyAttemptID(handle.attemptID.rawValue.uuidString),
             outcome: Task {
                 try await Self.mapOutcome(handle.outcome.value)
             }
         )
     }
 
-    private static func mapOutcome(_ outcome: HiveRunOutcome<ColonySchema>) throws -> ColonyRunOutcome {
+    private static func mapOutcome(_ outcome: HiveRunOutcome<ColonySchema>) throws -> ColonyRun.Outcome {
         switch outcome {
         case let .finished(output, checkpointID):
             return .finished(
@@ -94,14 +94,14 @@ public struct ColonyRuntime: Sendable {
                 checkpointID: checkpointID.map { ColonyCheckpointID($0.rawValue) }
             )
         case let .interrupted(interruption):
-            let toolCalls: [ColonyToolCall]
+            let toolCalls: [ColonyTool.Call]
             switch interruption.interrupt.payload {
             case .toolApprovalRequired(let rawToolCalls):
                 toolCalls = rawToolCalls
             }
 
             return .interrupted(
-                ColonyRunInterruption(
+                ColonyRun.Interruption(
                     interruptID: ColonyInterruptID(interruption.interrupt.id),
                     toolCalls: toolCalls,
                     checkpointID: ColonyCheckpointID(interruption.checkpointID.rawValue)
@@ -121,10 +121,10 @@ public struct ColonyRuntime: Sendable {
         }
     }
 
-    private static func transcript(from output: HiveRunOutput<ColonySchema>) throws -> ColonyTranscript {
+    private static func transcript(from output: HiveRunOutput<ColonySchema>) throws -> ColonyRun.Transcript {
         switch output {
         case .fullStore(let store):
-            return ColonyTranscript(
+            return ColonyRun.Transcript(
                 messages: try store.get(ColonySchema.Channels.messages).map(ColonyChatMessage.init),
                 finalAnswer: try store.get(ColonySchema.Channels.finalAnswer),
                 todos: try store.get(ColonySchema.Channels.todos)
@@ -151,7 +151,7 @@ public struct ColonyRuntime: Sendable {
                 }
             }
 
-            return ColonyTranscript(messages: messages, finalAnswer: finalAnswer, todos: todos)
+            return ColonyRun.Transcript(messages: messages, finalAnswer: finalAnswer, todos: todos)
         }
     }
 }

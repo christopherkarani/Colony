@@ -1,3 +1,24 @@
+/// Phantom domain types for `ColonyID`.
+///
+/// These empty enums serve as type-level tags that prevent accidentally
+/// mixing IDs at compile time.
+public enum ColonyIDDomain {
+    public enum Thread: Sendable {}
+    public enum Interrupt: Sendable {}
+    public enum HarnessSession: Sendable {}
+    public enum Project: Sendable {}
+    public enum ProductSession: Sendable {}
+    public enum ProductSessionVersion: Sendable {}
+    public enum ShareToken: Sendable {}
+    public enum Artifact: Sendable {}
+    public enum Checkpoint: Sendable {}
+    public enum ToolCall: Sendable {}
+    public enum Run: Sendable {}
+    public enum Message: Sendable {}
+    public enum Attempt: Sendable {}
+    public enum ShellSession: Sendable {}
+}
+
 /// A type-safe identifier parameterized by a phantom `Domain` type.
 ///
 /// Different domains prevent accidentally mixing IDs at compile time
@@ -38,43 +59,22 @@ public struct ColonyID<Domain>: Hashable, Codable, Sendable,
     }
 }
 
-// MARK: - Phantom Domain Types
+// MARK: - Type Aliases
 
-extension ColonyID {
-    public enum Thread: Sendable {}
-    public enum Interrupt: Sendable {}
-    public enum HarnessSession: Sendable {}
-    public enum Project: Sendable {}
-    public enum ProductSession: Sendable {}
-    public enum ProductSessionVersion: Sendable {}
-    public enum ShareToken: Sendable {}
-    public enum Artifact: Sendable {}
-    public enum Checkpoint: Sendable {}
-}
-
-// MARK: - Backward-Compatible Type Aliases
-
-public typealias ColonyThreadID = ColonyID<ColonyID.Thread>
-public typealias ColonyInterruptID = ColonyID<ColonyID.Interrupt>
-public typealias ColonyHarnessSessionID = ColonyID<ColonyID.HarnessSession>
-public typealias ColonyArtifactID = ColonyID<ColonyID.Artifact>
-public typealias ColonyCheckpointID = ColonyID<ColonyID.Checkpoint>
-
-// Keep old names as deprecated typealiases for migration
-@available(*, deprecated, renamed: "ColonyID.Thread")
-public typealias ThreadDomain = ColonyID.Thread
-@available(*, deprecated, renamed: "ColonyID.Interrupt")
-public typealias InterruptDomain = ColonyID.Interrupt
-@available(*, deprecated, renamed: "ColonyID.HarnessSession")
-public typealias HarnessSessionDomain = ColonyID.HarnessSession
-@available(*, deprecated, renamed: "ColonyID.Project")
-public typealias ProjectDomain = ColonyID.Project
-@available(*, deprecated, renamed: "ColonyID.ProductSession")
-public typealias ProductSessionDomain = ColonyID.ProductSession
-@available(*, deprecated, renamed: "ColonyID.ProductSessionVersion")
-public typealias ProductSessionVersionDomain = ColonyID.ProductSessionVersion
-@available(*, deprecated, renamed: "ColonyID.ShareToken")
-public typealias ShareTokenDomain = ColonyID.ShareToken
+public typealias ColonyThreadID = ColonyID<ColonyIDDomain.Thread>
+public typealias ColonyInterruptID = ColonyID<ColonyIDDomain.Interrupt>
+public typealias ColonyHarnessSessionID = ColonyID<ColonyIDDomain.HarnessSession>
+public typealias ColonyArtifactID = ColonyID<ColonyIDDomain.Artifact>
+public typealias ColonyCheckpointID = ColonyID<ColonyIDDomain.Checkpoint>
+public typealias ColonyToolCallID = ColonyID<ColonyIDDomain.ToolCall>
+public typealias ColonyRunID = ColonyID<ColonyIDDomain.Run>
+public typealias ColonyMessageID = ColonyID<ColonyIDDomain.Message>
+public typealias ColonyProjectID = ColonyID<ColonyIDDomain.Project>
+public typealias ColonyProductSessionID = ColonyID<ColonyIDDomain.ProductSession>
+public typealias ColonyProductSessionVersionID = ColonyID<ColonyIDDomain.ProductSessionVersion>
+public typealias ColonySessionShareToken = ColonyID<ColonyIDDomain.ShareToken>
+public typealias ColonyAttemptID = ColonyID<ColonyIDDomain.Attempt>
+public typealias ColonyShellSessionID = ColonyID<ColonyIDDomain.ShellSession>
 
 // MARK: - Subagent Type
 

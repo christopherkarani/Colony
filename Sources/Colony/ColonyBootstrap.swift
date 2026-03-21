@@ -31,7 +31,7 @@ package struct ColonyBootstrap: Sendable {
         try await ColonyWaxMemoryBackend.create(at: url)
     }
 
-    package func makeDefaultModelClient(modelName: String) -> ColonyDefaultConduitModelClient {
+    package func makeDefaultModelClient(modelName: ColonyModelName) -> ColonyDefaultConduitModelClient {
         ColonyDefaultConduitModelClient(modelName: modelName)
     }
 
@@ -78,7 +78,7 @@ package struct ColonyBootstrap: Sendable {
     package func makeRuntime(
         profile: ColonyProfile = .onDevice4k,
         threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
-        modelName: String,
+        modelName: ColonyModelName,
         lane: ColonyLane? = nil,
         intent: String? = nil,
         model: (any HiveModelClient)? = nil,
@@ -211,7 +211,7 @@ package struct ColonyBootstrap: Sendable {
     package func bootstrap(
         profile: ColonyProfile = .onDevice4k,
         threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
-        modelName: String,
+        modelName: ColonyModelName,
         lane: ColonyLane? = nil,
         intent: String? = nil,
         model: (any HiveModelClient)? = nil,

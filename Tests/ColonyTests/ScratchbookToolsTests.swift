@@ -174,7 +174,7 @@ private func scratchItem(withID id: String, in scratchbookJSON: [String: Any]) -
     return items.first { ($0["id"] as? String) == id }
 }
 
-@Test("Scratchbook tools are not advertised without ColonyRuntimeCapabilities.scratchbook")
+@Test("Scratchbook tools are not advertised without ColonyAgentCapabilities.scratchbook")
 func scratchbookTools_notAdvertisedWithoutCapability() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
@@ -223,7 +223,7 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
     #expect(toolNames.contains("scratch_unpin") == false)
 }
 
-@Test("Scratchbook tools are advertised when ColonyRuntimeCapabilities.scratchbook is enabled")
+@Test("Scratchbook tools are advertised when ColonyAgentCapabilities.scratchbook is enabled")
 func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
@@ -271,7 +271,7 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
     #expect(toolNames.contains("scratch_unpin"))
 }
 
-@Test("Scratchbook tool execution rejects calls when ColonyRuntimeCapabilities.scratchbook is disabled")
+@Test("Scratchbook tool execution rejects calls when ColonyAgentCapabilities.scratchbook is disabled")
 func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
     let graph = try ColonyAgent.compile()
     let baseFS = ColonyInMemoryFileSystemBackend()

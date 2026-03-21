@@ -1,100 +1,126 @@
-public struct ColonySubagentDescriptor: Sendable, Codable, Equatable {
-    public var name: String
-    public var description: String
+/// Namespace for Colony subagent value types.
+public enum ColonySubagent {}
 
-    public init(name: String, description: String) {
-        self.name = name
-        self.description = description
+// MARK: - Descriptor
+
+extension ColonySubagent {
+    public struct Descriptor: Sendable, Codable, Equatable {
+        public var name: String
+        public var description: String
+
+        public init(name: String, description: String) {
+            self.name = name
+            self.description = description
+        }
     }
 }
 
-public struct ColonySubagentContext: Sendable, Codable, Equatable {
-    public var objective: String?
-    public var constraints: [String]
-    public var acceptanceCriteria: [String]
-    public var notes: [String]
+// MARK: - Context
 
-    public init(
-        objective: String? = nil,
-        constraints: [String] = [],
-        acceptanceCriteria: [String] = [],
-        notes: [String] = []
-    ) {
-        self.objective = objective
-        self.constraints = constraints
-        self.acceptanceCriteria = acceptanceCriteria
-        self.notes = notes
-    }
+extension ColonySubagent {
+    public struct Context: Sendable, Codable, Equatable {
+        public var objective: String?
+        public var constraints: [String]
+        public var acceptanceCriteria: [String]
+        public var notes: [String]
 
-    private enum CodingKeys: String, CodingKey {
-        case objective
-        case constraints
-        case acceptanceCriteria = "acceptance_criteria"
-        case notes
-    }
+        public init(
+            objective: String? = nil,
+            constraints: [String] = [],
+            acceptanceCriteria: [String] = [],
+            notes: [String] = []
+        ) {
+            self.objective = objective
+            self.constraints = constraints
+            self.acceptanceCriteria = acceptanceCriteria
+            self.notes = notes
+        }
 
-    private enum LegacyCodingKeys: String, CodingKey {
-        case acceptanceCriteria = "acceptanceCriteria"
-    }
+        private enum CodingKeys: String, CodingKey {
+            case objective
+            case constraints
+            case acceptanceCriteria = "acceptance_criteria"
+            case notes
+        }
 
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        private enum LegacyCodingKeys: String, CodingKey {
+            case acceptanceCriteria = "acceptanceCriteria"
+        }
 
-        self.objective = try container.decodeIfPresent(String.self, forKey: .objective)
-        self.constraints = try container.decodeIfPresent([String].self, forKey: .constraints) ?? []
-        self.acceptanceCriteria =
-            try container.decodeIfPresent([String].self, forKey: .acceptanceCriteria)
-            ?? legacyContainer.decodeIfPresent([String].self, forKey: .acceptanceCriteria)
-            ?? []
-        self.notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
-    }
-}
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
 
-public struct ColonySubagentFileReference: Sendable, Codable, Equatable {
-    public var path: ColonyVirtualPath
-    public var offset: Int?
-    public var limit: Int?
-
-    public init(
-        path: ColonyVirtualPath,
-        offset: Int? = nil,
-        limit: Int? = nil
-    ) {
-        self.path = path
-        self.offset = offset
-        self.limit = limit
+            self.objective = try container.decodeIfPresent(String.self, forKey: .objective)
+            self.constraints = try container.decodeIfPresent([String].self, forKey: .constraints) ?? []
+            self.acceptanceCriteria =
+                try container.decodeIfPresent([String].self, forKey: .acceptanceCriteria)
+                ?? legacyContainer.decodeIfPresent([String].self, forKey: .acceptanceCriteria)
+                ?? []
+            self.notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
+        }
     }
 }
 
-public struct ColonySubagentRequest: Sendable, Equatable {
-    public var prompt: String
-    public var subagentType: ColonySubagentType
-    public var context: ColonySubagentContext?
-    public var fileReferences: [ColonySubagentFileReference]
+// MARK: - FileReference
 
-    public init(
-        prompt: String,
-        subagentType: ColonySubagentType,
-        context: ColonySubagentContext? = nil,
-        fileReferences: [ColonySubagentFileReference] = []
-    ) {
-        self.prompt = prompt
-        self.subagentType = subagentType
-        self.context = context
-        self.fileReferences = fileReferences
+extension ColonySubagent {
+    public struct FileReference: Sendable, Codable, Equatable {
+        public var path: ColonyFileSystem.VirtualPath
+        public var offset: Int?
+        public var limit: Int?
+
+        public init(
+            path: ColonyFileSystem.VirtualPath,
+            offset: Int? = nil,
+            limit: Int? = nil
+        ) {
+            self.path = path
+            self.offset = offset
+            self.limit = limit
+        }
     }
 }
 
-public struct ColonySubagentResult: Sendable, Equatable {
-    public var content: String
+// MARK: - Request
 
-    public init(content: String) {
-        self.content = content
+extension ColonySubagent {
+    public struct Request: Sendable, Equatable {
+        public var prompt: String
+        public var subagentType: ColonySubagentType
+        public var context: ColonySubagent.Context?
+        public var fileReferences: [ColonySubagent.FileReference]
+
+        public init(
+            prompt: String,
+            subagentType: ColonySubagentType,
+            context: ColonySubagent.Context? = nil,
+            fileReferences: [ColonySubagent.FileReference] = []
+        ) {
+            self.prompt = prompt
+            self.subagentType = subagentType
+            self.context = context
+            self.fileReferences = fileReferences
+        }
     }
 }
+
+// MARK: - Result
+
+extension ColonySubagent {
+    public struct Result: Sendable, Equatable {
+        public var content: String
+
+        public init(content: String) {
+            self.content = content
+        }
+    }
+}
+
+// MARK: - Registry (top-level protocol)
 
 public protocol ColonySubagentRegistry: Sendable {
-    func listSubagents() -> [ColonySubagentDescriptor]
-    func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult
+    func listSubagents() -> [ColonySubagent.Descriptor]
+    func run(_ request: ColonySubagent.Request) async throws -> ColonySubagent.Result
 }
+

@@ -20,13 +20,13 @@ public enum ColonyLane: String, Sendable, CaseIterable {
 }
 
 package struct ColonyLaneConfigurationPreset: Sendable {
-    package var requiredCapabilities: ColonyRuntimeCapabilities
-    package var toolPromptStrategy: ColonyToolPromptStrategy?
+    package var requiredCapabilities: ColonyAgentCapabilities
+    package var toolPromptStrategy: ColonyTool.PromptStrategy?
     package var additionalSystemPrompt: String?
 
     package init(
-        requiredCapabilities: ColonyRuntimeCapabilities = [],
-        toolPromptStrategy: ColonyToolPromptStrategy? = nil,
+        requiredCapabilities: ColonyAgentCapabilities = [],
+        toolPromptStrategy: ColonyTool.PromptStrategy? = nil,
         additionalSystemPrompt: String? = nil
     ) {
         self.requiredCapabilities = requiredCapabilities
@@ -78,7 +78,7 @@ package struct ColonyAgentFactory: Sendable {
 
     package static func configuration(
         profile: ColonyProfile,
-        modelName: String
+        modelName: ColonyModelName
     ) -> ColonyConfiguration {
         switch profile {
         case .onDevice4k:
@@ -110,7 +110,7 @@ package struct ColonyAgentFactory: Sendable {
                     summarizationPolicy: ColonySummarizationPolicy(
                         triggerTokens: 3_200,
                         keepLastMessages: 8,
-                        historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                        historyPathPrefix: try! ColonyFileSystem.VirtualPath("/conversation_history")
                     ),
                     requestHardTokenLimit: 4_000,
                     toolResultEvictionTokenLimit: 700
@@ -131,7 +131,7 @@ package struct ColonyAgentFactory: Sendable {
                 )
             )
             config.context.scratchbookPolicy = ColonyScratchbookPolicy(
-                pathPrefix: try! ColonyVirtualPath("/scratchbook"),
+                pathPrefix: try! ColonyFileSystem.VirtualPath("/scratchbook"),
                 viewTokenLimit: 700,
                 maxRenderedItems: 20,
                 autoCompact: true
@@ -152,7 +152,7 @@ package struct ColonyAgentFactory: Sendable {
                     summarizationPolicy: ColonySummarizationPolicy(
                         triggerTokens: 170_000,
                         keepLastMessages: 20,
-                        historyPathPrefix: try! ColonyVirtualPath("/conversation_history")
+                        historyPathPrefix: try! ColonyFileSystem.VirtualPath("/conversation_history")
                     ),
                     toolResultEvictionTokenLimit: 20_000
                 ),
@@ -165,7 +165,7 @@ package struct ColonyAgentFactory: Sendable {
 
     package static func configuration(
         profile: ColonyProfile,
-        modelName: String,
+        modelName: ColonyModelName,
         lane: ColonyLane
     ) -> ColonyConfiguration {
         var configuration = configuration(profile: profile, modelName: modelName)
@@ -273,16 +273,16 @@ package struct ColonyAgentFactory: Sendable {
         }
     }
 
-    package static func runOptions(profile: ColonyProfile) -> ColonyRunOptions {
+    package static func runOptions(profile: ColonyProfile) -> ColonyRun.Options {
         switch profile {
         case .onDevice4k:
-            return ColonyRunOptions(
+            return ColonyRun.Options(
                 maxSteps: 200,
                 maxConcurrentTasks: 4,
                 checkpointPolicy: .onInterrupt
             )
         case .cloud:
-            return ColonyRunOptions(
+            return ColonyRun.Options(
                 maxSteps: 1_000,
                 maxConcurrentTasks: 8,
                 checkpointPolicy: .onInterrupt
@@ -331,7 +331,7 @@ package struct ColonyAgentFactory: Sendable {
             logger: ColonyNoopLogger(),
             configure: options.configure,
             configureRunOptions: { raw in
-                var publicOptions = ColonyRunOptions(raw)
+                var publicOptions = ColonyRun.Options(raw)
                 options.configureRunOptions(&publicOptions)
                 raw = publicOptions.hive
             }
@@ -341,7 +341,7 @@ package struct ColonyAgentFactory: Sendable {
     package func makeRuntime(
         profile: ColonyProfile = .onDevice4k,
         threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
-        modelName: String,
+        modelName: ColonyModelName,
         lane: ColonyLane? = nil,
         intent: String? = nil,
         model: (any HiveModelClient)? = nil,
@@ -434,9 +434,9 @@ package struct ColonyAgentFactory: Sendable {
         // Ensure capability gating is consistent with configured backends.
         let requestedCapabilities = configuration.model.capabilities
         let swarmCapabilities = swarmTools?.requiredCapabilities ?? []
-        var capabilities: ColonyRuntimeCapabilities = []
+        var capabilities: ColonyAgentCapabilities = []
 
-        func retainIfRequested(_ capability: ColonyRuntimeCapabilities, available: Bool) {
+        func retainIfRequested(_ capability: ColonyAgentCapabilities, available: Bool) {
             guard requestedCapabilities.contains(capability), available else { return }
             capabilities.insert(capability)
         }
@@ -574,6 +574,17 @@ package struct ColonyAgentFactory: Sendable {
             case .requireOnDevice:
                 privacyBehavior = .requireOnDevice
             }
+            let networkBehavior: ColonyOnDeviceModelRouter.NetworkBehavior
+            switch policy.networkBehavior {
+            case .alwaysFallback:
+                networkBehavior = .alwaysFallback
+            case .preferOnDeviceWhenOffline:
+                networkBehavior = .preferOnDeviceWhenOffline
+            case .preferOnDeviceWhenMetered:
+                networkBehavior = .preferOnDeviceWhenMetered
+            case .preferOnDeviceWhenOfflineOrMetered:
+                networkBehavior = .preferOnDeviceWhenOfflineOrMetered
+            }
             let router = ColonyOnDeviceModelRouter(
                 onDevice: AnyHiveModelClient(
                     ColonyHiveModelClientAdapter(base: foundationClient)
@@ -583,15 +594,14 @@ package struct ColonyAgentFactory: Sendable {
                 fallbackCapabilities: fallbackCapabilities,
                 policy: ColonyOnDeviceModelRouter.Policy(
                     privacyBehavior: privacyBehavior,
-                    preferOnDeviceWhenOffline: policy.preferOnDeviceWhenOffline,
-                    preferOnDeviceWhenMetered: policy.preferOnDeviceWhenMetered
+                    networkBehavior: networkBehavior
                 ),
                 isOnDeviceAvailable: { ColonyFoundationModelsClient.isAvailable }
             )
 
             return ResolvedPublicModel(
                 router: router,
-                capabilities: router.colonyModelCapabilities(hints: nil)
+                capabilities: router.colonyModelCapabilities(hints: nil as HiveInferenceHints?)
             )
 
         case let .providerRouting(providers, policy):
@@ -615,8 +625,8 @@ package struct ColonyAgentFactory: Sendable {
                 },
                 policy: ColonyProviderRouter.Policy(
                     maxAttemptsPerProvider: policy.maxAttemptsPerProvider,
-                    initialBackoffNanoseconds: policy.initialBackoffNanoseconds,
-                    maxBackoffNanoseconds: policy.maxBackoffNanoseconds,
+                    initialBackoff: policy.initialBackoff,
+                    maxBackoff: policy.maxBackoff,
                     globalMaxRequestsPerMinute: policy.globalMaxRequestsPerMinute,
                     costCeilingUSD: policy.costCeilingUSD,
                     estimatedOutputToInputRatio: policy.estimatedOutputToInputRatio,
@@ -626,7 +636,7 @@ package struct ColonyAgentFactory: Sendable {
 
             return ResolvedPublicModel(
                 router: router,
-                capabilities: router.colonyModelCapabilities(hints: nil)
+                capabilities: router.colonyModelCapabilities(hints: nil as HiveInferenceHints?)
             )
         }
     }
@@ -729,7 +739,7 @@ private struct ExistentialHiveModelClient: HiveModelClient, Sendable {
 /// Filters Swarm tools by active Colony capabilities.
 struct CapabilityFilteredSwarmToolRegistry: HiveToolRegistry, Sendable {
     let base: any ColonySwarmToolBridging
-    let activeCapabilities: ColonyRuntimeCapabilities
+    let activeCapabilities: ColonyAgentCapabilities
 
     func listTools() -> [HiveToolDefinition] {
         base.listHiveTools(filteredBy: activeCapabilities)
