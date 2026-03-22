@@ -83,6 +83,41 @@ private final class FixedModelClient: HiveModelClient, @unchecked Sendable {
     }
 }
 
+private final class DelayedFixedModelClient: HiveModelClient, @unchecked Sendable {
+    private let counter = RequestCounter()
+    private let content: String
+    private let delayNanoseconds: UInt64
+
+    init(content: String, delayNanoseconds: UInt64) {
+        self.content = content
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        await counter.increment()
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+        return HiveChatResponse(message: HiveChatMessage(id: UUID().uuidString, role: .assistant, content: content))
+    }
+
+    func snapshotRequestCount() async -> Int {
+        await counter.value()
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let response = try await self.complete(request)
+                    continuation.yield(.final(response))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 private final class InterruptingOnceModelClient: HiveModelClient, @unchecked Sendable {
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         try await streamFinal(request)
@@ -409,6 +444,93 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
     let degraded = try await costClient.complete(request)
     #expect(degraded.message.content == "budget-exhausted")
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
+}
+
+@Test("Task E provider router enforces rate ceilings under concurrent requests")
+func taskE_providerRouterConcurrentRateCeilingReservation() async throws {
+    let provider = DelayedFixedModelClient(content: "ok", delayNanoseconds: 300_000_000)
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "single",
+                client: AnyHiveModelClient(provider),
+                priority: 0,
+                maxRequestsPerMinute: 1,
+                usdPer1KTokens: nil
+            ),
+        ],
+        policy: ColonyProviderRouter.Policy(
+            maxAttemptsPerProvider: 1,
+            initialBackoffNanoseconds: 1,
+            maxBackoffNanoseconds: 1,
+            globalMaxRequestsPerMinute: nil,
+            costCeilingUSD: nil,
+            estimatedOutputToInputRatio: 0,
+            gracefulDegradation: .syntheticResponse("rate-limited")
+        ),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = HiveChatRequest(
+        model: "router-model",
+        messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
+        tools: []
+    )
+    let client = router.route(request, hints: nil)
+
+    async let first = client.complete(request)
+    async let second = client.complete(request)
+    let responses = try await [first, second]
+    let responseContents = Set(responses.map(\.message.content))
+
+    #expect(responseContents.contains("ok"))
+    #expect(responseContents.contains("rate-limited"))
+    #expect(await provider.snapshotRequestCount() == 1)
+}
+
+@Test("Task E durable run-state store rebuilds snapshot from event log when state file is missing")
+func taskE_durableRunStateRebuildsMissingSnapshot() async throws {
+    let directory = try temporaryDirectory("run-state-rebuild")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let store = try ColonyDurableRunStateStore(baseURL: directory)
+    let runID = UUID()
+    let sessionID = ColonyHarnessSessionID(rawValue: "session-rebuild")
+    let threadID = HiveThreadID("thread-rebuild")
+    let timestamp = Date()
+
+    try await store.appendEvent(
+        makeEnvelope(
+            runID: runID,
+            sessionID: sessionID,
+            sequence: 1,
+            eventType: .runStarted,
+            timestamp: timestamp
+        ),
+        threadID: threadID
+    )
+    try await store.appendEvent(
+        makeEnvelope(
+            runID: runID,
+            sessionID: sessionID,
+            sequence: 2,
+            eventType: .runInterrupted,
+            timestamp: timestamp.addingTimeInterval(1)
+        ),
+        threadID: threadID
+    )
+
+    let stateURL = directory
+        .appendingPathComponent("runs", isDirectory: true)
+        .appendingPathComponent("run-\(runID.uuidString.lowercased())", isDirectory: true)
+        .appendingPathComponent("state.json", isDirectory: false)
+    try FileManager.default.removeItem(at: stateURL)
+
+    let rebuilt = try await store.loadRunState(runID: runID)
+    #expect(rebuilt != nil)
+    #expect(rebuilt?.phase == .interrupted)
+    #expect(rebuilt?.lastEventSequence == 2)
 }
 
 @Test("Task E observability emitter redacts sensitive payloads and harness writes durable run state")

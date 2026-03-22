@@ -990,7 +990,7 @@ public enum ColonyAgent {
         let summaryMessage = HiveChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
-            content: "Note: conversation has been summarized. Full prior history is available at \(historyPath.rawValue)."
+            content: "Conversation summarized. Full prior history is available at \(historyPath.rawValue)."
         )
 
         return [summaryMessage] + tail
@@ -1201,7 +1201,7 @@ public enum ColonyAgent {
 
         let preview = createContentPreview(content, maxChars: threshold)
         return """
-Tool result too large (tool_call_id: \(toolCall.id)).
+Result too large (tool_call_id: \(toolCall.id)).
 Full content was written to \(path.rawValue). Read it with read_file using offset/limit.
 
 Preview:

@@ -14,9 +14,12 @@ public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
 
     public func countTokens(_ messages: [HiveChatMessage]) -> Int {
         let chars = messages.reduce(into: 0) { partial, message in
+            partial += message.id.count
+            partial += message.role.rawValue.count
             partial += message.content.count
             partial += message.name?.count ?? 0
             partial += message.toolCallID?.count ?? 0
+            partial += 12 // Conservative per-message structural overhead.
             partial += message.toolCalls.reduce(into: 0) { toolPartial, call in
                 toolPartial += call.id.count + call.name.count + call.argumentsJSON.count
             }
@@ -24,4 +27,3 @@ public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
         return max(1, chars / 4)
     }
 }
-

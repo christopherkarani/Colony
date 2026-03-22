@@ -5,6 +5,7 @@ import ColonyCore
 public enum ColonyHarnessSessionError: Error, Sendable {
     case runAlreadyActive
     case noInterruptedRun
+    case runStatePersistenceFailed(String)
 }
 
 public actor ColonyHarnessSession {
@@ -120,11 +121,23 @@ public actor ColonyHarnessSession {
         beginAttemptMonitoring(handle: handle, runID: runID)
     }
 
-    public func stop() {
+    public func stop() async {
         stopRequested = true
         lifecycleStateStorage = .stopped
         interruptionQueue.removeAll(keepingCapacity: false)
+        let cancelledRunID = activeRunID
         activeOutcomeTask?.cancel()
+        eventPumpTask?.cancel()
+        outcomeMonitorTask?.cancel()
+        activeAttemptID = nil
+        activeRunID = nil
+        activeOutcomeTask = nil
+        eventPumpTask = nil
+        outcomeMonitorTask = nil
+
+        if let cancelledRunID {
+            await emit(runID: cancelledRunID, eventType: .runCancelled, payload: .none)
+        }
     }
 
     private let runtime: ColonyRuntime
@@ -136,6 +149,7 @@ public actor ColonyHarnessSession {
     private var stopRequested: Bool = false
 
     private var activeAttemptID: HiveRunAttemptID?
+    private var activeRunID: UUID?
     private var activeOutcomeTask: Task<HiveRunOutcome<ColonySchema>, Error>?
     private var eventPumpTask: Task<Void, Never>?
     private var outcomeMonitorTask: Task<Void, Never>?
@@ -157,6 +171,7 @@ public actor ColonyHarnessSession {
 
     private func beginAttemptMonitoring(handle: HiveRunHandle<ColonySchema>, runID: UUID) {
         activeAttemptID = handle.attemptID
+        activeRunID = runID
         activeOutcomeTask = handle.outcome
 
         eventPumpTask?.cancel()
@@ -184,9 +199,6 @@ public actor ColonyHarnessSession {
                 let outcome = try await handle.outcome.value
                 await self.processOutcome(outcome, runID: runID)
             } catch {
-                if self.stopRequested {
-                    await self.emit(runID: runID, eventType: .runCancelled, payload: .none)
-                }
                 self.lifecycleStateStorage = self.stopRequested ? .stopped : .idle
             }
         }
@@ -282,7 +294,27 @@ public actor ColonyHarnessSession {
         }
 
         if let runStateStore {
-            try? await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            do {
+                try await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+            } catch {
+                let rendered = String(reflecting: error)
+                let persistenceError = ColonyHarnessSessionError.runStatePersistenceFailed(rendered)
+                for continuation in subscribers.values {
+                    continuation.finish(throwing: persistenceError)
+                }
+                subscribers.removeAll()
+                stopRequested = true
+                lifecycleStateStorage = .stopped
+                activeOutcomeTask?.cancel()
+                eventPumpTask?.cancel()
+                outcomeMonitorTask?.cancel()
+                activeAttemptID = nil
+                activeRunID = nil
+                activeOutcomeTask = nil
+                eventPumpTask = nil
+                outcomeMonitorTask = nil
+                return
+            }
         }
 
         if let observabilityEmitter {
@@ -296,6 +328,7 @@ public actor ColonyHarnessSession {
         }
 
         activeAttemptID = nil
+        activeRunID = nil
         activeOutcomeTask = nil
         eventPumpTask?.cancel()
         outcomeMonitorTask?.cancel()
