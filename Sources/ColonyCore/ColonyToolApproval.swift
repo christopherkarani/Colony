@@ -1,19 +1,48 @@
-// MARK: - Namespace
-
+/// Namespace for tool approval types used in the interrupt/resume cycle.
+///
+/// When the runtime encounters a tool that requires human approval, it emits an
+/// `ColonyRun.Interrupted` outcome containing `ColonyRun.Interruption` with the
+/// pending tool calls. The host application must decide whether to approve,
+/// reject, or cancel each tool call by constructing a `Decision` and passing
+/// it to `ColonyRun.ResumeRequest`.
+///
+/// ## Approval Policy
+///
+/// The `Policy` enum controls which tools require approval by default:
+///
+/// - `.allowList([.ls, .readFile, ...])` — only listed tools auto-approve; all others require approval
+/// - `.always` — every tool requires approval
+/// - `.never` — no tool requires approval (not recommended for production)
+///
+/// ## Per-Tool Decisions
+///
+/// For fine-grained control, use `.perTool([...])` to make individual decisions:
+///
+/// ```swift
+/// let decision = ColonyToolApproval.Decision.perTool([
+///     myToolCallID: .approved,
+///     dangerousToolCallID: .rejected,
+/// ])
+/// ```
 public enum ColonyToolApproval {}
 
 // MARK: - ColonyToolApproval.PerToolDecision
 
+/// The decision made for a single tool call within a `.perTool` decision.
 extension ColonyToolApproval {
     public enum PerToolDecision: String, Codable, Sendable, Equatable {
+        /// The tool call was approved for execution.
         case approved
+        /// The tool call was rejected — it will not execute and the agent will receive an error.
         case rejected
+        /// The tool call was cancelled — treated as rejected but signals user-initiated cancellation.
         case cancelled
     }
 }
 
 // MARK: - ColonyToolApproval.PerToolEntry
 
+/// A single tool call decision entry, pairing a call ID with its outcome.
 extension ColonyToolApproval {
     public struct PerToolEntry: Codable, Sendable, Equatable {
         public var toolCallID: ColonyToolCallID
@@ -33,6 +62,14 @@ extension ColonyToolApproval {
 
 // MARK: - ColonyToolApproval.Decision
 
+/// The overall decision for a tool approval interrupt, covering one or more tool calls.
+///
+/// Use the static `.perTool(_:)` factory to build a granular multi-call decision:
+/// ```swift
+/// let decision = ColonyToolApproval.Decision.perTool([myCallID: .approved])
+/// ```
+///
+/// For bulk decisions, use `.approved`, `.rejected`, or `.cancelled` to decide all calls at once.
 extension ColonyToolApproval {
     public enum Decision: Codable, Sendable, Equatable {
         case approved
@@ -127,6 +164,11 @@ extension ColonyToolApproval {
 
 // MARK: - ColonyToolApproval.Policy
 
+/// The policy that determines which tools require human approval before execution.
+///
+/// The default policy is `.allowList([.ls, .readFile, .glob, .grep, .readTodos, .writeTodos])`,
+/// which auto-approves low-risk read and planning tools while requiring approval for
+/// higher-risk tools (mutations, execution, network access).
 extension ColonyToolApproval {
     public enum Policy: Sendable {
         case never

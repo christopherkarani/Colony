@@ -7,6 +7,11 @@ public enum ColonyFileSystem {}
 
 // MARK: - VirtualPath
 
+/// A normalized, slash-separated virtual path used across Colony's file system abstraction.
+///
+/// `VirtualPath` normalizes paths to absolute form (starting with `/`), collapses
+/// duplicate slashes, and rejects `..` and `~` to prevent path traversal attacks.
+/// Use `root` for the root of the virtual filesystem.
 extension ColonyFileSystem {
     public struct VirtualPath: Hashable, Sendable, Codable {
         public let rawValue: String
@@ -37,6 +42,7 @@ extension ColonyFileSystem {
             case rawValue
         }
 
+        /// The root of the virtual filesystem (`/`).
         public static var root: ColonyFileSystem.VirtualPath {
             // swiftlint:disable:next force_try
             try! ColonyFileSystem.VirtualPath("/")
@@ -72,10 +78,14 @@ extension ColonyFileSystem {
 
 // MARK: - FileInfo
 
+/// Metadata about a file or directory in the virtual filesystem.
 extension ColonyFileSystem {
     public struct FileInfo: Sendable, Codable, Equatable {
+        /// The full virtual path to this file or directory.
         public let path: ColonyFileSystem.VirtualPath
+        /// True if this entry is a directory.
         public let isDirectory: Bool
+        /// The size of the file in bytes, or nil for directories.
         public let sizeBytes: Int?
 
         public init(path: ColonyFileSystem.VirtualPath, isDirectory: Bool, sizeBytes: Int?) {
@@ -88,10 +98,14 @@ extension ColonyFileSystem {
 
 // MARK: - GrepMatch
 
+/// A single line match returned by `grep`.
 extension ColonyFileSystem {
     public struct GrepMatch: Sendable, Codable, Equatable {
+        /// The path of the file that contained the match.
         public let path: ColonyFileSystem.VirtualPath
+        /// The 1-based line number of the match.
         public let line: Int
+        /// The full text of the line containing the match.
         public let text: String
 
         public init(path: ColonyFileSystem.VirtualPath, line: Int, text: String) {
@@ -104,34 +118,58 @@ extension ColonyFileSystem {
 
 // MARK: - Error
 
+/// Errors thrown by the file system backend.
 extension ColonyFileSystem {
     public enum Error: Swift.Error, Sendable, Equatable {
+        /// The path contains invalid characters or a path traversal attempt.
         case invalidPath(String)
+        /// The path does not exist.
         case notFound(ColonyFileSystem.VirtualPath)
+        /// The path is a directory but a file was expected.
         case isDirectory(ColonyFileSystem.VirtualPath)
+        /// A file already exists at this path when creating a new file.
         case alreadyExists(ColonyFileSystem.VirtualPath)
+        /// A low-level I/O error occurred.
         case ioError(String)
     }
 }
 
 // MARK: - ColonyFileSystemBackend (top-level protocol)
 
+/// The backend interface for Colony's file system abstraction.
+///
+/// Colony ships with two built-in implementations:
+/// - `ColonyFileSystem.DiskBackend` — maps virtual paths to a real directory on disk
+/// - `ColonyFileSystem.InMemoryBackend` — an ephemeral in-memory filesystem for testing
+///
+/// Custom backends can be implemented to provide encrypted filesystems, remote
+/// storage, or sandboxed environments.
 public protocol ColonyFileSystemBackend: Sendable {
+    /// List the contents of a directory.
     func list(at path: ColonyFileSystem.VirtualPath) async throws -> [ColonyFileSystem.FileInfo]
+    /// Read the full contents of a file.
     func read(at path: ColonyFileSystem.VirtualPath) async throws -> String
+    /// Create a new file with the given contents. Fails if a file already exists at the path.
     func write(at path: ColonyFileSystem.VirtualPath, content: String) async throws
+    /// Edit a file by replacing `oldString` with `newString`. Returns the number of replacements made.
     func edit(
         at path: ColonyFileSystem.VirtualPath,
         oldString: String,
         newString: String,
         replaceAll: Bool
     ) async throws -> Int
+    /// Find all paths matching a glob pattern (e.g., `**/*.swift`).
     func glob(pattern: String) async throws -> [ColonyFileSystem.VirtualPath]
+    /// Search file contents for a regex pattern, optionally filtered by a glob pattern.
     func grep(pattern: String, glob: String?) async throws -> [ColonyFileSystem.GrepMatch]
 }
 
 // MARK: - InMemoryBackend
 
+/// An in-memory file system backend for testing and ephemeral environments.
+///
+/// All files are stored in memory and lost when the actor is deallocated.
+/// Use this for unit tests or when you need a completely isolated filesystem.
 public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
     private var files: [ColonyFileSystem.VirtualPath: String]
 
@@ -273,6 +311,11 @@ extension ColonyFileSystem {
 
 // MARK: - DiskBackend
 
+/// A file system backend that maps virtual paths to a real directory on disk.
+///
+/// All paths are resolved relative to the configured `root` URL and validated
+/// to ensure they do not escape the root (no symlink traversal outside `root`).
+/// Use `DiskBackend` in production when the agent needs access to a real project directory.
 extension ColonyFileSystem {
     public actor DiskBackend: ColonyFileSystemBackend {
         private let canonicalRoot: URL

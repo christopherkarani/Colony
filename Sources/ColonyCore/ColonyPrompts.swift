@@ -1,5 +1,11 @@
 import HiveCore
 
+/// Namespace for system prompt construction used by the Colony runtime.
+///
+/// `ColonyPrompts` assembles the full system prompt from sections:
+/// base rules, scratchbook, membrane context, memory, skills, and the tool list.
+/// Scratchbook is placed before memory/skills so that under hard token limits,
+/// the active agent state survives while reference material is shed first.
 public enum ColonyPrompts {
     public static let baseSystemPrompt: String = """
 You have tools to help complete the user's objective.

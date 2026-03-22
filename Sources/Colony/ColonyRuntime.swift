@@ -1,6 +1,37 @@
 import HiveCore
 import ColonyCore
 
+/// The main Colony runtime handle for agent execution.
+///
+/// `ColonyRuntime` is created via `Colony.agent(model:)` and represents
+/// an active agent session. Send messages to the agent via `send()` and
+/// handle interrupts via `resumeToolApproval()`.
+///
+/// ## Creating a Runtime
+///
+/// ```swift
+/// let agent = try await Colony.agent(model: .foundationModels())
+/// ```
+///
+/// ## Sending Messages
+///
+/// ```swift
+/// let handle = await agent.send("Hello, agent!")
+/// let outcome = try await handle.outcome.value
+/// ```
+///
+/// ## Handling Tool Approval
+///
+/// ```swift
+/// let handle = await agent.send("Write a file")
+/// if case let .interrupted(interrupt) = outcome,
+///    case let .toolApprovalRequired(calls) = interrupt.interrupt.payload {
+///     let resumed = await agent.resumeToolApproval(
+///         interruptID: interrupt.interrupt.id,
+///         decision: .approved
+///     )
+/// }
+/// ```
 public struct ColonyRuntime: Sendable {
     package let runControl: ColonyRunControl
 

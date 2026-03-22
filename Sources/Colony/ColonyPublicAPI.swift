@@ -5,6 +5,26 @@ import Swarm
 import struct Swarm.MembraneEnvironment
 import struct Swarm.MembraneFeatureConfiguration
 
+/// Configuration for the AI model used by Colony runtime.
+///
+/// `ColonyModel` is created using factory methods and passed to `Colony.agent()`.
+/// It configures which AI model to use and how to route between providers.
+///
+/// ## Factory Methods
+///
+/// ```swift
+/// // Apple Foundation Models (on-device)
+/// let model = ColonyModel.foundationModels()
+///
+/// // On-device with cloud fallback
+/// let model = ColonyModel.onDevice(fallback: myClient)
+///
+/// // Multi-provider routing
+/// let model = ColonyModel.providerRouting([
+///     Provider(id: .ollama, client: ollamaClient, priority: 1),
+///     Provider(id: .foundationModels, client: fmClient, priority: 2),
+/// ])
+/// ```
 public struct ColonyModel: Sendable {
 
     // MARK: - Nested Configuration Types
@@ -221,6 +241,26 @@ public struct ColonyModel: Sendable {
     }
 }
 
+/// Container for all service backends registered with a Colony runtime.
+///
+/// `ColonyRuntimeServices` holds the backend implementations that power Colony's tools.
+/// Services are registered via `ColonyRuntimeServices.init(@ColonyServiceBuilder)` using
+/// the `@ColonyServiceBuilder` DSL:
+///
+/// ```swift
+/// let services = ColonyRuntimeServices {
+///     .filesystem(ColonyFileSystem.DiskBackend(root: projectURL))
+///     .shell(ColonyHardenedShellBackend())
+///     .memory(waxMemory)
+/// }
+/// ```
+///
+/// Each service type maps to a `ColonyAgentCapabilities` flag:
+/// - `.filesystem` → `ColonyFileSystemBackend`
+/// - `.shell` → `ColonyShellBackend`
+/// - `.git` → `ColonyGitBackend`
+/// - `.memory` → `ColonyMemoryBackend`
+/// - etc.
 public struct ColonyRuntimeServices: Sendable {
     public var tools: (any ColonyToolRegistry)?
     package var swarmTools: (any ColonySwarmToolBridging)?

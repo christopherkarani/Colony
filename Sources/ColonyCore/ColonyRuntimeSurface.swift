@@ -3,15 +3,21 @@ import HiveCore
 
 // MARK: - ColonyRun Namespace
 
+/// Namespace for runtime-related types including run outcomes, handles, and configuration.
 public enum ColonyRun {}
 
 // MARK: - CheckpointPolicy
 
 extension ColonyRun {
+    /// Policy for when checkpoints are created during a run.
     public enum CheckpointPolicy: Sendable, Equatable {
+        /// No checkpointing
         case disabled
+        /// Checkpoint after every superstep (expensive but safe)
         case everyStep
+        /// Checkpoint every N supersteps
         case every(steps: Int)
+        /// Checkpoint only when an interrupt occurs
         case onInterrupt
     }
 }
@@ -19,17 +25,19 @@ extension ColonyRun {
 // MARK: - StreamingMode
 
 extension ColonyRun {
+    /// Mode for streaming responses from the runtime.
     public enum StreamingMode: Sendable, Equatable {
-        case events
-        case values
-        case updates
-        case combined
+        case events    /// Stream SSE events
+        case values    /// Stream individual values
+        case updates   /// Stream updates
+        case combined  /// Combined streaming
     }
 }
 
 // MARK: - Options
 
 extension ColonyRun {
+    /// Runtime options for a single run.
     public struct Options: Sendable, Equatable {
         public let maxSteps: Int
         public let maxConcurrentTasks: Int
@@ -62,6 +70,7 @@ extension ColonyRun {
 // MARK: - Transcript
 
 extension ColonyRun {
+    /// The complete transcript of a run including messages and todos.
     public struct Transcript: Sendable, Equatable {
         public let messages: [ColonyChatMessage]
         public let finalAnswer: String?
@@ -82,9 +91,13 @@ extension ColonyRun {
 // MARK: - Interruption
 
 extension ColonyRun {
+    /// Represents an interrupt during agent execution (e.g., tool approval required).
     public struct Interruption: Sendable, Equatable {
+        /// Unique identifier for this interrupt, used to resume
         public let interruptID: ColonyInterruptID
+        /// The tool calls awaiting approval
         public let toolCalls: [ColonyTool.Call]
+        /// Checkpoint ID for resuming from this interrupt
         public let checkpointID: ColonyCheckpointID
 
         public init(
@@ -102,10 +115,15 @@ extension ColonyRun {
 // MARK: - Outcome
 
 extension ColonyRun {
+    /// The final outcome of a run.
     public enum Outcome: Sendable, Equatable {
+        /// Run completed successfully with transcript
         case finished(transcript: Transcript, checkpointID: ColonyCheckpointID?)
+        /// Run was interrupted (e.g., tool approval required)
         case interrupted(Interruption)
+        /// Run was cancelled
         case cancelled(transcript: Transcript, checkpointID: ColonyCheckpointID?)
+        /// Run hit max steps limit
         case outOfSteps(maxSteps: Int, transcript: Transcript, checkpointID: ColonyCheckpointID?)
     }
 }
@@ -113,6 +131,7 @@ extension ColonyRun {
 // MARK: - StartRequest
 
 extension ColonyRun {
+    /// Request to start a new run.
     public struct StartRequest: Sendable, Equatable {
         public var input: String
         public var optionsOverride: Options?
@@ -150,6 +169,7 @@ extension ColonyRun {
 // MARK: - ResumeRequest
 
 extension ColonyRun {
+    /// Request to resume a run after an interrupt.
     public struct ResumeRequest: Sendable, Equatable {
         public var interruptID: ColonyInterruptID
         public var decision: ColonyToolApproval.Decision
@@ -192,6 +212,13 @@ extension ColonyRun {
 // MARK: - Handle
 
 extension ColonyRun {
+    /// Handle for an in-progress run, returned immediately when sending a message.
+    ///
+    /// Await `outcome` to get the final result:
+    /// ```swift
+    /// let handle = await agent.send("Hello")
+    /// let outcome = try await handle.outcome.value
+    /// ```
     public struct Handle: Sendable {
         public let runID: ColonyRunID
         public let attemptID: ColonyAttemptID
@@ -212,8 +239,11 @@ extension ColonyRun {
 // MARK: - CheckpointConfiguration
 
 extension ColonyRun {
+    /// Configuration for checkpoint storage.
     public enum CheckpointConfiguration: Sendable, Equatable {
+        /// In-memory checkpoints (lost on restart)
         case inMemory
+        /// Durable checkpoints at URL (persist across restarts)
         case durable(URL)
     }
 }

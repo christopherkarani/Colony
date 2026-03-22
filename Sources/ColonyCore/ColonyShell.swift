@@ -5,20 +5,28 @@ public enum ColonyShell {}
 
 // MARK: - ColonyShell.TerminalMode
 
+/// The terminal mode for shell execution.
 extension ColonyShell {
     public enum TerminalMode: String, Sendable, Codable {
+        /// Use standard input/output pipes — suitable for non-interactive commands.
         case pipes
+        /// Use a pseudo-terminal (PTY) — supports interactive programs with terminal features.
         case pty
     }
 }
 
 // MARK: - ColonyShell.ExecutionRequest
 
+/// A request to execute a single shell command.
 extension ColonyShell {
     public struct ExecutionRequest: Sendable, Equatable {
+        /// The shell command to execute.
         public var command: String
+        /// The working directory for the command. Defaults to the confinement root.
         public var workingDirectory: ColonyFileSystem.VirtualPath?
+        /// Optional timeout for the command.
         public var timeout: Duration?
+        /// Terminal mode — `.pipes` for batch, `.pty` for interactive.
         public var terminalMode: ColonyShell.TerminalMode?
 
         public init(
@@ -37,11 +45,16 @@ extension ColonyShell {
 
 // MARK: - ColonyShell.ExecutionResult
 
+/// The result of a shell command execution.
 extension ColonyShell {
     public struct ExecutionResult: Sendable, Equatable {
+        /// The process exit code. Zero indicates success on Unix systems.
         public var exitCode: Int32
+        /// Standard output of the command.
         public var stdout: String
+        /// Standard error output of the command.
         public var stderr: String
+        /// True if the output was truncated due to size limits.
         public var wasTruncated: Bool
 
         public init(
@@ -56,6 +69,7 @@ extension ColonyShell {
             self.wasTruncated = wasTruncated
         }
 
+        /// Returns stdout if non-empty, otherwise stderr, for simple command output retrieval.
         public var combinedOutput: String {
             if stdout.isEmpty { return stderr }
             if stderr.isEmpty { return stdout }
@@ -67,15 +81,20 @@ extension ColonyShell {
 // MARK: - ColonyShell.SessionID
 
 extension ColonyShell {
+    /// Alias for the underlying shell session identifier.
     public typealias SessionID = ColonyShellSessionID
 }
 
 // MARK: - ColonyShell.SessionOpenRequest
 
+/// A request to open an interactive shell session.
 extension ColonyShell {
     public struct SessionOpenRequest: Sendable, Equatable {
+        /// The shell command to run in the session (e.g., `/bin/bash`).
         public var command: String
+        /// The working directory for the session.
         public var workingDirectory: ColonyFileSystem.VirtualPath?
+        /// Idle timeout — session closes if no I/O for this duration.
         public var idleTimeout: Duration?
 
         public init(
@@ -92,11 +111,16 @@ extension ColonyShell {
 
 // MARK: - ColonyShell.SessionReadResult
 
+/// The result of reading from an interactive shell session.
 extension ColonyShell {
     public struct SessionReadResult: Sendable, Equatable {
+        /// Bytes read from stdout since the last read.
         public var stdout: String
+        /// Bytes read from stderr since the last read.
         public var stderr: String
+        /// True when the process has closed and all output has been consumed.
         public var eof: Bool
+        /// True if output was truncated due to size limits.
         public var wasTruncated: Bool
 
         public init(stdout: String, stderr: String = "", eof: Bool, wasTruncated: Bool = false) {
@@ -110,12 +134,18 @@ extension ColonyShell {
 
 // MARK: - ColonyShell.SessionSnapshot
 
+/// A point-in-time snapshot of an interactive shell session.
 extension ColonyShell {
     public struct SessionSnapshot: Sendable, Equatable {
+        /// The unique identifier for this session.
         public var id: ColonyShell.SessionID
+        /// The command running in this session.
         public var command: String
+        /// The working directory at session start.
         public var workingDirectory: ColonyFileSystem.VirtualPath?
+        /// When the session was opened.
         public var startedAt: Date
+        /// True if the session process is still running.
         public var isRunning: Bool
 
         public init(
@@ -191,25 +221,41 @@ public extension ColonyShellSessionProvider {
 
 // MARK: - ColonyShell.ExecutionError
 
+/// Errors thrown by shell execution backends.
 extension ColonyShell {
     public enum ExecutionError: Error, Sendable, Equatable {
+        /// The confinement root URL is not a valid file URL.
         case invalidConfinementRoot(String)
+        /// The working directory path is malformed.
         case invalidWorkingDirectory(ColonyFileSystem.VirtualPath)
+        /// The working directory is explicitly denied by policy.
         case workingDirectoryDenied(ColonyFileSystem.VirtualPath)
+        /// The resolved working directory escapes the confinement root.
         case workingDirectoryOutsideConfinement(ColonyFileSystem.VirtualPath)
+        /// The shell process failed to launch.
         case launchFailed(String)
+        /// The referenced session ID does not exist.
         case sessionNotFound(ColonyShell.SessionID)
+        /// This backend does not support interactive session management.
         case sessionManagementUnsupported
     }
 }
 
 // MARK: - ColonyShell.ConfinementPolicy
 
+/// A security policy that restricts shell commands to an allowed directory tree.
+///
+/// The confinement policy prevents shell commands from accessing files outside the
+/// configured `allowedRoot`. Use `deniedPrefixes` to block specific subdirectories.
 extension ColonyShell {
     public struct ConfinementPolicy: Sendable, Equatable {
+        /// The root directory that all shell commands are confined to.
         public let allowedRoot: URL
+        /// Subdirectories under `allowedRoot` that are also denied even if under the root.
         public let deniedPrefixes: [ColonyFileSystem.VirtualPath]
 
+        /// Creates a confinement policy with an allowed root directory.
+        /// - Parameter deniedPrefixes: Paths under `allowedRoot` to explicitly deny.
         public init(
             allowedRoot: URL,
             deniedPrefixes: [ColonyFileSystem.VirtualPath] = []
@@ -221,6 +267,8 @@ extension ColonyShell {
             self.deniedPrefixes = deniedPrefixes
         }
 
+        /// Resolves and validates a working directory against this policy.
+        /// Returns the resolved `FileManager`-compatible URL, or throws if the path escapes confinement.
         public func resolveWorkingDirectory(_ workingDirectory: ColonyFileSystem.VirtualPath?) throws -> URL {
             let requested = workingDirectory ?? .root
 

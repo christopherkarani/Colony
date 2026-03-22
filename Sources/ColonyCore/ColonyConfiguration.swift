@@ -1,3 +1,30 @@
+/// The complete configuration for a Colony runtime, organized into four groups.
+///
+/// `ColonyConfiguration` is the top-level configuration object passed to `Colony.agent(model:)`.
+///
+/// ## Configuration Tiers
+///
+/// Colony provides three initialization tiers for increasing control:
+///
+/// ```swift
+/// // Tier 1 — Minimal (model name only)
+/// let config = ColonyConfiguration(modelName: .claudeSonnet)
+///
+/// // Tier 2 — Common (capabilities + tool approval)
+/// let config = ColonyConfiguration(
+///     modelName: .claudeSonnet,
+///     capabilities: [.filesystem, .shell, .git],
+///     toolApprovalPolicy: .allowList([.ls, .readFile, .glob])
+/// )
+///
+/// // Tier 3 — Full control (all nested groups)
+/// let config = ColonyConfiguration(
+///     model: ModelConfiguration(name: .claudeSonnet, capabilities: .default),
+///     safety: SafetyConfiguration(...),
+///     context: ContextConfiguration(...),
+///     prompts: PromptConfiguration(...)
+/// )
+/// ```
 public struct ColonyConfiguration: Sendable {
     public var model: ModelConfiguration
     public var safety: SafetyConfiguration
@@ -40,6 +67,10 @@ public struct ColonyConfiguration: Sendable {
 
     // MARK: - Nested Configuration Groups
 
+    /// Configuration for the AI model used by the runtime.
+    ///
+    /// Controls which model runs, what capabilities it supports (native tool calling,
+    /// structured outputs), and which agent capabilities are enabled.
     public struct ModelConfiguration: Sendable {
         public var name: ColonyModelName
         public var capabilities: ColonyAgentCapabilities
@@ -56,6 +87,16 @@ public struct ColonyConfiguration: Sendable {
         }
     }
 
+    /// Configuration for tool safety, approval policies, and audit logging.
+    ///
+    /// Safety settings control:
+    /// - Which tools require human approval before execution (`toolApprovalPolicy`)
+    /// - Risk levels per tool (`toolRiskLevelOverrides`, `toolPolicyMetadataByName`)
+    /// - Which risk levels always require approval regardless of policy (`mandatoryApprovalRiskLevels`)
+    /// - Tool audit trail recording (`toolAuditRecorder`)
+    ///
+    /// The default safety configuration auto-approves read-only and planning tools,
+    /// and requires approval for mutation, execution, and network tools.
     public struct SafetyConfiguration: Sendable {
         public var toolApprovalPolicy: ColonyToolApproval.Policy
         public var toolApprovalRuleStore: (any ColonyToolApprovalRuleStore)?
@@ -86,6 +127,13 @@ public struct ColonyConfiguration: Sendable {
         }
     }
 
+    /// Configuration for context management, compaction, and summarization.
+    ///
+    /// Controls:
+    /// - When context is compacted (`compactionPolicy`)
+    /// - Scratchbook behavior (`scratchbookPolicy`)
+    /// - Whether and how messages are summarized (`summarizationPolicy`)
+    /// - Hard token limits (`requestHardTokenLimit`, `toolResultEvictionTokenLimit`)
     public struct ContextConfiguration: Sendable {
         public var compactionPolicy: ColonyCompactionPolicy
         public var scratchbookPolicy: ColonyScratchbookPolicy
@@ -110,6 +158,13 @@ public struct ColonyConfiguration: Sendable {
         }
     }
 
+    /// Configuration for system prompts, tool prompt injection, and memory sources.
+    ///
+    /// Controls:
+    /// - How tools are represented in prompts (`toolPromptStrategy`)
+    /// - Additional system prompt content (`additionalSystemPrompt`)
+    /// - Which memory files are injected (`memorySources`)
+    /// - Which skill files are injected (`skillSources`)
     public struct PromptConfiguration: Sendable {
         public var toolPromptStrategy: ColonyTool.PromptStrategy
         public var additionalSystemPrompt: String?

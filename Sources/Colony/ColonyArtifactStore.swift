@@ -2,6 +2,9 @@ import Foundation
 import ColonyCore
 
 /// Type-safe artifact kind with autocomplete for standard kinds.
+///
+/// Artifacts are persisted content produced during agent execution, such as
+/// conversation history summaries, large tool outputs, or checkpoint data.
 public struct ColonyArtifactKind: Hashable, Codable, Sendable,
                                    ExpressibleByStringLiteral,
                                    CustomStringConvertible {
@@ -12,14 +15,21 @@ public struct ColonyArtifactKind: Hashable, Codable, Sendable,
 }
 
 extension ColonyArtifactKind {
+    /// Offloaded conversation history for a thread
     public static let conversationHistory: ColonyArtifactKind = "conversation_history"
+    /// Large tool output that exceeded context budget
     public static let largeToolResult: ColonyArtifactKind = "large_tool_result"
+    /// Runtime checkpoint for interrupt/resume
     public static let checkpoint: ColonyArtifactKind = "checkpoint"
+    /// Summarized content
     public static let summary: ColonyArtifactKind = "summary"
 }
 
+/// Policy for artifact retention limits.
 public struct ColonyArtifactRetentionPolicy: Sendable {
+    /// Maximum number of artifacts to retain (oldest are deleted first)
     public var maxArtifacts: Int?
+    /// Maximum age of artifacts in seconds (older are deleted)
     public var maxAge: TimeInterval?
 
     public init(maxArtifacts: Int? = nil, maxAge: TimeInterval? = nil) {
@@ -28,6 +38,11 @@ public struct ColonyArtifactRetentionPolicy: Sendable {
     }
 }
 
+/// A single artifact record representing persisted content from agent execution.
+///
+/// Artifacts are stored separately from the main conversation state to keep
+/// context windows small. Each record includes metadata about what created
+/// it and when.
 public struct ColonyArtifactRecord: Codable, Sendable, Equatable {
     public let id: ColonyArtifactID
     public let threadID: ColonyThreadID

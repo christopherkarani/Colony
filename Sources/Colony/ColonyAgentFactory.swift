@@ -5,17 +5,39 @@ import HiveCheckpointWax
 import ColonyCore
 import struct Swarm.MembraneEnvironment
 
+/// Pre-configured runtime profile that sets token budget and behavior defaults.
+///
+/// Profiles bundle appropriate settings for different deployment scenarios:
 public enum ColonyProfile: Sendable {
     /// Optimize for a ~4k token context window (on-device).
+    ///
+    /// Use this profile for iOS/macOS on-device execution where memory and
+    /// compute are constrained. Enables strict budgeting, compaction,
+    /// history offload, and large output eviction.
     case onDevice4k
+
     /// Optimize for larger context windows and cloud runtimes.
+    ///
+    /// Use this profile when running on macOS with cloud inference providers.
+    /// Allows larger context windows without strict budget enforcement.
     case cloud
 }
 
+/// Runtime lane that determines agent behavior and tool access patterns.
+///
+/// Lanes allow a single runtime to serve different purposes with different
+/// capability profiles. Each lane can have different tool access and behavior.
 public enum ColonyLane: String, Sendable, CaseIterable {
+    /// General-purpose agent lane
     case general
+
+    /// Lane optimized for coding tasks (enhanced LSP and git tools)
     case coding
+
+    /// Lane optimized for research tasks (web search, code search)
     case research
+
+    /// Lane optimized for memory operations (enhanced Wax integration)
     case memory
 }
 

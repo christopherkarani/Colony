@@ -1,11 +1,24 @@
 // MARK: - ColonyTool.RiskLevel
 
+/// The risk level of a tool, ordered from lowest to highest: readOnly < stateMutation < mutation < execution < network.
+///
+/// Risk levels determine which tools require mandatory human approval regardless of the configured
+/// `ColonyToolApproval.Policy`. By default, `.mutation`, `.execution`, and `.network` tools
+/// require approval; `.readOnly` and `.stateMutation` tools do not.
+///
+/// Use `ColonyConfiguration.SafetyConfiguration.toolRiskLevelOverrides` to customize the risk
+/// level of any built-in or custom tool.
 extension ColonyTool {
     public enum RiskLevel: String, Codable, Sendable, CaseIterable, Comparable {
+        /// Reading data without side effects — auto-approved by default.
         case readOnly = "read_only"
+        /// Mutating in-memory state managed by Colony (e.g., todos, scratchbook) — auto-approved by default.
         case stateMutation = "state_mutation"
+        /// Mutating persistent external state (e.g., files, git commits) — requires approval by default.
         case mutation
+        /// Executing arbitrary external processes — requires approval by default.
         case execution
+        /// Making network requests — requires approval by default.
         case network
 
         public static func < (lhs: ColonyTool.RiskLevel, rhs: ColonyTool.RiskLevel) -> Bool {
@@ -31,53 +44,91 @@ extension ColonyTool {
 
 // MARK: - ColonyToolApproval.RequirementReason
 
+/// The reason why a tool requires approval — useful for debugging and logging.
 extension ColonyToolApproval {
     public enum RequirementReason: String, Codable, Sendable, Equatable {
+        /// Tool's risk level is in the mandatory approval set (e.g., .mutation, .execution, .network).
         case mandatoryRiskLevel = "mandatory_risk_level"
+        /// Tool's `PolicyMetadata` has `approvalDisposition = .always`.
         case toolMetadataAlways = "tool_metadata_always"
+        /// Approval policy is `.always` and tool is not explicitly overridden.
         case policyAlways = "policy_always"
+        /// Tool is not on the `.allowList` — approval required by policy.
         case policyNotAllowListed = "policy_not_allow_listed"
     }
 }
 
 // MARK: - ColonyToolApproval.Disposition
 
+/// Controls whether a specific tool always, never, or automatically requires approval.
 extension ColonyToolApproval {
     public enum Disposition: String, Codable, Sendable, Equatable {
+        /// Follow the global `Policy` decision — depends on risk level and allow list.
         case automatic
+        /// This tool always requires approval regardless of policy.
         case always
+        /// This tool never requires approval regardless of policy.
         case never
     }
 }
 
 // MARK: - ColonyToolApproval.RetryDisposition
 
+/// Controls whether a rejected or failed tool call can be automatically retried.
 extension ColonyToolApproval {
     public enum RetryDisposition: String, Codable, Sendable, Equatable {
+        /// Inherit the retry policy from the tool's risk level (default for most tools).
         case inherit
+        /// Never retry this tool call after failure.
         case never
+        /// Safe to retry if the failure was transient (e.g., network timeout).
         case safeToRetry
+        /// Retry only after human approval is re-granted.
         case approvalGated
     }
 }
 
 // MARK: - ColonyToolApproval.ResultDurability
 
+/// Controls whether a tool's result is checkpointed for interrupt/resume.
 extension ColonyToolApproval {
     public enum ResultDurability: String, Codable, Sendable, Equatable {
+        /// Result is not persisted — lost on interrupt/resume (fast).
         case transient
+        /// Result is checkpointed for this interrupt cycle only.
         case checkpointed
+        /// Result is durably persisted across interrupt cycles.
         case durable
     }
 }
 
 // MARK: - ColonyTool.PolicyMetadata
 
+/// Per-tool policy overrides that supersede the global safety configuration.
+///
+/// Use `PolicyMetadata` to customize approval, retry, and checkpoint behavior for
+/// specific tools. Set via `ColonyConfiguration.SafetyConfiguration.toolPolicyMetadataByName`.
+///
+/// ## Example
+///
+/// ```swift
+/// var config = ColonyConfiguration(modelName: .claudeSonnet)
+/// config.safety.toolPolicyMetadataByName[.gitPush] = ColonyTool.PolicyMetadata(
+///     riskLevel: .network,                          // keep network risk level
+///     approvalDisposition: .always,                  // always require approval
+///     retryDisposition: .safeToRetry,               // allow retry on transient failure
+///     resultDurability: .checkpointed               // checkpoint the push result
+/// )
+/// ```
 extension ColonyTool {
     public struct PolicyMetadata: Codable, Sendable, Equatable {
+        /// Override the computed risk level for this tool. `nil` uses the default.
         public var riskLevel: ColonyTool.RiskLevel?
+        /// Override the approval disposition. Defaults to `.automatic`.
         public var approvalDisposition: ColonyToolApproval.Disposition
+        /// Override the retry disposition. Defaults to `.inherit`.
         public var retryDisposition: ColonyToolApproval.RetryDisposition
+        /// Override the result durability. Defaults to `.transient`.
         public var resultDurability: ColonyToolApproval.ResultDurability
 
         public init(

@@ -2,6 +2,10 @@ import Foundation
 import ColonyCore
 
 /// Type-safe observability event name with autocomplete for standard events.
+///
+/// Use `ColonyEventName` to identify what kind of event occurred during
+/// agent execution. Standard events include run lifecycle, tool operations,
+/// and model interactions.
 public struct ColonyEventName: Hashable, Codable, Sendable,
                                 ExpressibleByStringLiteral,
                                 CustomStringConvertible {
@@ -12,20 +16,36 @@ public struct ColonyEventName: Hashable, Codable, Sendable,
 }
 
 extension ColonyEventName {
+    /// Agent run started
     public static let runStarted: ColonyEventName = "run.started"
+    /// Agent run finished successfully
     public static let runFinished: ColonyEventName = "run.finished"
+    /// Agent run interrupted (e.g., tool approval required)
     public static let runInterrupted: ColonyEventName = "run.interrupted"
+    /// Agent run resumed after interrupt
     public static let runResumed: ColonyEventName = "run.resumed"
+    /// Agent run cancelled
     public static let runCancelled: ColonyEventName = "run.cancelled"
+    /// Tool was invoked
     public static let toolInvoked: ColonyEventName = "tool.invoked"
+    /// Tool requires human approval before execution
     public static let toolApprovalRequired: ColonyEventName = "tool.approval_required"
+    /// Human made a decision on tool approval
     public static let toolApprovalDecided: ColonyEventName = "tool.approval_decided"
+    /// Request sent to AI model
     public static let modelRequestSent: ColonyEventName = "model.request_sent"
+    /// Response received from AI model
     public static let modelResponseReceived: ColonyEventName = "model.response_received"
+    /// Context compaction triggered (offload/summarization)
     public static let compactionTriggered: ColonyEventName = "compaction.triggered"
+    /// Checkpoint created for interrupt/resume
     public static let checkpointCreated: ColonyEventName = "checkpoint.created"
 }
 
+/// An observability event emitted during agent execution.
+///
+/// `ColonyObservabilityEvent` records what happened, when, and associated metadata.
+/// Events are emitted via `ColonyObservabilitySink` implementations.
 public struct ColonyObservabilityEvent: Codable, Sendable, Equatable {
     public let name: ColonyEventName
     public let timestamp: Date

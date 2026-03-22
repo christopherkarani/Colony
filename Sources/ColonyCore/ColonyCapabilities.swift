@@ -1,3 +1,23 @@
+/// Runtime capability flags that gate which tools are available to the agent.
+///
+/// Capabilities are an OptioSet — combine multiple with OR:
+/// ```swift
+/// let capabilities: ColonyAgentCapabilities = [.filesystem, .shell, .git]
+/// ```
+///
+/// Each capability gates a family of tools:
+/// - `.planning` → `.writeTodos`, `.readTodos`
+/// - `.filesystem` → `.ls`, `.readFile`, `.writeFile`, `.editFile`, `.glob`, `.grep`
+/// - `.shell` → `.execute`, `.shellOpen`, `.shellWrite`, `.shellRead`, `.shellClose`
+/// - `.git` → `.gitStatus`, `.gitDiff`, `.gitCommit`, `.gitBranch`, `.gitPush`, `.gitPreparePR`
+/// - `.lsp` → `.lspSymbols`, `.lspDiagnostics`, `.lspReferences`, `.lspApplyEdit`
+/// - `.memory` → `.memoryRecall`, `.memoryRemember`
+/// - `.subagents` → `.task`
+/// - `.scratchbook` → `.scratchRead`, `.scratchAdd`, `.scratchUpdate`, `.scratchComplete`, `.scratchPin`, `.scratchUnpin`
+/// - `.webSearch` → `.webSearch`
+/// - `.codeSearch` → `.codeSearch`
+/// - `.mcp` → `.mcpListResources`, `.mcpReadResource`
+/// - `.plugins` → `.pluginListTools`, `.pluginInvoke`
 public struct ColonyAgentCapabilities: OptionSet, Sendable {
     public let rawValue: UInt32
 

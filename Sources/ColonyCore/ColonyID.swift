@@ -61,19 +61,33 @@ public struct ColonyID<Domain>: Hashable, Codable, Sendable,
 
 // MARK: - Type Aliases
 
+/// A unique identifier for an agent thread — the unit of conversation context.
 public typealias ColonyThreadID = ColonyID<ColonyIDDomain.Thread>
+/// A unique identifier for an interrupt — used to resume a run after a tool approval decision.
 public typealias ColonyInterruptID = ColonyID<ColonyIDDomain.Interrupt>
+/// A unique identifier for a harness testing session.
 public typealias ColonyHarnessSessionID = ColonyID<ColonyIDDomain.HarnessSession>
+/// A unique identifier for a stored artifact (offloaded conversation history, large tool output, etc.).
 public typealias ColonyArtifactID = ColonyID<ColonyIDDomain.Artifact>
+/// A unique identifier for a checkpoint — used to resume a run from an interrupt.
 public typealias ColonyCheckpointID = ColonyID<ColonyIDDomain.Checkpoint>
+/// A unique identifier for a tool invocation, used to match tool calls with their results.
 public typealias ColonyToolCallID = ColonyID<ColonyIDDomain.ToolCall>
+/// A unique identifier for a run — the unit of agent execution from input to terminal outcome.
 public typealias ColonyRunID = ColonyID<ColonyIDDomain.Run>
+/// A unique identifier for a single message in a conversation.
 public typealias ColonyMessageID = ColonyID<ColonyIDDomain.Message>
+/// A unique identifier for a project.
 public typealias ColonyProjectID = ColonyID<ColonyIDDomain.Project>
+/// A unique identifier for a product session.
 public typealias ColonyProductSessionID = ColonyID<ColonyIDDomain.ProductSession>
+/// A unique identifier for a version of a product session.
 public typealias ColonyProductSessionVersionID = ColonyID<ColonyIDDomain.ProductSessionVersion>
+/// A shareable token for a session.
 public typealias ColonySessionShareToken = ColonyID<ColonyIDDomain.ShareToken>
+/// A unique identifier for an attempt within a run.
 public typealias ColonyAttemptID = ColonyID<ColonyIDDomain.Attempt>
+/// A unique identifier for an open shell session.
 public typealias ColonyShellSessionID = ColonyID<ColonyIDDomain.ShellSession>
 
 // MARK: - Subagent Type

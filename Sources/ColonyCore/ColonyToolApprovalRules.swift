@@ -1,14 +1,22 @@
 import Foundation
 
+/// The outcome of a rule match in the tool approval rule store.
 public enum ColonyToolApprovalRuleDecision: String, Codable, Sendable, Equatable {
+    /// Auto-approve this tool call once; remove the rule after use.
     case allowOnce = "allow_once"
+    /// Auto-approve this tool call every time; rule persists indefinitely.
     case allowAlways = "allow_always"
+    /// Always reject this tool call regardless of other rules.
     case rejectAlways = "reject_always"
 }
 
+/// The pattern used to match a tool name against a rule.
 public enum ColonyToolApprovalPattern: Codable, Sendable, Equatable {
+    /// Match an exact tool name string (case-sensitive).
     case exact(String)
+    /// Match any tool name with the given prefix.
     case prefix(String)
+    /// Match tool names against a glob pattern (`*` and `?` wildcards).
     case glob(String)
 
     public func matches(toolName: String) -> Bool {
@@ -35,11 +43,20 @@ public enum ColonyToolApprovalPattern: Codable, Sendable, Equatable {
     }
 }
 
+/// A named rule that matches tool calls by pattern and controls their approval decision.
+///
+/// Rules are matched in specificity order: `.exact` > `.prefix` > `.glob`. Within the same
+/// specificity, newer rules (by `updatedAt`) take precedence.
 public struct ColonyToolApprovalRule: Codable, Sendable, Equatable {
+    /// Unique identifier for this rule.
     public var id: String
+    /// The pattern used to match tool names.
     public var pattern: ColonyToolApprovalPattern
+    /// The decision to apply when this rule matches.
     public var decision: ColonyToolApprovalRuleDecision
+    /// When this rule was created.
     public var createdAt: Date
+    /// When this rule was last modified.
     public var updatedAt: Date
 
     public init(
@@ -57,8 +74,11 @@ public struct ColonyToolApprovalRule: Codable, Sendable, Equatable {
     }
 }
 
+/// The result of resolving a tool approval rule decision.
 public struct ColonyMatchedToolApprovalRule: Sendable, Equatable {
+    /// The ID of the rule that matched.
     public var ruleID: String
+    /// The decision from the matched rule.
     public var decision: ColonyToolApprovalRuleDecision
 
     public init(ruleID: String, decision: ColonyToolApprovalRuleDecision) {
@@ -67,10 +87,19 @@ public struct ColonyMatchedToolApprovalRule: Sendable, Equatable {
     }
 }
 
+/// A persistent store for tool approval rules that supports listing, upserting, and resolving decisions.
+///
+/// Use `ColonyInMemoryToolApprovalRuleStore` for testing or ephemeral environments,
+/// and `ColonyFileToolApprovalRuleStore` for durable rule persistence.
 public protocol ColonyToolApprovalRuleStore: Sendable {
+    /// List all rules in specificity order.
     func listRules() async throws -> [ColonyToolApprovalRule]
+    /// Create or update a rule by ID.
     func upsertRule(_ rule: ColonyToolApprovalRule) async throws
+    /// Remove a rule by ID.
     func removeRule(id: String) async throws
+    /// Resolve the first matching rule for a tool name. If `consumeOneShot` is true
+    /// and the rule is `.allowOnce`, the rule is deleted after being applied.
     func resolveDecision(forToolName toolName: String, consumeOneShot: Bool) async throws -> ColonyMatchedToolApprovalRule?
 }
 
