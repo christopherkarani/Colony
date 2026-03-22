@@ -1,8 +1,18 @@
 import Foundation
 
+@MainActor
+protocol ConversationPersisting: AnyObject {
+    var conversations: [Conversation] { get }
+    func load()
+    func save(_ conversation: Conversation)
+    func delete(_ conversation: Conversation)
+    func create() -> Conversation
+    func conversation(id: UUID) -> Conversation?
+}
+
 @Observable
 @MainActor
-final class ConversationStore {
+final class ConversationStore: ConversationPersisting {
     private(set) var conversations: [Conversation] = []
     private let directory: URL
 
@@ -64,5 +74,9 @@ final class ConversationStore {
         let conversation = Conversation()
         save(conversation)
         return conversation
+    }
+
+    func conversation(id: UUID) -> Conversation? {
+        conversations.first { $0.id == id }
     }
 }

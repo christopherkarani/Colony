@@ -310,3 +310,29 @@ func harnessSessionStopCancelsActiveRun() async throws {
     #expect(await session.lifecycleState == .stopped)
     streamTask.cancel()
 }
+
+@Test("Harness stream subscribes before start so initial runStarted event is not missed")
+func harnessSessionStreamDoesNotDropRunStarted() async throws {
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        threadID: HiveThreadID("thread-harness-run-started-race"),
+        modelName: "test-model",
+        model: AnyHiveModelClient(InterruptThenFinishModel()),
+        clock: HarnessNoopClock(),
+        logger: HarnessNoopLogger(),
+        configure: { configuration in
+            configuration.toolApprovalPolicy = .always
+        }
+    )
+
+    let session = ColonyHarnessSession.create(runtime: runtime)
+    let stream = await session.stream()
+    let firstEventTask = Task {
+        var iterator = stream.makeAsyncIterator()
+        return try await iterator.next()
+    }
+
+    try await session.start(input: "start immediately")
+    let firstEvent = try await firstEventTask.value
+    #expect(firstEvent?.eventType == .runStarted)
+    await session.stop()
+}

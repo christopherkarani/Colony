@@ -1,5 +1,5 @@
 {
-  "originHash" : "a9aed9c2ca306cd030d24aca15ab2a4feacffbce8953bbb23a9e6ff227049e0f",
+  "originHash" : "acfcbe05f88fd0f714d2533de22d130de7d8d8a6eab5ac7867e868fbc4b0afd6",
   "pins" : [
     {
       "identity" : "conduit",
@@ -17,6 +17,15 @@
       "state" : {
         "revision" : "2cf6c756e1e5ef6901ebae16576a7e4e4b834622",
         "version" : "6.29.3"
+      }
+    },
+    {
+      "identity" : "hive",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/christopherkarani/Hive.git",
+      "state" : {
+        "revision" : "4b52f38d014bf5610a53069ec8af62b918c5d00d",
+        "version" : "0.1.5"
       }
     },
     {

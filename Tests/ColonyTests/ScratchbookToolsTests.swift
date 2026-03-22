@@ -199,7 +199,7 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-scratchbook-gating-off"),
@@ -248,7 +248,7 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(recordingModel)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-scratchbook-gating-on"),
@@ -300,7 +300,7 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(model)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("thread-scratchbook-exec-gate")
 
     let handle = await runtime.run(
@@ -382,7 +382,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(model1)
     )
-    let runtime1 = HiveRuntime(graph: graph, environment: env1)
+    let runtime1 = try HiveRuntime(graph: graph, environment: env1)
     _ = try await (await runtime1.run(
         threadID: threadID,
         input: "hi",
@@ -405,7 +405,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(model2)
     )
-    let runtime2 = HiveRuntime(graph: graph, environment: env2)
+    let runtime2 = try HiveRuntime(graph: graph, environment: env2)
     _ = try await (await runtime2.run(
         threadID: threadID,
         input: "pin",
@@ -432,7 +432,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(model3)
     )
-    let runtime3 = HiveRuntime(graph: graph, environment: env3)
+    let runtime3 = try HiveRuntime(graph: graph, environment: env3)
     let handle3 = await runtime3.run(
         threadID: threadID,
         input: "mutate",
@@ -564,7 +564,7 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
         logger: NoopLogger(),
         model: AnyHiveModelClient(model)
     )
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let handle = await runtime.run(
         threadID: threadID,
         input: "read scratchbook",

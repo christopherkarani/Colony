@@ -102,7 +102,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
         tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-evict"),
         input: "trigger",
@@ -124,7 +124,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     let toolMessage = messages.first { $0.role == HiveChatRole.tool && $0.toolCallID == "evict-1" }
     #expect(toolMessage != nil)
     #expect(toolMessage?.content.contains("/large_tool_results/evict-1") == true)
-    #expect(toolMessage?.content.contains("Result too large") == true)
+    #expect(toolMessage?.content.localizedCaseInsensitiveContains("result too large") == true)
 }
 
 @Test("Colony caps tool eviction preview by toolResultEvictionTokenLimit budget")
@@ -156,7 +156,7 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
         tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
         threadID: HiveThreadID("thread-evict-preview-budget"),
         input: "trigger",
@@ -211,7 +211,7 @@ func colonyToolEvictionPreviewTrimming_isDeterministic() async throws {
             tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
         )
 
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
             threadID: HiveThreadID(threadID),
             input: "trigger",

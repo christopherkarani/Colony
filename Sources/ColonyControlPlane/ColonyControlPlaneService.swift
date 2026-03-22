@@ -1,5 +1,9 @@
 import Foundation
 
+public enum ColonyControlPlaneServiceError: Error, Sendable, Equatable {
+    case projectNotFound(ColonyProjectID)
+}
+
 public actor ColonyControlPlaneService {
     public nonisolated static let defaultRouteDescriptors: [ColonyControlPlaneRouteDescriptor] = [
         ColonyControlPlaneRouteDescriptor(
@@ -130,7 +134,10 @@ public actor ColonyControlPlaneService {
     }
 
     public func createSession(_ input: ColonySessionCreateInput) async throws -> ColonyProductSessionRecord {
-        try await sessionStore.createSession(input)
+        guard await projectStore.getProject(id: input.projectID) != nil else {
+            throw ColonyControlPlaneServiceError.projectNotFound(input.projectID)
+        }
+        return try await sessionStore.createSession(input)
     }
 
     public func getSession(id: ColonyProductSessionID) async -> ColonyProductSessionRecord? {
@@ -146,7 +153,12 @@ public actor ColonyControlPlaneService {
     }
 
     public func forkSession(_ input: ColonySessionForkInput) async throws -> ColonyProductSessionRecord {
-        try await sessionStore.forkSession(input)
+        if let projectID = input.projectID {
+            guard await projectStore.getProject(id: projectID) != nil else {
+                throw ColonyControlPlaneServiceError.projectNotFound(projectID)
+            }
+        }
+        return try await sessionStore.forkSession(input)
     }
 
     public func revertSession(sessionID: ColonyProductSessionID) async throws -> ColonyProductSessionRecord {

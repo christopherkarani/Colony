@@ -107,7 +107,7 @@ struct OllamaModelClient: HiveModelClient, Sendable {
                       let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] else {
                     return nil
                 }
-                let convertedArgs = argsDict.mapValues { convertToOllamaJSONValue($0) }
+                let convertedArgs = argsDict.mapValues { Self.convertToOllamaJSONValue($0) }
                 return OllamaToolCallWrapper(
                     function: OllamaToolCallFunction(
                         name: call.name,
@@ -152,19 +152,8 @@ struct OllamaModelClient: HiveModelClient, Sendable {
         )
     }
 
-    private func convertToOllamaJSONValue(_ value: Any) -> OllamaJSONValue {
-        switch value {
-        case let string as String:
-            return .string(string)
-        case let int as Int:
-            return .int(int)
-        case let double as Double:
-            return .double(double)
-        case let bool as Bool:
-            return .bool(bool)
-        default:
-            return .string(String(describing: value))
-        }
+    static func convertToOllamaJSONValue(_ value: Any) -> OllamaJSONValue {
+        OllamaJSONValue.from(any: value)
     }
 
     private func encodeJSONValue(_ value: OllamaJSONValue) -> Any {

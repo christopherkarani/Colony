@@ -30,12 +30,17 @@ public actor ColonyHarnessSession {
 
     public func stream() -> AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> {
         let subscriberID = UUID()
-        return AsyncThrowingStream { continuation in
-            Task { await self.addSubscriber(id: subscriberID, continuation: continuation) }
+        var subscriberContinuation: AsyncThrowingStream<ColonyHarnessEventEnvelope, Error>.Continuation?
+        let stream = AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> { continuation in
+            subscriberContinuation = continuation
+        }
+        if let continuation = subscriberContinuation {
+            subscribers[subscriberID] = continuation
             continuation.onTermination = { _ in
                 Task { await self.removeSubscriber(id: subscriberID) }
             }
         }
+        return stream
     }
 
     public func start(input: String) async throws {
@@ -296,13 +301,6 @@ public actor ColonyHarnessSession {
         outcomeMonitorTask?.cancel()
         eventPumpTask = nil
         outcomeMonitorTask = nil
-    }
-
-    private func addSubscriber(
-        id: UUID,
-        continuation: AsyncThrowingStream<ColonyHarnessEventEnvelope, Error>.Continuation
-    ) async {
-        subscribers[id] = continuation
     }
 
     private func removeSubscriber(id: UUID) async {

@@ -17,8 +17,6 @@ public struct ColonyScratchbookPolicy: Sendable {
     }
 
     public static var defaultPathPrefix: ColonyVirtualPath {
-        // swiftlint:disable:next force_try
-        try! ColonyVirtualPath("/scratchbook")
+        ColonyVirtualPath.scratchbookRoot
     }
 }
-
