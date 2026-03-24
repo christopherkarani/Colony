@@ -380,7 +380,7 @@ func defaultSubagentRegistry_inheritsOnDeviceBudgetPosture() async throws {
     _ = try await registry.run(
         ColonySubagentRequest(
             prompt: "Read /big.txt and confirm the first and last line number.",
-            subagentType: "general-purpose"
+            subagentType: .general
         )
     )
 
@@ -416,7 +416,7 @@ func defaultSubagentRegistry_includesStructuredAndFileBackedContextSnippets() as
     _ = try await registry.run(
         ColonySubagentRequest(
             prompt: "Draft rollout plan.",
-            subagentType: "general-purpose",
+            subagentType: .general,
             context: ColonySubagentContext(
                 objective: "Roll out safely.",
                 constraints: ["No network access.", "Preserve existing behavior."],
@@ -483,7 +483,7 @@ func defaultSubagentRegistry_surfacesGraphCompilationFailure() async throws {
         _ = try await registry.run(
             ColonySubagentRequest(
                 prompt: "hello",
-                subagentType: "general-purpose"
+                subagentType: .general
             )
         )
     }

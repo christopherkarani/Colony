@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ColonyScratchItem: Codable, Sendable, Equatable, Identifiable {
+public struct ColonyWorkspaceItem: Codable, Sendable, Equatable, Identifiable {
     public enum Kind: String, Codable, Sendable, Equatable {
         case note
         case todo
@@ -8,11 +8,53 @@ public struct ColonyScratchItem: Codable, Sendable, Equatable, Identifiable {
     }
 
     public enum Status: String, Codable, Sendable, Equatable {
+        // Base canonical cases
         case open
         case inProgress = "in_progress"
         case blocked
         case done
         case archived
+
+        // MARK: - Agent-friendly status names (alternative raw values)
+
+        /// Item is active and ready to work on (canonical: open)
+        case active = "active"
+
+        /// Item is pending/start (canonical: open)
+        case pending = "pending"
+
+        /// Item is completed (canonical: done)
+        case completed = "completed"
+
+        // MARK: - Coding
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .open, .active, .pending:
+                // All active/pending states encode as their own raw value
+                try container.encode(self.rawValue)
+            case .inProgress:
+                try container.encode("in_progress")
+            case .blocked:
+                try container.encode("blocked")
+            case .done, .completed:
+                // Both done and completed encode as "completed"
+                try container.encode(self.rawValue)
+            case .archived:
+                try container.encode("archived")
+            }
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let rawValue = try container.decode(String.self)
+            if let status = Status(rawValue: rawValue) {
+                self = status
+            } else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid Status: \(rawValue)")
+            }
+        }
     }
 
     public let id: String
@@ -59,6 +101,49 @@ public struct ColonyScratchItem: Codable, Sendable, Equatable, Identifiable {
         }
     }
 
+    // MARK: - Convenience Initializer
+
+    /// Creates a new workspace item with automatic ID and timestamp generation.
+    ///
+    /// - Parameters:
+    ///   - id: Optional custom ID (defaults to UUID)
+    ///   - kind: The kind of item
+    ///   - status: The status (defaults to `.active`)
+    ///   - title: The title
+    ///   - content: The content/body text
+    public init(
+        id: String? = nil,
+        kind: Kind,
+        status: Status = .active,
+        title: String,
+        content: String
+    ) {
+        let now = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
+        self.id = id ?? UUID().uuidString
+        self.kind = kind
+        self.status = status
+        self.title = title
+        self.body = content
+        self.tags = []
+        self.createdAtNanoseconds = now
+        self.updatedAtNanoseconds = now
+        self.phase = nil
+        self.progress = nil
+    }
+
+    // MARK: - Property Aliases
+
+    /// Alias for `body` - the content text of the item.
+    public var content: String {
+        get { body }
+        set { body = newValue }
+    }
+
+    /// The creation date as a `Date`.
+    public var createdAt: Date {
+        Date(timeIntervalSince1970: Double(createdAtNanoseconds) / 1_000_000_000)
+    }
+
     private static func normalizeProgress(_ progress: Double?) -> Double? {
         guard let progress else { return nil }
         guard progress.isFinite else { return nil }
@@ -99,16 +184,31 @@ public struct ColonyScratchItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-public struct ColonyScratchbook: Codable, Sendable, Equatable {
-    public var items: [ColonyScratchItem]
-    public var pinnedItemIDs: [ColonyScratchItem.ID]
+public struct ColonyWorkspace: Codable, Sendable, Equatable {
+    public var items: [ColonyWorkspaceItem]
+    public var pinnedItemIDs: [ColonyWorkspaceItem.ID]
+
+    /// Alias for `pinnedItemIDs` - the set of pinned item IDs.
+    public var pinnedItems: Set<ColonyWorkspaceItem.ID> {
+        get { Set(pinnedItemIDs) }
+        set { pinnedItemIDs = Array(newValue) }
+    }
 
     public init(
-        items: [ColonyScratchItem] = [],
-        pinnedItemIDs: [ColonyScratchItem.ID] = []
+        items: [ColonyWorkspaceItem] = [],
+        pinnedItemIDs: [ColonyWorkspaceItem.ID] = []
     ) {
         self.items = items
         self.pinnedItemIDs = pinnedItemIDs
+    }
+
+    /// Convenience initializer using `pinnedItems`.
+    public init(
+        items: [ColonyWorkspaceItem] = [],
+        pinnedItems: Set<ColonyWorkspaceItem.ID>
+    ) {
+        self.items = items
+        self.pinnedItemIDs = Array(pinnedItems)
     }
 
     public func renderView(policy: ColonyScratchbookPolicy) -> String {
@@ -143,17 +243,17 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
 
     private func orderedItemsForView(
         maxRenderedItems: Int
-    ) -> ([ColonyScratchItem], Set<ColonyScratchItem.ID>) {
-        var itemsByID: [ColonyScratchItem.ID: ColonyScratchItem] = [:]
+    ) -> ([ColonyWorkspaceItem], Set<ColonyWorkspaceItem.ID>) {
+        var itemsByID: [ColonyWorkspaceItem.ID: ColonyWorkspaceItem] = [:]
         itemsByID.reserveCapacity(items.count)
         for item in items where itemsByID[item.id] == nil {
             itemsByID[item.id] = item
         }
 
-        var pinnedIDs: Set<ColonyScratchItem.ID> = []
+        var pinnedIDs: Set<ColonyWorkspaceItem.ID> = []
         pinnedIDs.reserveCapacity(pinnedItemIDs.count)
 
-        var pinnedItems: [ColonyScratchItem] = []
+        var pinnedItems: [ColonyWorkspaceItem] = []
         pinnedItems.reserveCapacity(min(pinnedItemIDs.count, maxRenderedItems))
 
         for id in pinnedItemIDs where pinnedIDs.contains(id) == false {
@@ -180,7 +280,7 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
             .filter { $0.kind == .note && Self.isActiveForView($0.status) }
             .sorted(by: Self.noteComparator)
 
-        var combined: [ColonyScratchItem] = []
+        var combined: [ColonyWorkspaceItem] = []
         combined.reserveCapacity(min(maxRenderedItems, pinnedItems.count + tasks.count + todos.count + notes.count))
 
         combined.append(contentsOf: pinnedItems)
@@ -198,28 +298,33 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
         return (combined, pinnedIDs)
     }
 
-    private static func isActiveForView(_ status: ColonyScratchItem.Status) -> Bool {
+    private static func isActiveForView(_ status: ColonyWorkspaceItem.Status) -> Bool {
         switch status {
-        case .open, .inProgress, .blocked:
+        case .open, .active, .pending, .inProgress, .blocked:
             return true
-        case .done, .archived:
+        case .done, .completed, .archived:
             return false
         }
     }
 
-    private static func statusViewPriority(_ status: ColonyScratchItem.Status) -> Int {
+    private static func statusViewPriority(_ status: ColonyWorkspaceItem.Status) -> Int {
         switch status {
-        case .inProgress: return 0
-        case .open: return 1
-        case .blocked: return 2
-        case .done: return 3
-        case .archived: return 4
+        case .inProgress:
+            return 0
+        case .open, .active, .pending:
+            return 1
+        case .blocked:
+            return 2
+        case .done, .completed:
+            return 3
+        case .archived:
+            return 4
         }
     }
 
     private static func taskTodoComparator(
-        _ lhs: ColonyScratchItem,
-        _ rhs: ColonyScratchItem
+        _ lhs: ColonyWorkspaceItem,
+        _ rhs: ColonyWorkspaceItem
     ) -> Bool {
         let lhsStatus = statusViewPriority(lhs.status)
         let rhsStatus = statusViewPriority(rhs.status)
@@ -235,8 +340,8 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
     }
 
     private static func noteComparator(
-        _ lhs: ColonyScratchItem,
-        _ rhs: ColonyScratchItem
+        _ lhs: ColonyWorkspaceItem,
+        _ rhs: ColonyWorkspaceItem
     ) -> Bool {
         if lhs.updatedAtNanoseconds != rhs.updatedAtNanoseconds {
             return lhs.updatedAtNanoseconds > rhs.updatedAtNanoseconds
@@ -250,7 +355,7 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
     // MARK: - View Rendering
 
     private static func renderLine(
-        _ item: ColonyScratchItem,
+        _ item: ColonyWorkspaceItem,
         isPinned: Bool
     ) -> String {
         let prefix = isPinned ? "PINNED " : ""
@@ -352,3 +457,11 @@ public struct ColonyScratchbook: Codable, Sendable, Equatable {
         return kept.joined(separator: "\n")
     }
 }
+
+// MARK: - Deprecation Aliases (Old Names)
+
+@available(*, deprecated, renamed: "ColonyWorkspaceItem")
+public typealias ColonyScratchItem = ColonyWorkspaceItem
+
+@available(*, deprecated, renamed: "ColonyWorkspace")
+public typealias ColonyScratchbook = ColonyWorkspace

@@ -31,28 +31,6 @@ public struct ColonyGitStatusEntry: Sendable, Equatable, Codable {
     }
 }
 
-public struct ColonyGitStatusResult: Sendable, Equatable, Codable {
-    public var currentBranch: String?
-    public var upstreamBranch: String?
-    public var aheadBy: Int
-    public var behindBy: Int
-    public var entries: [ColonyGitStatusEntry]
-
-    public init(
-        currentBranch: String? = nil,
-        upstreamBranch: String? = nil,
-        aheadBy: Int = 0,
-        behindBy: Int = 0,
-        entries: [ColonyGitStatusEntry] = []
-    ) {
-        self.currentBranch = currentBranch
-        self.upstreamBranch = upstreamBranch
-        self.aheadBy = aheadBy
-        self.behindBy = behindBy
-        self.entries = entries
-    }
-}
-
 public struct ColonyGitDiffRequest: Sendable, Equatable, Codable {
     public var repositoryPath: ColonyVirtualPath?
     public var baseRef: String?
@@ -72,14 +50,6 @@ public struct ColonyGitDiffRequest: Sendable, Equatable, Codable {
         self.headRef = headRef
         self.pathspec = pathspec
         self.staged = staged
-    }
-}
-
-public struct ColonyGitDiffResult: Sendable, Equatable, Codable {
-    public var patch: String
-
-    public init(patch: String) {
-        self.patch = patch
     }
 }
 
@@ -105,22 +75,12 @@ public struct ColonyGitCommitRequest: Sendable, Equatable, Codable {
     }
 }
 
-public struct ColonyGitCommitResult: Sendable, Equatable, Codable {
-    public var commitHash: String
-    public var summary: String
-
-    public init(commitHash: String, summary: String) {
-        self.commitHash = commitHash
-        self.summary = summary
-    }
-}
-
 public struct ColonyGitBranchRequest: Sendable, Equatable, Codable {
     public enum Operation: String, Sendable, Codable, CaseIterable {
-        case list
         case create
         case checkout
         case delete
+        case list
     }
 
     public var repositoryPath: ColonyVirtualPath?
@@ -131,7 +91,7 @@ public struct ColonyGitBranchRequest: Sendable, Equatable, Codable {
 
     public init(
         repositoryPath: ColonyVirtualPath? = nil,
-        operation: Operation,
+        operation: Operation = .list,
         name: String? = nil,
         startPoint: String? = nil,
         force: Bool = false
@@ -144,53 +104,28 @@ public struct ColonyGitBranchRequest: Sendable, Equatable, Codable {
     }
 }
 
-public struct ColonyGitBranchResult: Sendable, Equatable, Codable {
-    public var currentBranch: String?
-    public var branches: [String]
-    public var detail: String?
-
-    public init(
-        currentBranch: String? = nil,
-        branches: [String] = [],
-        detail: String? = nil
-    ) {
-        self.currentBranch = currentBranch
-        self.branches = branches
-        self.detail = detail
-    }
-}
-
 public struct ColonyGitPushRequest: Sendable, Equatable, Codable {
     public var repositoryPath: ColonyVirtualPath?
-    public var remote: String
+    public var remote: String?
     public var branch: String?
-    public var setUpstream: Bool
+    public var force: Bool
     public var forceWithLease: Bool
+    public var setUpstream: Bool
 
     public init(
         repositoryPath: ColonyVirtualPath? = nil,
-        remote: String = "origin",
+        remote: String? = nil,
         branch: String? = nil,
-        setUpstream: Bool = false,
-        forceWithLease: Bool = false
+        force: Bool = false,
+        forceWithLease: Bool = false,
+        setUpstream: Bool = false
     ) {
         self.repositoryPath = repositoryPath
         self.remote = remote
         self.branch = branch
-        self.setUpstream = setUpstream
+        self.force = force
         self.forceWithLease = forceWithLease
-    }
-}
-
-public struct ColonyGitPushResult: Sendable, Equatable, Codable {
-    public var remote: String
-    public var branch: String
-    public var summary: String
-
-    public init(remote: String, branch: String, summary: String) {
-        self.remote = remote
-        self.branch = branch
-        self.summary = summary
+        self.setUpstream = setUpstream
     }
 }
 
@@ -219,7 +154,77 @@ public struct ColonyGitPreparePullRequestRequest: Sendable, Equatable, Codable {
     }
 }
 
-public struct ColonyGitPreparePullRequestResult: Sendable, Equatable, Codable {
+// MARK: - Response Types (New Naming)
+
+public struct ColonyGitStatusResponse: Sendable, Equatable, Codable {
+    public var currentBranch: String?
+    public var upstreamBranch: String?
+    public var aheadBy: Int
+    public var behindBy: Int
+    public var entries: [ColonyGitStatusEntry]
+
+    public init(
+        currentBranch: String? = nil,
+        upstreamBranch: String? = nil,
+        aheadBy: Int = 0,
+        behindBy: Int = 0,
+        entries: [ColonyGitStatusEntry] = []
+    ) {
+        self.currentBranch = currentBranch
+        self.upstreamBranch = upstreamBranch
+        self.aheadBy = aheadBy
+        self.behindBy = behindBy
+        self.entries = entries
+    }
+}
+
+public struct ColonyGitDiffResponse: Sendable, Equatable, Codable {
+    public var patch: String
+
+    public init(patch: String) {
+        self.patch = patch
+    }
+}
+
+public struct ColonyGitCommitResponse: Sendable, Equatable, Codable {
+    public var commitHash: String
+    public var summary: String
+
+    public init(commitHash: String, summary: String) {
+        self.commitHash = commitHash
+        self.summary = summary
+    }
+}
+
+public struct ColonyGitBranchResponse: Sendable, Equatable, Codable {
+    public var currentBranch: String?
+    public var branches: [String]
+    public var detail: String?
+
+    public init(
+        currentBranch: String? = nil,
+        branches: [String] = [],
+        detail: String? = nil
+    ) {
+        self.currentBranch = currentBranch
+        self.branches = branches
+        self.detail = detail
+    }
+}
+
+public struct ColonyGitPushResponse: Sendable, Equatable, Codable {
+    public var remote: String
+    public var branch: String
+    public var summary: String
+
+    public init(remote: String, branch: String, summary: String) {
+        self.remote = remote
+        self.branch = branch
+        self.summary = summary
+    }
+}
+
+public struct ColonyGitPreparePullRequestResponse: Sendable, Equatable, Codable {
     public var baseBranch: String
     public var headBranch: String
     public var title: String
@@ -244,11 +249,61 @@ public struct ColonyGitPreparePullRequestResult: Sendable, Equatable, Codable {
     }
 }
 
-public protocol ColonyGitBackend: Sendable {
-    func status(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResult
-    func diff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResult
-    func commit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResult
-    func branch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResult
-    func push(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResult
-    func preparePullRequest(_ request: ColonyGitPreparePullRequestRequest) async throws -> ColonyGitPreparePullRequestResult
+public protocol ColonyGitService: Sendable {
+    func getStatus(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResponse
+    func getDiff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResponse
+    func createCommit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResponse
+    func manageBranch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResponse
+    func pushChanges(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResponse
+    func preparePullRequest(_ request: ColonyGitPreparePullRequestRequest) async throws -> ColonyGitPreparePullRequestResponse
+}
+
+// MARK: - Deprecated Type Aliases and Shims
+
+@available(*, deprecated, renamed: "ColonyGitService")
+public typealias ColonyGitBackend = ColonyGitService
+
+@available(*, deprecated, renamed: "ColonyGitStatusResponse")
+public typealias ColonyGitStatusResult = ColonyGitStatusResponse
+
+@available(*, deprecated, renamed: "ColonyGitDiffResponse")
+public typealias ColonyGitDiffResult = ColonyGitDiffResponse
+
+@available(*, deprecated, renamed: "ColonyGitCommitResponse")
+public typealias ColonyGitCommitResult = ColonyGitCommitResponse
+
+@available(*, deprecated, renamed: "ColonyGitBranchResponse")
+public typealias ColonyGitBranchResult = ColonyGitBranchResponse
+
+@available(*, deprecated, renamed: "ColonyGitPushResponse")
+public typealias ColonyGitPushResult = ColonyGitPushResponse
+
+@available(*, deprecated, renamed: "ColonyGitPreparePullRequestResponse")
+public typealias ColonyGitPreparePullRequestResult = ColonyGitPreparePullRequestResponse
+
+public extension ColonyGitService {
+    @available(*, deprecated, renamed: "getStatus")
+    func status(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResponse {
+        try await getStatus(request)
+    }
+
+    @available(*, deprecated, renamed: "getDiff")
+    func diff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResponse {
+        try await getDiff(request)
+    }
+
+    @available(*, deprecated, renamed: "createCommit")
+    func commit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResponse {
+        try await createCommit(request)
+    }
+
+    @available(*, deprecated, renamed: "manageBranch")
+    func branch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResponse {
+        try await manageBranch(request)
+    }
+
+    @available(*, deprecated, renamed: "pushChanges")
+    func push(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResponse {
+        try await pushChanges(request)
+    }
 }

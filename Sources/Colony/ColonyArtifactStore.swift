@@ -12,18 +12,18 @@ public struct ColonyArtifactRetentionPolicy: Sendable {
 }
 
 public struct ColonyArtifactRecord: Codable, Sendable, Equatable {
-    public let id: String
-    public let threadID: String
-    public let runID: UUID?
+    public let id: ColonyArtifactID
+    public let threadID: ColonyThreadID
+    public let runID: ColonyRunID?
     public let kind: String
     public let createdAt: Date
     public let redacted: Bool
     public let metadata: [String: String]
 
     public init(
-        id: String,
-        threadID: String,
-        runID: UUID?,
+        id: ColonyArtifactID,
+        threadID: ColonyThreadID,
+        runID: ColonyRunID?,
         kind: String,
         createdAt: Date,
         redacted: Bool,
@@ -77,22 +77,22 @@ public actor ColonyArtifactStore {
 
     @discardableResult
     public func put(
-        threadID: HiveThreadID,
-        runID: HiveRunID?,
+        threadID: ColonyThreadID,
+        runID: ColonyRunID?,
         kind: String,
         content: String,
         metadata: [String: String] = [:],
         redact: Bool = true,
         createdAt: Date = Date()
     ) async throws -> ColonyArtifactRecord {
-        let artifactID = UUID().uuidString.lowercased()
+        let artifactID = ColonyArtifactID(UUID().uuidString.lowercased())
         let cleanedMetadata = redact ? redactionPolicy.redact(values: metadata) : metadata
         let cleanedContent = redact ? redactionPolicy.redactInlineSecrets(in: content) : content
 
         let record = ColonyArtifactRecord(
             id: artifactID,
-            threadID: threadID.rawValue,
-            runID: runID?.rawValue,
+            threadID: threadID,
+            runID: runID,
             kind: kind,
             createdAt: createdAt,
             redacted: redact,
@@ -100,7 +100,7 @@ public actor ColonyArtifactStore {
         )
 
         let stored = StoredArtifact(record: record, content: cleanedContent)
-        let artifactURL = artifactURLForID(artifactID)
+        let artifactURL = artifactURLForID(artifactID.rawValue)
         try ColonyPersistenceIO.writeJSON(stored, to: artifactURL, encoder: encoder, fileManager: fileManager)
 
         _ = try await enforceRetention(now: createdAt)
@@ -108,8 +108,8 @@ public actor ColonyArtifactStore {
     }
 
     public func list(
-        threadID: HiveThreadID? = nil,
-        runID: HiveRunID? = nil,
+        threadID: ColonyThreadID? = nil,
+        runID: ColonyRunID? = nil,
         kind: String? = nil,
         limit: Int? = nil
     ) async throws -> [ColonyArtifactRecord] {
@@ -120,8 +120,8 @@ public actor ColonyArtifactStore {
         let artifacts = try loadStoredArtifacts()
             .map(\.record)
             .filter { record in
-                if let threadID, record.threadID != threadID.rawValue { return false }
-                if let runID, record.runID != runID.rawValue { return false }
+                if let threadID, record.threadID != threadID { return false }
+                if let runID, record.runID != runID { return false }
                 if let kind, record.kind != kind { return false }
                 return true
             }
@@ -129,7 +129,7 @@ public actor ColonyArtifactStore {
                 if lhs.createdAt != rhs.createdAt {
                     return lhs.createdAt > rhs.createdAt
                 }
-                return lhs.id > rhs.id
+                return lhs.id.rawValue > rhs.id.rawValue
             }
 
         if let limit {
@@ -155,7 +155,7 @@ public actor ColonyArtifactStore {
                 if lhs.record.createdAt != rhs.record.createdAt {
                     return lhs.record.createdAt < rhs.record.createdAt
                 }
-                return lhs.record.id < rhs.record.id
+                return lhs.record.id.rawValue < rhs.record.id.rawValue
             }
 
         var removeIDs: Set<String> = []
@@ -163,16 +163,16 @@ public actor ColonyArtifactStore {
         if let maxAge = retentionPolicy.maxAge {
             let threshold = now.addingTimeInterval(-maxAge)
             for artifact in artifacts where artifact.record.createdAt < threshold {
-                removeIDs.insert(artifact.record.id)
+                removeIDs.insert(artifact.record.id.rawValue)
             }
         }
 
         if let maxArtifacts = retentionPolicy.maxArtifacts, maxArtifacts >= 0 {
-            let kept = artifacts.filter { removeIDs.contains($0.record.id) == false }
+            let kept = artifacts.filter { removeIDs.contains($0.record.id.rawValue) == false }
             if kept.count > maxArtifacts {
                 let overflow = kept.count - maxArtifacts
                 for artifact in kept.prefix(overflow) {
-                    removeIDs.insert(artifact.record.id)
+                    removeIDs.insert(artifact.record.id.rawValue)
                 }
             }
         }

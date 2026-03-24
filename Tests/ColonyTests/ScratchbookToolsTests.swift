@@ -598,3 +598,187 @@ func onDeviceAllowList_includesScratchbookToolNames() throws {
     #expect(allowed.contains("scratch_pin"))
     #expect(allowed.contains("scratch_unpin"))
 }
+
+@Test("On-device profile tool approval allowlist includes workspace tool names")
+func onDeviceAllowList_includesWorkspaceToolNames() throws {
+    let config = ColonyAgentFactory.configuration(profile: .device, modelName: "test-model")
+    #expect(config.capabilities.contains(.scratchbook))
+    guard case let .allowList(allowed) = config.toolApprovalPolicy else {
+        #expect(Bool(false))
+        return
+    }
+
+    #expect(allowed.contains("workspace_read"))
+    #expect(allowed.contains("workspace_add"))
+    #expect(allowed.contains("workspace_update"))
+    #expect(allowed.contains("workspace_complete"))
+    #expect(allowed.contains("workspace_pin"))
+    #expect(allowed.contains("workspace_unpin"))
+}
+
+@Test("Workspace tools are advertised when ColonyCapabilities.scratchbook is enabled")
+func workspaceTools_advertisedWhenCapabilityEnabled() async throws {
+    let graph = try ColonyAgent.compile()
+    let fs = ColonyInMemoryFileSystemBackend()
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.filesystem, .scratchbook],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        compactionPolicy: .maxTokens(0)
+    )
+    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+        pathPrefix: try ColonyVirtualPath("/scratchbook"),
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
+
+    let recordingModel = RecordingRequestModel()
+    let context = ColonyContext(configuration: configuration, filesystem: fs)
+    let environment = HiveEnvironment<ColonySchema>(
+        context: context,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(recordingModel)
+    )
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
+
+    let handle = await runtime.run(
+        threadID: HiveThreadID("thread-workspace-gating-on"),
+        input: "hi",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+    _ = try await handle.outcome.value
+
+    guard let request = recordingModel.recordedRequests().last else {
+        #expect(Bool(false))
+        return
+    }
+
+    let toolNames = Set(request.tools.map(\.name))
+    #expect(toolNames.contains("workspace_read"))
+    #expect(toolNames.contains("workspace_add"))
+    #expect(toolNames.contains("workspace_update"))
+    #expect(toolNames.contains("workspace_complete"))
+    #expect(toolNames.contains("workspace_pin"))
+    #expect(toolNames.contains("workspace_unpin"))
+}
+
+@Test("Workspace tools persist mutations and are scoped to the thread workspace file")
+func workspaceTools_persistAndAreThreadScoped() async throws {
+    let graph = try ColonyAgent.compile()
+    let baseFS = ColonyInMemoryFileSystemBackend()
+
+    let prefix = try ColonyVirtualPath("/scratchbook")
+    let threadID = HiveThreadID("thread-workspace-crud")
+    let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
+
+    var configuration = ColonyConfiguration(
+        capabilities: [.filesystem, .scratchbook],
+        modelName: "test-model",
+        toolApprovalPolicy: .never,
+        compactionPolicy: .maxTokens(0)
+    )
+    configuration.scratchbookPolicy = ColonyScratchbookPolicy(
+        pathPrefix: prefix,
+        viewTokenLimit: 200,
+        maxRenderedItems: 20,
+        autoCompact: false
+    )
+
+    // 1) Add an item
+    let add = HiveToolCall(
+        id: "workspace-add",
+        name: "workspace_add",
+        argumentsJSON: #"{"kind":"note","title":"Alpha","body":"hello","tags":["t1"]}"#
+    )
+    let fs1 = RecordingFileSystemBackend(base: baseFS)
+    let model1 = ToolCallSequenceModel(toolCalls: [add], finalContent: "ok")
+    let context1 = ColonyContext(configuration: configuration, filesystem: fs1)
+    let env1 = HiveEnvironment<ColonySchema>(
+        context: context1,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(model1)
+    )
+    let runtime1 = try HiveRuntime(graph: graph, environment: env1)
+    _ = try await (await runtime1.run(
+        threadID: threadID,
+        input: "hi",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )).outcome.value
+
+    let scratchbookText = try await baseFS.read(at: scratchbookPath)
+    let scratchbookJSON = try decodeScratchbookJSON(scratchbookText)
+    let id = firstScratchItemID(from: scratchbookJSON)
+    #expect(id != nil)
+
+    // 2) Pin the item
+    let pin = HiveToolCall(id: "workspace-pin", name: "workspace_pin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let fs2 = RecordingFileSystemBackend(base: baseFS)
+    let model2 = ToolCallSequenceModel(toolCalls: [pin], finalContent: "ok")
+    let context2 = ColonyContext(configuration: configuration, filesystem: fs2)
+    let env2 = HiveEnvironment<ColonySchema>(
+        context: context2,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(model2)
+    )
+    let runtime2 = try HiveRuntime(graph: graph, environment: env2)
+    _ = try await (await runtime2.run(
+        threadID: threadID,
+        input: "pin",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )).outcome.value
+
+    let pinnedText = try await baseFS.read(at: scratchbookPath)
+    let pinnedJSON = try decodeScratchbookJSON(pinnedText)
+    let pinnedIDs = pinnedJSON["pinnedItemIDs"] as? [String] ?? []
+    #expect(pinnedIDs.contains(id!))
+
+    // 3) Mutate: update → complete → unpin → read
+    let update = HiveToolCall(id: "workspace-update", name: "workspace_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
+    let complete = HiveToolCall(id: "workspace-complete", name: "workspace_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let unpin = HiveToolCall(id: "workspace-unpin", name: "workspace_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let read = HiveToolCall(id: "workspace-read", name: "workspace_read", argumentsJSON: #"{}"#)
+
+    let fs3 = RecordingFileSystemBackend(base: baseFS)
+    let model3 = ToolCallSequenceModel(toolCalls: [update, complete, unpin, read], finalContent: "done")
+    let context3 = ColonyContext(configuration: configuration, filesystem: fs3)
+    let env3 = HiveEnvironment<ColonySchema>(
+        context: context3,
+        clock: NoopClock(),
+        logger: NoopLogger(),
+        model: AnyHiveModelClient(model3)
+    )
+    let runtime3 = try HiveRuntime(graph: graph, environment: env3)
+    let handle3 = await runtime3.run(
+        threadID: threadID,
+        input: "mutate",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+    let outcome3 = try await handle3.outcome.value
+    guard case let .finished(output3, _) = outcome3, case let .fullStore(store3) = output3 else {
+        #expect(Bool(false))
+        return
+    }
+
+    let mutatedText = try await baseFS.read(at: scratchbookPath)
+    let mutatedJSON = try decodeScratchbookJSON(mutatedText)
+
+    let mutatedItem = scratchItem(withID: id!, in: mutatedJSON)
+    #expect((mutatedItem?["title"] as? String) == "Alpha (updated)")
+    #expect((mutatedItem?["status"] as? String) == "done")
+
+    // Pin metadata should be round-tripped and end up unpinned
+    let pinned = mutatedJSON["pinnedItemIDs"] as? [String] ?? []
+    #expect(pinned.contains(id!) == false)
+
+    // `workspace_read` uses the shared renderView logic; completed/archived items are omitted
+    let messages3 = try store3.get(ColonySchema.Channels.messages)
+    let workspaceReadTool = messages3.last { $0.role == HiveChatRole.tool && $0.name == "workspace_read" }
+    #expect(workspaceReadTool != nil)
+    #expect(workspaceReadTool?.content == "(Scratchbook empty)")
+    #expect(workspaceReadTool?.content.contains("Alpha (updated)") == false)
+}

@@ -552,7 +552,7 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
 
     let requests = await subagents.recordedRequests()
     #expect(requests.count == 1)
-    #expect(requests.first?.subagentType == "research")
+    #expect(requests.first?.subagentType == .research)
     #expect(requests.first?.prompt == "Collect three iOS benchmark ideas.")
 
     let messages = try store.get(ColonySchema.Channels.messages)
@@ -607,7 +607,7 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
         ColonySubagentFileReference(path: try ColonyVirtualPath("/README.md")),
     ]
 
-    #expect(requests.first?.subagentType == "research")
+    #expect(requests.first?.subagentType == .research)
     #expect(requests.first?.prompt == "Draft migration approach.")
     #expect(requests.first?.context?.objective == "Plan migration safely.")
     #expect(requests.first?.context?.constraints == ["Use only local code context.", "Do not change public API semantics."])

@@ -1,8 +1,13 @@
 import Foundation
 
-public enum ColonyControlPlaneServiceError: Error, Sendable, Equatable {
+public enum ControlPlaneServiceError: Error, Sendable, Equatable {
     case projectNotFound(ColonyProjectID)
 }
+
+// MARK: - Backward Compatibility
+
+@available(*, deprecated, renamed: "ControlPlaneServiceError")
+public typealias ColonyControlPlaneServiceError = ControlPlaneServiceError
 
 public actor ColonyControlPlaneService {
     public nonisolated static let defaultRouteDescriptors: [ColonyControlPlaneRouteDescriptor] = [

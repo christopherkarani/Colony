@@ -167,9 +167,62 @@ public struct ColonyLSPApplyEditResult: Sendable, Equatable, Codable {
     }
 }
 
-public protocol ColonyLSPBackend: Sendable {
-    func symbols(_ request: ColonyLSPSymbolsRequest) async throws -> [ColonyLSPSymbol]
-    func diagnostics(_ request: ColonyLSPDiagnosticsRequest) async throws -> [ColonyLSPDiagnostic]
-    func references(_ request: ColonyLSPReferencesRequest) async throws -> [ColonyLSPReference]
+// MARK: - Response Types
+
+public struct ColonyLSPSymbolsResponse: Sendable, Equatable, Codable {
+    public var symbols: [ColonyLSPSymbol]
+
+    public init(symbols: [ColonyLSPSymbol]) {
+        self.symbols = symbols
+    }
+}
+
+public struct ColonyLSPDiagnosticsResponse: Sendable, Equatable, Codable {
+    public var diagnostics: [ColonyLSPDiagnostic]
+
+    public init(diagnostics: [ColonyLSPDiagnostic]) {
+        self.diagnostics = diagnostics
+    }
+}
+
+public struct ColonyLSPReferencesResponse: Sendable, Equatable, Codable {
+    public var references: [ColonyLSPReference]
+
+    public init(references: [ColonyLSPReference]) {
+        self.references = references
+    }
+}
+
+// MARK: - ColonyLSPService Protocol
+
+public protocol ColonyLSPService: Sendable {
+    func findSymbols(_ request: ColonyLSPSymbolsRequest) async throws -> ColonyLSPSymbolsResponse
+    func getDiagnostics(_ request: ColonyLSPDiagnosticsRequest) async throws -> ColonyLSPDiagnosticsResponse
+    func findReferences(_ request: ColonyLSPReferencesRequest) async throws -> ColonyLSPReferencesResponse
     func applyEdit(_ request: ColonyLSPApplyEditRequest) async throws -> ColonyLSPApplyEditResult
+}
+
+// MARK: - Deprecated Backward Compatibility
+
+@available(*, deprecated, renamed: "ColonyLSPService")
+public typealias ColonyLSPBackend = ColonyLSPService
+
+public extension ColonyLSPService {
+    @available(*, deprecated, renamed: "findSymbols")
+    func symbols(_ request: ColonyLSPSymbolsRequest) async throws -> [ColonyLSPSymbol] {
+        let response = try await findSymbols(request)
+        return response.symbols
+    }
+
+    @available(*, deprecated, renamed: "getDiagnostics")
+    func diagnostics(_ request: ColonyLSPDiagnosticsRequest) async throws -> [ColonyLSPDiagnostic] {
+        let response = try await getDiagnostics(request)
+        return response.diagnostics
+    }
+
+    @available(*, deprecated, renamed: "findReferences")
+    func references(_ request: ColonyLSPReferencesRequest) async throws -> [ColonyLSPReference] {
+        let response = try await findReferences(request)
+        return response.references
+    }
 }

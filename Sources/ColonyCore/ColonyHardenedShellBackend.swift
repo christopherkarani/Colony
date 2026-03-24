@@ -2,7 +2,14 @@ import Darwin
 import Dispatch
 import Foundation
 
-public final class ColonyHardenedShellBackend: ColonyShellBackend, @unchecked Sendable {
+/// Thread-safe shell backend that executes commands with configurable confinement.
+///
+/// This class is `Sendable` because:
+/// - All configuration properties are immutable (`let`)
+/// - All mutable session state is confined to `ColonyShellSessionManager` (an actor)
+/// - Process launch uses local variables only
+/// - Output collection uses `OutputCollector` with internal `NSLock`
+public final class ColonyHardenedShellBackend: ColonyShellBackend, Sendable {
     public let confinement: ColonyShellConfinementPolicy
     public let defaultTimeoutNanoseconds: UInt64?
     public let maxOutputBytes: Int

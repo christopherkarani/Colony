@@ -22,7 +22,9 @@ public struct ColonyMemoryItem: Sendable, Codable, Equatable {
     }
 }
 
-public struct ColonyMemoryRecallRequest: Sendable, Codable, Equatable {
+// MARK: - New Request/Response Types (verb-based)
+
+public struct ColonyMemorySearchRequest: Sendable, Codable, Equatable {
     public var query: String
     public var limit: Int?
 
@@ -32,7 +34,7 @@ public struct ColonyMemoryRecallRequest: Sendable, Codable, Equatable {
     }
 }
 
-public struct ColonyMemoryRecallResult: Sendable, Codable, Equatable {
+public struct ColonyMemorySearchResponse: Sendable, Codable, Equatable {
     public var items: [ColonyMemoryItem]
 
     public init(items: [ColonyMemoryItem]) {
@@ -40,7 +42,7 @@ public struct ColonyMemoryRecallResult: Sendable, Codable, Equatable {
     }
 }
 
-public struct ColonyMemoryRememberRequest: Sendable, Codable, Equatable {
+public struct ColonyMemoryStoreRequest: Sendable, Codable, Equatable {
     public var content: String
     public var tags: [String]
     public var metadata: [String: String]
@@ -56,7 +58,7 @@ public struct ColonyMemoryRememberRequest: Sendable, Codable, Equatable {
     }
 }
 
-public struct ColonyMemoryRememberResult: Sendable, Codable, Equatable {
+public struct ColonyMemoryStoreResponse: Sendable, Codable, Equatable {
     public var id: String
 
     public init(id: String) {
@@ -64,12 +66,49 @@ public struct ColonyMemoryRememberResult: Sendable, Codable, Equatable {
     }
 }
 
-public protocol ColonyMemoryBackend: Sendable {
-    func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult
-    func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult
+// MARK: - Deprecated Request/Response Types
+
+@available(*, deprecated, renamed: "ColonyMemorySearchRequest")
+public typealias ColonyMemoryRecallRequest = ColonyMemorySearchRequest
+
+@available(*, deprecated, renamed: "ColonyMemorySearchResponse")
+public typealias ColonyMemoryRecallResult = ColonyMemorySearchResponse
+
+@available(*, deprecated, renamed: "ColonyMemoryStoreRequest")
+public typealias ColonyMemoryRememberRequest = ColonyMemoryStoreRequest
+
+@available(*, deprecated, renamed: "ColonyMemoryStoreResponse")
+public typealias ColonyMemoryRememberResult = ColonyMemoryStoreResponse
+
+// MARK: - Service Protocol
+
+public protocol ColonyMemoryService: Sendable {
+    func search(_ request: ColonyMemorySearchRequest) async throws -> ColonyMemorySearchResponse
+    func store(_ request: ColonyMemoryStoreRequest) async throws -> ColonyMemoryStoreResponse
 }
 
-public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
+// MARK: - Deprecated Protocol Name
+
+@available(*, deprecated, renamed: "ColonyMemoryService")
+public typealias ColonyMemoryBackend = ColonyMemoryService
+
+// MARK: - Deprecated Method Shims
+
+public extension ColonyMemoryService {
+    @available(*, deprecated, renamed: "search")
+    func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
+        try await search(request)
+    }
+
+    @available(*, deprecated, renamed: "store")
+    func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
+        try await store(request)
+    }
+}
+
+// MARK: - In-Memory Implementation
+
+public actor ColonyInMemoryMemoryBackend: ColonyMemoryService {
     private struct StoredMemory: Sendable {
         var id: String
         var content: String
@@ -96,7 +135,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
         }
     }
 
-    public func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
+    public func search(_ request: ColonyMemorySearchRequest) async throws -> ColonyMemorySearchResponse {
         let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let limit = min(100, max(1, request.limit ?? 5))
 
@@ -118,7 +157,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
             return lhs.score > rhs.score
         }
 
-        let recallItems = sorted.prefix(limit).map { ranked in
+        let searchItems = sorted.prefix(limit).map { ranked in
             ColonyMemoryItem(
                 id: ranked.item.id,
                 content: ranked.item.content,
@@ -127,10 +166,10 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
                 score: ranked.score
             )
         }
-        return ColonyMemoryRecallResult(items: recallItems)
+        return ColonyMemorySearchResponse(items: searchItems)
     }
 
-    public func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
+    public func store(_ request: ColonyMemoryStoreRequest) async throws -> ColonyMemoryStoreResponse {
         let id = "mem-" + String(nextID)
         nextID += 1
 
@@ -142,7 +181,7 @@ public actor ColonyInMemoryMemoryBackend: ColonyMemoryBackend {
                 metadata: request.metadata
             )
         )
-        return ColonyMemoryRememberResult(id: id)
+        return ColonyMemoryStoreResponse(id: id)
     }
 
     private func score(query: String, item: StoredMemory) -> Double {

@@ -116,7 +116,7 @@ public struct ColonyContext: Sendable {
     public let configuration: ColonyConfiguration
     public let filesystem: (any ColonyFileSystemBackend)?
     public let shell: (any ColonyShellBackend)?
-    public let git: (any ColonyGitBackend)?
+    public let git: (any ColonyGitService)?
     public let lsp: (any ColonyLSPBackend)?
     public let applyPatch: (any ColonyApplyPatchBackend)?
     public let webSearch: (any ColonyWebSearchBackend)?
@@ -131,7 +131,7 @@ public struct ColonyContext: Sendable {
         configuration: ColonyConfiguration,
         filesystem: (any ColonyFileSystemBackend)?,
         shell: (any ColonyShellBackend)? = nil,
-        git: (any ColonyGitBackend)? = nil,
+        git: (any ColonyGitService)? = nil,
         lsp: (any ColonyLSPBackend)? = nil,
         applyPatch: (any ColonyApplyPatchBackend)? = nil,
         webSearch: (any ColonyWebSearchBackend)? = nil,
@@ -831,6 +831,12 @@ public enum ColonyAgent {
                 ColonyBuiltInToolDefinitions.scratchComplete,
                 ColonyBuiltInToolDefinitions.scratchPin,
                 ColonyBuiltInToolDefinitions.scratchUnpin,
+                ColonyBuiltInToolDefinitions.workspaceRead,
+                ColonyBuiltInToolDefinitions.workspaceAdd,
+                ColonyBuiltInToolDefinitions.workspaceUpdate,
+                ColonyBuiltInToolDefinitions.workspaceComplete,
+                ColonyBuiltInToolDefinitions.workspacePin,
+                ColonyBuiltInToolDefinitions.workspaceUnpin,
             ])
         }
 
@@ -979,7 +985,7 @@ public enum ColonyAgent {
                 _ = try await subagents.run(
                     ColonySubagentRequest(
                         prompt: prompt,
-                        subagentType: "compactor"
+                        subagentType: .compactor
                     )
                 )
             } catch {
@@ -1283,7 +1289,7 @@ Preview:
     ) async throws {
         do {
             try await filesystem.write(at: path, content: content)
-        } catch let error as ColonyFileSystemError {
+        } catch let error as FileSystemError {
             switch error {
             case .alreadyExists:
                 if let existing = try? await filesystem.read(at: path), existing.isEmpty == false {
@@ -1724,6 +1730,212 @@ enum ColonyTools {
             )
             return ColonyToolOutcome(success: true, content: "OK: unpinned \(args.id)", writes: [])
 
+        // MARK: - Workspace Tools (renamed from Scratchbook)
+
+        case ColonyBuiltInToolDefinitions.workspaceRead.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            let view = scratchbook.renderView(policy: policy)
+            return ColonyToolOutcome(success: true, content: view, writes: [])
+
+        case ColonyBuiltInToolDefinitions.workspaceAdd.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchAddArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            let existingIDs = Set(scratchbook.items.map(\.id))
+            let itemID = newScratchItemID(toolCallID: call.id, existing: existingIDs)
+
+            let now = input.environment.clock.nowNanoseconds()
+            let item = ColonyScratchItem(
+                id: itemID,
+                kind: args.kind,
+                status: .open,
+                title: args.title,
+                body: args.body ?? "",
+                tags: args.tags ?? [],
+                createdAtNanoseconds: now,
+                updatedAtNanoseconds: now,
+                phase: args.phase,
+                progress: args.progress
+            )
+            let updatedScratchbook = ColonyScratchbook(
+                items: scratchbook.items + [item],
+                pinnedItemIDs: scratchbook.pinnedItemIDs
+            )
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: added \(itemID)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.workspaceUpdate.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchUpdateArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            guard let existing = scratchbook.items.first(where: { $0.id == args.id }) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace item not found: \(args.id)", writes: [])
+            }
+
+            let now = input.environment.clock.nowNanoseconds()
+            let updatedItem = ColonyScratchItem(
+                id: existing.id,
+                kind: existing.kind,
+                status: args.status ?? existing.status,
+                title: args.title ?? existing.title,
+                body: args.body ?? existing.body,
+                tags: args.tags ?? existing.tags,
+                createdAtNanoseconds: existing.createdAtNanoseconds,
+                updatedAtNanoseconds: now,
+                phase: args.phase ?? existing.phase,
+                progress: args.progress ?? existing.progress
+            )
+
+            let updatedItems = scratchbook.items.map { item in
+                (item.id == args.id) ? updatedItem : item
+            }
+            let updatedScratchbook = ColonyScratchbook(items: updatedItems, pinnedItemIDs: scratchbook.pinnedItemIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: updated \(args.id)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.workspaceComplete.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            guard let existing = scratchbook.items.first(where: { $0.id == args.id }) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace item not found: \(args.id)", writes: [])
+            }
+
+            let now = input.environment.clock.nowNanoseconds()
+            let completed = ColonyScratchItem(
+                id: existing.id,
+                kind: existing.kind,
+                status: .done,
+                title: existing.title,
+                body: existing.body,
+                tags: existing.tags,
+                createdAtNanoseconds: existing.createdAtNanoseconds,
+                updatedAtNanoseconds: now,
+                phase: existing.phase,
+                progress: existing.progress
+            )
+            let updatedItems = scratchbook.items.map { item in
+                (item.id == args.id) ? completed : item
+            }
+            let updatedScratchbook = ColonyScratchbook(items: updatedItems, pinnedItemIDs: scratchbook.pinnedItemIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: completed \(args.id)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.workspacePin.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            guard scratchbook.items.contains(where: { $0.id == args.id }) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace item not found: \(args.id)", writes: [])
+            }
+            let pinnedIDs = scratchbook.pinnedItemIDs.contains(args.id)
+                ? scratchbook.pinnedItemIDs
+                : (scratchbook.pinnedItemIDs + [args.id])
+            let updatedScratchbook = ColonyScratchbook(items: scratchbook.items, pinnedItemIDs: pinnedIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: pinned \(args.id)", writes: [])
+
+        case ColonyBuiltInToolDefinitions.workspaceUnpin.name:
+            guard input.context.configuration.capabilities.contains(.scratchbook) else {
+                return ColonyToolOutcome(success: false, content: "Error: Workspace capability not enabled.", writes: [])
+            }
+            guard let fs = input.context.filesystem else {
+                return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
+            }
+
+            let args = try decode(call.argumentsJSON, as: ScratchIDArgs.self)
+            let policy = input.context.configuration.scratchbookPolicy
+            let scratchbook = try await ColonyScratchbookStore.load(
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            let pinnedIDs = scratchbook.pinnedItemIDs.filter { $0 != args.id }
+            let updatedScratchbook = ColonyScratchbook(items: scratchbook.items, pinnedItemIDs: pinnedIDs)
+            try await ColonyScratchbookStore.save(
+                updatedScratchbook,
+                filesystem: fs,
+                threadID: input.run.threadID.rawValue,
+                policy: policy
+            )
+            return ColonyToolOutcome(success: true, content: "OK: unpinned \(args.id)", writes: [])
+
         case ColonyBuiltInToolDefinitions.ls.name:
             guard let fs = input.context.filesystem else {
                 return ColonyToolOutcome(success: false, content: "Error: Filesystem not configured.", writes: [])
@@ -1928,13 +2140,13 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: memory backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: MemoryRecallArgs.self)
-            let result = try await backend.recall(
-                ColonyMemoryRecallRequest(
+            let result = try await backend.search(
+                ColonyMemorySearchRequest(
                     query: args.query,
                     limit: args.limit
                 )
             )
-            return ColonyToolOutcome(success: true, content: formatMemoryRecallResult(result), writes: [])
+            return ColonyToolOutcome(success: true, content: formatMemorySearchResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.memoryRemember.name:
             guard input.context.configuration.capabilities.contains(.memory) else {
@@ -1944,14 +2156,14 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: memory backend not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: MemoryRememberArgs.self)
-            let result = try await backend.remember(
-                ColonyMemoryRememberRequest(
+            let result = try await backend.store(
+                ColonyMemoryStoreRequest(
                     content: args.content,
                     tags: args.tags ?? [],
                     metadata: args.metadata ?? [:]
                 )
             )
-            return ColonyToolOutcome(success: true, content: formatMemoryRememberResult(result), writes: [])
+            return ColonyToolOutcome(success: true, content: formatMemoryStoreResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.mcpListResources.name:
             guard input.context.configuration.capabilities.contains(.mcp) else {
@@ -2014,7 +2226,7 @@ enum ColonyTools {
                 repositoryPath: try virtualPath(from: args.repoPath),
                 includeUntracked: args.includeUntracked ?? true
             )
-            let result = try await git.status(request)
+            let result = try await git.getStatus(request)
             return ColonyToolOutcome(success: true, content: formatGitStatusResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitDiff.name:
@@ -2032,7 +2244,7 @@ enum ColonyTools {
                 pathspec: args.pathspec,
                 staged: args.staged ?? false
             )
-            let result = try await git.diff(request)
+            let result = try await git.getDiff(request)
             return ColonyToolOutcome(success: true, content: result.patch, writes: [])
 
         case ColonyBuiltInToolDefinitions.gitCommit.name:
@@ -2050,7 +2262,7 @@ enum ColonyTools {
                 amend: args.amend ?? false,
                 signoff: args.signoff ?? false
             )
-            let result = try await git.commit(request)
+            let result = try await git.createCommit(request)
             return ColonyToolOutcome(success: true, content: formatGitCommitResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitBranch.name:
@@ -2068,7 +2280,7 @@ enum ColonyTools {
                 startPoint: args.startPoint,
                 force: args.force ?? false
             )
-            let result = try await git.branch(request)
+            let result = try await git.manageBranch(request)
             return ColonyToolOutcome(success: true, content: formatGitBranchResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitPush.name:
@@ -2083,10 +2295,11 @@ enum ColonyTools {
                 repositoryPath: try virtualPath(from: args.repoPath),
                 remote: args.remote ?? "origin",
                 branch: args.branch,
-                setUpstream: args.setUpstream ?? false,
-                forceWithLease: args.forceWithLease ?? false
+                force: args.force ?? false,
+                forceWithLease: args.forceWithLease ?? false,
+                setUpstream: args.setUpstream ?? false
             )
-            let result = try await git.push(request)
+            let result = try await git.pushChanges(request)
             return ColonyToolOutcome(success: true, content: formatGitPushResult(result), writes: [])
 
         case ColonyBuiltInToolDefinitions.gitPreparePR.name:
@@ -2177,8 +2390,21 @@ enum ColonyTools {
                 return ColonyToolOutcome(success: false, content: "Error: Subagent registry not configured.", writes: [])
             }
             let args = try decode(call.argumentsJSON, as: TaskArgs.self)
-            let type = args.subagentType?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let selectedType = (type?.isEmpty == false) ? type! : "general-purpose"
+            let typeString = args.subagentType?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let selectedType: ColonySubagentType
+            if typeString?.isEmpty == false {
+                // Map string values to ColonySubagentType constants
+                switch typeString {
+                case "general-purpose", "general":
+                    selectedType = .general
+                case "compactor":
+                    selectedType = .compactor
+                default:
+                    selectedType = .custom(typeString!)
+                }
+            } else {
+                selectedType = .general
+            }
             let result = try await subagents.run(
                 ColonySubagentRequest(
                     prompt: args.prompt,
@@ -2381,7 +2607,7 @@ enum ColonyTools {
         return lines.joined(separator: "\n")
     }
 
-    private static func formatMemoryRecallResult(_ result: ColonyMemoryRecallResult) -> String {
+    private static func formatMemorySearchResult(_ result: ColonyMemorySearchResponse) -> String {
         guard result.items.isEmpty == false else { return "(No memory matches)" }
 
         let blocks = result.items.map { item in
@@ -2409,7 +2635,7 @@ enum ColonyTools {
         return blocks.joined(separator: "\n\n")
     }
 
-    private static func formatMemoryRememberResult(_ result: ColonyMemoryRememberResult) -> String {
+    private static func formatMemoryStoreResult(_ result: ColonyMemoryStoreResponse) -> String {
         "OK: remembered \(result.id)"
     }
 
@@ -2641,15 +2867,17 @@ private struct GitPushArgs: Decodable, Sendable {
     let repoPath: String?
     let remote: String?
     let branch: String?
-    let setUpstream: Bool?
+    let force: Bool?
     let forceWithLease: Bool?
+    let setUpstream: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case repoPath = "repo_path"
         case remote
         case branch
-        case setUpstream = "set_upstream"
+        case force
         case forceWithLease = "force_with_lease"
+        case setUpstream = "set_upstream"
     }
 }
 

@@ -71,7 +71,7 @@ func onDeviceRouter_requiresOnDeviceAndFailsWhenUnavailable() async throws {
     )
 
     let client = router.route(HiveChatRequest(model: "test", messages: [], tools: []), hints: hints)
-    await #expect(throws: ColonyOnDeviceModelRouterError.onDeviceRequiredButUnavailable) {
+    await #expect(throws: OnDeviceRoutingError.onDeviceRequiredButUnavailable) {
         _ = try await client.complete(HiveChatRequest(model: "test", messages: [], tools: []))
     }
 }

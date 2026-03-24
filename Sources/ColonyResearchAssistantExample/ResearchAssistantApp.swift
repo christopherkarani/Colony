@@ -84,7 +84,7 @@ struct ResearchAssistantApp: Sendable {
                 let handle = await runtime.runControl.start(.init(input: input))
                 let answer = try await resolveOutcomeLoop(handle: handle, runtime: runtime)
                 print(answer)
-            } catch let error as ColonyFoundationModelsClientError {
+            } catch let error as OnDeviceModelError {
                 print("Model error: \(error)")
                 print("Hint: try running with --model-mode mock to use the built-in mock model.")
             } catch {

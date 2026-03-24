@@ -6,7 +6,7 @@ import HiveCore
 import FoundationModels
 #endif
 
-public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConvertible {
+public enum OnDeviceModelError: Error, Sendable, CustomStringConvertible {
     case foundationModelsUnavailable
     case generationFailed(String)
     case invalidToolCallFormat(String)
@@ -23,7 +23,10 @@ public enum ColonyFoundationModelsClientError: Error, Sendable, CustomStringConv
     }
 }
 
-extension ColonyFoundationModelsClientError: LocalizedError {
+@available(*, deprecated, renamed: "OnDeviceModelError")
+public typealias ColonyFoundationModelsClientError = OnDeviceModelError
+
+extension OnDeviceModelError: LocalizedError {
     public var errorDescription: String? {
         description
     }
@@ -91,7 +94,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
     private func streamUnavailable() -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            continuation.finish(throwing: ColonyFoundationModelsClientError.foundationModelsUnavailable)
+            continuation.finish(throwing: OnDeviceModelError.foundationModelsUnavailable)
         }
     }
 
@@ -358,31 +361,31 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         toolsAllowed: Set<String>
     ) throws -> HiveToolCall {
         if innerJSON == "__UNTERMINATED__" {
-            throw ColonyFoundationModelsClientError.invalidToolCallFormat("Unterminated \(Self.toolCallOpenTag) block.")
+            throw OnDeviceModelError.invalidToolCallFormat("Unterminated \(Self.toolCallOpenTag) block.")
         }
 
         let trimmed = innerJSON.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = trimmed.data(using: .utf8) else {
-            throw ColonyFoundationModelsClientError.invalidToolCallFormat("Tool call JSON is not valid UTF-8.")
+            throw OnDeviceModelError.invalidToolCallFormat("Tool call JSON is not valid UTF-8.")
         }
 
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data, options: [])
         } catch {
-            throw ColonyFoundationModelsClientError.invalidToolCallFormat("Failed to decode JSON: \(error.localizedDescription)")
+            throw OnDeviceModelError.invalidToolCallFormat("Failed to decode JSON: \(error.localizedDescription)")
         }
 
         guard let dict = object as? [String: Any] else {
-            throw ColonyFoundationModelsClientError.invalidToolCallFormat("Expected a JSON object.")
+            throw OnDeviceModelError.invalidToolCallFormat("Expected a JSON object.")
         }
 
         guard let name = (dict["name"] as? String) ?? (dict["tool"] as? String) else {
-            throw ColonyFoundationModelsClientError.invalidToolCallFormat("Missing \"name\".")
+            throw OnDeviceModelError.invalidToolCallFormat("Missing \"name\".")
         }
 
         if toolsAllowed.isEmpty == false, toolsAllowed.contains(name) == false {
-            throw ColonyFoundationModelsClientError.invalidToolCallFormat("Unknown tool name: \(name)")
+            throw OnDeviceModelError.invalidToolCallFormat("Unknown tool name: \(name)")
         }
 
         let id = (dict["id"] as? String) ?? (dict["tool_call_id"] as? String)
@@ -400,7 +403,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
                 )
                 argumentsJSON = String(decoding: argumentsData, as: UTF8.self)
             } catch {
-                throw ColonyFoundationModelsClientError.invalidToolCallFormat(
+                throw OnDeviceModelError.invalidToolCallFormat(
                     "Failed to encode tool arguments JSON: \(error.localizedDescription)"
                 )
             }
@@ -430,7 +433,7 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
             let task = Task {
                 do {
                     guard Self.isAvailable else {
-                        throw ColonyFoundationModelsClientError.foundationModelsUnavailable
+                        throw OnDeviceModelError.foundationModelsUnavailable
                     }
 
                     let (instructions, prompt, toolsAllowed) = makePrompt(from: request)
@@ -476,10 +479,10 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
 
                     continuation.yield(.final(response))
                     continuation.finish()
-                } catch let error as ColonyFoundationModelsClientError {
+                } catch let error as OnDeviceModelError {
                     continuation.finish(throwing: error)
                 } catch {
-                    continuation.finish(throwing: ColonyFoundationModelsClientError.generationFailed(error.localizedDescription))
+                    continuation.finish(throwing: OnDeviceModelError.generationFailed(error.localizedDescription))
                 }
             }
 

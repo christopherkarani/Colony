@@ -1,7 +1,7 @@
 import Foundation
 import HiveCore
 
-public enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvertible {
+public enum OnDeviceRoutingError: Error, Sendable, CustomStringConvertible {
     case onDeviceRequiredButUnavailable
 
     public var description: String {
@@ -12,6 +12,10 @@ public enum ColonyOnDeviceModelRouterError: Error, Sendable, CustomStringConvert
     }
 }
 
+@available(*, deprecated, renamed: "OnDeviceRoutingError")
+public typealias ColonyOnDeviceModelRouterError = OnDeviceRoutingError
+
+@available(*, deprecated, message: "Use ColonyModelRouter with .onDevice strategy instead")
 public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
     public enum PrivacyBehavior: Sendable {
         /// Prefer on-device, but allow fallback when unavailable.
@@ -104,7 +108,7 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
 }
 
 private struct ColonyFailingModelClient: HiveModelClient, Sendable {
-    let error: ColonyOnDeviceModelRouterError
+    let error: OnDeviceRoutingError
 
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         throw error

@@ -6,6 +6,30 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Breaking Changes
+- **API Hardening**: All public APIs now use Colony domain types instead of HiveCore types
+  - `ColonyArtifactStore.put()` and `.list()` now accept `ColonyThreadID` and `ColonyRunID` instead of `HiveThreadID`/`HiveRunID`
+  - `ColonyDurableRunStateStore.appendEvent()` now accepts `ColonyThreadID` instead of `HiveThreadID`
+  - `ColonyObservabilityEvent` now uses `ColonyThreadID`, `ColonyRunID`, and `ColonyHarnessSessionID` instead of raw strings/UUID
+  - `ColonyRunStateSnapshot` now uses `ColonyThreadID` and `ColonyRunID` instead of `String`/`UUID`
+  - `ColonyArtifactRecord` now uses `ColonyArtifactID`, `ColonyThreadID`, and `ColonyRunID` instead of `String`/`UUID`
+- **Subagent Types**: `ColonySubagentRequest.subagentType` is now `ColonySubagentType` instead of `String`
+- **Access Control**: `ColonyDefaultSubagentRegistry` is now `package` access (was `public`)
+  - Consumers should use `ColonySubagentRegistry` protocol or factory methods
+
+### Migration Guide
+1. Replace `HiveThreadID` with `ColonyThreadID` (use `.hiveThreadID` property to convert if needed)
+2. Replace `HiveRunID` with `ColonyRunID` (use `.hiveRunID` property to convert if needed)
+3. Replace raw string IDs with typed equivalents:
+   - Thread IDs: `ColonyThreadID(rawValue: string)` or `ColonyThreadID.generate()`
+   - Run IDs: `ColonyRunID(rawValue: uuid.uuidString)` or use conversion extensions
+4. Replace subagent type strings with `ColonySubagentType` constants (`.general`, `.compactor`, etc.)
+
+### Added
+- `ColonyArtifactID` typed ID for artifact identifiers
+- `ColonySubagentType.compactor` constant
+- `Sendable` conformance documentation for `ColonyHardenedShellBackend`
+
 ### Added
 - CI workflow at `.github/workflows/ci.yml` with explicit quality gates for:
   - `swift test`

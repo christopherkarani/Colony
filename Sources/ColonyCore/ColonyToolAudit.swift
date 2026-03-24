@@ -73,10 +73,15 @@ public struct ColonySignedToolAuditRecord: Codable, Sendable, Equatable {
     }
 }
 
-public enum ColonyToolAuditError: Error, Sendable, Equatable {
+public enum ToolAuditError: Error, Sendable, Equatable {
     case invalidSequence(expected: Int, actual: Int)
     case previousHashMismatch(expected: String?, actual: String?)
 }
+
+// MARK: - Backward Compatibility
+
+@available(*, deprecated, renamed: "ToolAuditError")
+public typealias ColonyToolAuditError = ToolAuditError
 
 public protocol ColonyToolAuditSigner: Sendable {
     var keyID: String { get }
@@ -121,12 +126,12 @@ public actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
     public func append(_ record: ColonySignedToolAuditRecord) async throws {
         let expectedSequence = (storage.last?.payload.sequence ?? 0) + 1
         guard record.payload.sequence == expectedSequence else {
-            throw ColonyToolAuditError.invalidSequence(expected: expectedSequence, actual: record.payload.sequence)
+            throw ToolAuditError.invalidSequence(expected: expectedSequence, actual: record.payload.sequence)
         }
 
         let expectedPreviousHash = storage.last?.entryHash
         guard record.payload.previousEntryHash == expectedPreviousHash else {
-            throw ColonyToolAuditError.previousHashMismatch(
+            throw ToolAuditError.previousHashMismatch(
                 expected: expectedPreviousHash,
                 actual: record.payload.previousEntryHash
             )
@@ -156,12 +161,12 @@ public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore
         let existing = try await records()
         let expectedSequence = (existing.last?.payload.sequence ?? 0) + 1
         guard record.payload.sequence == expectedSequence else {
-            throw ColonyToolAuditError.invalidSequence(expected: expectedSequence, actual: record.payload.sequence)
+            throw ToolAuditError.invalidSequence(expected: expectedSequence, actual: record.payload.sequence)
         }
 
         let expectedPreviousHash = existing.last?.entryHash
         guard record.payload.previousEntryHash == expectedPreviousHash else {
-            throw ColonyToolAuditError.previousHashMismatch(
+            throw ToolAuditError.previousHashMismatch(
                 expected: expectedPreviousHash,
                 actual: record.payload.previousEntryHash
             )
@@ -180,7 +185,7 @@ public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore
         let infos: [ColonyFileInfo]
         do {
             infos = try await filesystem.list(at: pathPrefix)
-        } catch ColonyFileSystemError.notFound {
+        } catch FileSystemError.notFound {
             return []
         }
 

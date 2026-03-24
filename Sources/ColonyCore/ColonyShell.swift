@@ -49,6 +49,28 @@ public struct ColonyShellExecutionResult: Sendable, Equatable {
     }
 }
 
+// MARK: - Service Protocol
+
+/// Response type for shell execution requests.
+/// This is a typealias for backward compatibility with `ColonyShellExecutionResult`.
+public typealias ColonyShellExecutionResponse = ColonyShellExecutionResult
+
+/// Service protocol for shell execution operations.
+///
+/// This protocol defines the service interface for executing shell commands.
+/// Implementations provide the actual execution logic, while consumers depend
+/// on this abstract interface.
+///
+/// Migration from `ColonyShellBackend`:
+/// - Replace `ColonyShellBackend` with `ColonyShellService` in new code
+/// - The `execute` method signature remains compatible
+public protocol ColonyShellService: Sendable {
+    /// Execute a shell command and return the result.
+    /// - Parameter request: The execution request containing command and options
+    /// - Returns: The execution response with exit code, stdout, and stderr
+    func execute(_ request: ColonyShellExecutionRequest) async throws -> ColonyShellExecutionResponse
+}
+
 public struct ColonyShellSessionID: Hashable, Codable, Sendable, Equatable {
     public let rawValue: String
 
@@ -109,8 +131,14 @@ public struct ColonyShellSessionSnapshot: Sendable, Equatable {
     }
 }
 
-public protocol ColonyShellBackend: Sendable {
-    func execute(_ request: ColonyShellExecutionRequest) async throws -> ColonyShellExecutionResult
+/// Backend protocol for shell execution operations.
+///
+/// > Deprecated: Use `ColonyShellService` instead. This protocol will be removed in a future version.
+///
+/// The backend protocol extends `ColonyShellService` with session management capabilities.
+/// For simple command execution, migrate to `ColonyShellService`.
+@available(*, deprecated, renamed: "ColonyShellService", message: "Use ColonyShellService instead. Session management methods are being moved to a separate protocol.")
+public protocol ColonyShellBackend: ColonyShellService {
     func openSession(_ request: ColonyShellSessionOpenRequest) async throws -> ColonyShellSessionID
     func writeToSession(_ sessionID: ColonyShellSessionID, data: Data) async throws
     func readFromSession(

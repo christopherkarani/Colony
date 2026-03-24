@@ -195,7 +195,7 @@ func offload_prefersCompactorSubagentForScratchbookUpdate_whenAvailable() async 
     )
 
     let requests = await registry.recordedRequests()
-    #expect(requests.contains(where: { $0.subagentType == "compactor" }) == true)
+    #expect(requests.contains(where: { $0.subagentType == .compactor }) == true)
     #expect(requests.contains(where: { $0.prompt.contains(historyPath.rawValue) }) == true)
 
     let scratchbook = try await fs.read(at: scratchbookPath)

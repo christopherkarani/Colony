@@ -138,7 +138,7 @@ private final class ToolListRecordingModel: HiveModelClient, @unchecked Sendable
     }
 }
 
-private actor RecordingGitBackend: ColonyGitBackend {
+private actor RecordingGitBackend: ColonyGitService {
     private var statusRequests: [ColonyGitStatusRequest] = []
     private var diffRequests: [ColonyGitDiffRequest] = []
     private var commitRequests: [ColonyGitCommitRequest] = []
@@ -146,9 +146,9 @@ private actor RecordingGitBackend: ColonyGitBackend {
     private var pushRequests: [ColonyGitPushRequest] = []
     private var preparePRRequests: [ColonyGitPreparePullRequestRequest] = []
 
-    func status(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResult {
+    func getStatus(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResponse {
         statusRequests.append(request)
-        return ColonyGitStatusResult(
+        return ColonyGitStatusResponse(
             currentBranch: "feature/task-d",
             upstreamBranch: "origin/feature/task-d",
             aheadBy: 2,
@@ -160,37 +160,37 @@ private actor RecordingGitBackend: ColonyGitBackend {
         )
     }
 
-    func diff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResult {
+    func getDiff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResponse {
         diffRequests.append(request)
-        return ColonyGitDiffResult(patch: "diff --git a/Sources/App.swift b/Sources/App.swift")
+        return ColonyGitDiffResponse(patch: "diff --git a/Sources/App.swift b/Sources/App.swift")
     }
 
-    func commit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResult {
+    func createCommit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResponse {
         commitRequests.append(request)
-        return ColonyGitCommitResult(commitHash: "abc1234", summary: request.message)
+        return ColonyGitCommitResponse(commitHash: "abc1234", summary: request.message)
     }
 
-    func branch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResult {
+    func manageBranch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResponse {
         branchRequests.append(request)
-        return ColonyGitBranchResult(
+        return ColonyGitBranchResponse(
             currentBranch: "feature/task-d",
             branches: ["main", "feature/task-d"],
             detail: request.operation.rawValue
         )
     }
 
-    func push(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResult {
+    func pushChanges(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResponse {
         pushRequests.append(request)
-        return ColonyGitPushResult(
-            remote: request.remote,
+        return ColonyGitPushResponse(
+            remote: request.remote ?? "origin",
             branch: request.branch ?? "feature/task-d",
             summary: "pushed"
         )
     }
 
-    func preparePullRequest(_ request: ColonyGitPreparePullRequestRequest) async throws -> ColonyGitPreparePullRequestResult {
+    func preparePullRequest(_ request: ColonyGitPreparePullRequestRequest) async throws -> ColonyGitPreparePullRequestResponse {
         preparePRRequests.append(request)
-        return ColonyGitPreparePullRequestResult(
+        return ColonyGitPreparePullRequestResponse(
             baseBranch: request.baseBranch,
             headBranch: request.headBranch,
             title: request.title,
@@ -208,15 +208,15 @@ private actor RecordingGitBackend: ColonyGitBackend {
     func recordedPreparePRRequests() -> [ColonyGitPreparePullRequestRequest] { preparePRRequests }
 }
 
-private actor RecordingLSPBackend: ColonyLSPBackend {
+private actor RecordingLSPBackend: ColonyLSPService {
     private var symbolsRequests: [ColonyLSPSymbolsRequest] = []
     private var diagnosticsRequests: [ColonyLSPDiagnosticsRequest] = []
     private var referencesRequests: [ColonyLSPReferencesRequest] = []
     private var applyEditRequests: [ColonyLSPApplyEditRequest] = []
 
-    func symbols(_ request: ColonyLSPSymbolsRequest) async throws -> [ColonyLSPSymbol] {
+    func findSymbols(_ request: ColonyLSPSymbolsRequest) async throws -> ColonyLSPSymbolsResponse {
         symbolsRequests.append(request)
-        return [
+        return ColonyLSPSymbolsResponse(symbols: [
             ColonyLSPSymbol(
                 name: "ColonyRuntime",
                 kind: .class,
@@ -226,12 +226,12 @@ private actor RecordingLSPBackend: ColonyLSPBackend {
                     end: ColonyLSPPosition(line: 10, character: 16)
                 )
             ),
-        ]
+        ])
     }
 
-    func diagnostics(_ request: ColonyLSPDiagnosticsRequest) async throws -> [ColonyLSPDiagnostic] {
+    func getDiagnostics(_ request: ColonyLSPDiagnosticsRequest) async throws -> ColonyLSPDiagnosticsResponse {
         diagnosticsRequests.append(request)
-        return [
+        return ColonyLSPDiagnosticsResponse(diagnostics: [
             ColonyLSPDiagnostic(
                 path: try ColonyVirtualPath("/Sources/App.swift"),
                 range: ColonyLSPRange(
@@ -242,12 +242,12 @@ private actor RecordingLSPBackend: ColonyLSPBackend {
                 message: "Unused variable",
                 code: "W001"
             ),
-        ]
+        ])
     }
 
-    func references(_ request: ColonyLSPReferencesRequest) async throws -> [ColonyLSPReference] {
+    func findReferences(_ request: ColonyLSPReferencesRequest) async throws -> ColonyLSPReferencesResponse {
         referencesRequests.append(request)
-        return [
+        return ColonyLSPReferencesResponse(references: [
             ColonyLSPReference(
                 path: try ColonyVirtualPath("/Sources/App.swift"),
                 range: ColonyLSPRange(
@@ -256,7 +256,7 @@ private actor RecordingLSPBackend: ColonyLSPBackend {
                 ),
                 preview: "runtime.sendUserMessage"
             ),
-        ]
+        ])
     }
 
     func applyEdit(_ request: ColonyLSPApplyEditRequest) async throws -> ColonyLSPApplyEditResult {

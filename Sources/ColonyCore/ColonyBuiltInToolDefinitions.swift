@@ -307,6 +307,56 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
+    // MARK: - Workspace Tools (Scratchbook renamed to Workspace)
+
+    public static let workspaceRead = HiveToolDefinition(
+        name: "workspace_read",
+        description: "Read the Workspace (compact view).",
+        parametersJSONSchema: """
+        {"type":"object","properties":{}}
+        """
+    )
+
+    public static let workspaceAdd = HiveToolDefinition(
+        name: "workspace_add",
+        description: "Add a Workspace item (note/todo/task).",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"kind":{"type":"string","enum":["note","todo","task"],"description":"Item kind."},"title":{"type":"string","description":"Short title."},"body":{"type":"string","description":"Optional body text."},"tags":{"type":"array","items":{"type":"string"},"description":"Optional tags."},"phase":{"type":"string","description":"Optional task phase (task kind only)."},"progress":{"type":"number","description":"Optional task progress 0..1 (task kind only)."}},"required":["kind","title"]}
+        """
+    )
+
+    public static let workspaceUpdate = HiveToolDefinition(
+        name: "workspace_update",
+        description: "Update fields on an existing Workspace item by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."},"title":{"type":"string","description":"New title."},"body":{"type":"string","description":"New body."},"tags":{"type":"array","items":{"type":"string"},"description":"New tags."},"status":{"type":"string","enum":["open","in_progress","blocked","done","archived"],"description":"New status."},"phase":{"type":"string","description":"Optional task phase."},"progress":{"type":"number","description":"Optional task progress 0..1."}},"required":["id"]}
+        """
+    )
+
+    public static let workspaceComplete = HiveToolDefinition(
+        name: "workspace_complete",
+        description: "Mark a Workspace item done by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."}},"required":["id"]}
+        """
+    )
+
+    public static let workspacePin = HiveToolDefinition(
+        name: "workspace_pin",
+        description: "Pin a Workspace item by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."}},"required":["id"]}
+        """
+    )
+
+    public static let workspaceUnpin = HiveToolDefinition(
+        name: "workspace_unpin",
+        description: "Unpin a Workspace item by id.",
+        parametersJSONSchema: """
+        {"type":"object","properties":{"id":{"type":"string","description":"Item id."}},"required":["id"]}
+        """
+    )
+
     public static func task(availableSubagents: [ColonySubagentDescriptor]) -> HiveToolDefinition {
         let available: String
         if availableSubagents.isEmpty {

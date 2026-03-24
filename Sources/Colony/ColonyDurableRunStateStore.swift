@@ -10,17 +10,17 @@ public enum ColonyRunPhase: String, Codable, Sendable, Equatable {
 }
 
 public struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
-    public let runID: UUID
+    public let runID: ColonyRunID
     public let sessionID: ColonyHarnessSessionID
-    public let threadID: String
+    public let threadID: ColonyThreadID
     public let phase: ColonyRunPhase
     public let lastEventSequence: Int
     public let updatedAt: Date
 
     public init(
-        runID: UUID,
+        runID: ColonyRunID,
         sessionID: ColonyHarnessSessionID,
-        threadID: String,
+        threadID: ColonyThreadID,
         phase: ColonyRunPhase,
         lastEventSequence: Int,
         updatedAt: Date
@@ -58,7 +58,7 @@ public actor ColonyDurableRunStateStore {
 
     public func appendEvent(
         _ envelope: ColonyHarnessEventEnvelope,
-        threadID: HiveThreadID
+        threadID: ColonyThreadID
     ) async throws {
         let runDirectory = runDirectoryURL(runID: envelope.runID)
         let eventsDirectory = runDirectory.appendingPathComponent("events", isDirectory: true)
@@ -71,9 +71,9 @@ public actor ColonyDurableRunStateStore {
         let priorState = try await loadRunState(runID: envelope.runID)
         let nextPhase = phase(for: envelope.eventType, fallback: priorState?.phase ?? .running)
         let snapshot = ColonyRunStateSnapshot(
-            runID: envelope.runID,
+            runID: ColonyRunID(hiveRunID: HiveRunID(envelope.runID)),
             sessionID: envelope.sessionID,
-            threadID: threadID.rawValue,
+            threadID: threadID,
             phase: nextPhase,
             lastEventSequence: envelope.sequence,
             updatedAt: envelope.timestamp
@@ -84,15 +84,20 @@ public actor ColonyDurableRunStateStore {
     }
 
     public func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
+        let colonyRunID = ColonyRunID(hiveRunID: HiveRunID(runID))
         let runDirectory = runDirectoryURL(runID: runID)
         let stateURL = runDirectory.appendingPathComponent("state.json", isDirectory: false)
         guard fileManager.fileExists(atPath: stateURL.path) else {
-            return try await rebuildStateSnapshotFromEvents(runDirectory: runDirectory, runID: runID)
+            return try await rebuildStateSnapshotFromEvents(
+                runDirectory: runDirectory,
+                runID: colonyRunID,
+                fallbackThreadID: .generate()
+            )
         }
         let snapshot = try ColonyPersistenceIO.readJSON(ColonyRunStateSnapshot.self, from: stateURL, decoder: decoder)
         guard let recovered = try await rebuildStateSnapshotFromEvents(
             runDirectory: runDirectory,
-            runID: runID,
+            runID: colonyRunID,
             minimumSequence: snapshot.lastEventSequence + 1,
             fallbackThreadID: snapshot.threadID
         ) else {
@@ -123,7 +128,7 @@ public actor ColonyDurableRunStateStore {
             if lhs.updatedAt != rhs.updatedAt {
                 return lhs.updatedAt > rhs.updatedAt
             }
-            return lhs.runID.uuidString > rhs.runID.uuidString
+            return lhs.runID.rawValue > rhs.runID.rawValue
         }
 
         if let limit {
@@ -213,9 +218,9 @@ public actor ColonyDurableRunStateStore {
 
     private func rebuildStateSnapshotFromEvents(
         runDirectory: URL,
-        runID: UUID,
+        runID: ColonyRunID,
         minimumSequence: Int = 1,
-        fallbackThreadID: String = "unknown"
+        fallbackThreadID: ColonyThreadID
     ) async throws -> ColonyRunStateSnapshot? {
         let eventsDirectory = runDirectory.appendingPathComponent("events", isDirectory: true)
         guard fileManager.fileExists(atPath: eventsDirectory.path) else {

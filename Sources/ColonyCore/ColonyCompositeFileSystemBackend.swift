@@ -1,14 +1,16 @@
 import Foundation
 
-public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
-    public let `default`: any ColonyFileSystemBackend
-    public let routes: [ColonyVirtualPath: any ColonyFileSystemBackend]
+// MARK: - Composite Service
+
+public struct ColonyCompositeFileSystemService: ColonyFileSystem.Service {
+    public let `default`: any ColonyFileSystem.Service
+    public let routes: [ColonyFileSystem.VirtualPath: any ColonyFileSystem.Service]
 
     private let routeTable: [RouteEntry]
 
     public init(
-        `default`: any ColonyFileSystemBackend,
-        routes: [ColonyVirtualPath: any ColonyFileSystemBackend]
+        `default`: any ColonyFileSystem.Service,
+        routes: [ColonyFileSystem.VirtualPath: any ColonyFileSystem.Service]
     ) {
         self.`default` = `default`
         self.routes = routes
@@ -17,7 +19,7 @@ public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
             .sorted(by: RouteEntry.moreSpecificFirst)
     }
 
-    public func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo] {
+    public func list(at path: ColonyFileSystem.VirtualPath) async throws -> [ColonyFileSystem.FileInfo] {
         let (backend, mountPrefix, backendPath) = try routedBackend(for: path)
 
         var results = try await backend.list(at: backendPath)
@@ -26,18 +28,18 @@ public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
         return Self.mergeAndSort(results)
     }
 
-    public func read(at path: ColonyVirtualPath) async throws -> String {
+    public func read(at path: ColonyFileSystem.VirtualPath) async throws -> String {
         let (backend, _, backendPath) = try routedBackend(for: path)
         return try await backend.read(at: backendPath)
     }
 
-    public func write(at path: ColonyVirtualPath, content: String) async throws {
+    public func write(at path: ColonyFileSystem.VirtualPath, content: String) async throws {
         let (backend, _, backendPath) = try routedBackend(for: path)
         try await backend.write(at: backendPath, content: content)
     }
 
     public func edit(
-        at path: ColonyVirtualPath,
+        at path: ColonyFileSystem.VirtualPath,
         oldString: String,
         newString: String,
         replaceAll: Bool
@@ -51,9 +53,9 @@ public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
         )
     }
 
-    public func glob(pattern: String) async throws -> [ColonyVirtualPath] {
+    public func glob(pattern: String) async throws -> [ColonyFileSystem.VirtualPath] {
         let allPattern = "*"
-        var candidates: [ColonyVirtualPath] = []
+        var candidates: [ColonyFileSystem.VirtualPath] = []
 
         let defaultMatches = try await `default`.glob(pattern: allPattern)
         for path in defaultMatches {
@@ -76,9 +78,9 @@ public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
         return unique.sorted { $0.rawValue.utf8.lexicographicallyPrecedes($1.rawValue.utf8) }
     }
 
-    public func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch] {
+    public func grep(pattern: String, glob: String?) async throws -> [ColonyFileSystem.GrepMatch] {
         guard pattern.isEmpty == false else { return [] }
-        var results: [ColonyGrepMatch] = []
+        var results: [ColonyFileSystem.GrepMatch] = []
 
         let defaultMatches = try await `default`.grep(pattern: pattern, glob: glob)
         for match in defaultMatches {
@@ -102,7 +104,7 @@ public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
                 if let glob, ColonyInMemoryFileSystemBackend.matchesGlob(pattern: glob, path: restoredPath.rawValue) == false {
                     continue
                 }
-                results.append(ColonyGrepMatch(path: restoredPath, line: match.line, text: match.text))
+                results.append(ColonyFileSystem.GrepMatch(path: restoredPath, line: match.line, text: match.text))
             }
         }
 
@@ -116,10 +118,10 @@ public struct ColonyCompositeFileSystemBackend: ColonyFileSystemBackend {
 
 // MARK: - Routing
 
-extension ColonyCompositeFileSystemBackend {
+extension ColonyCompositeFileSystemService {
     private struct RouteEntry: Sendable {
-        let prefix: ColonyVirtualPath
-        let backend: any ColonyFileSystemBackend
+        let prefix: ColonyFileSystem.VirtualPath
+        let backend: any ColonyFileSystem.Service
 
         static func moreSpecificFirst(_ lhs: RouteEntry, _ rhs: RouteEntry) -> Bool {
             let left = lhs.prefix.rawValue
@@ -130,8 +132,8 @@ extension ColonyCompositeFileSystemBackend {
     }
 
     private func routedBackend(
-        for path: ColonyVirtualPath
-    ) throws -> (backend: any ColonyFileSystemBackend, mountPrefix: ColonyVirtualPath, backendPath: ColonyVirtualPath) {
+        for path: ColonyFileSystem.VirtualPath
+    ) throws -> (backend: any ColonyFileSystem.Service, mountPrefix: ColonyFileSystem.VirtualPath, backendPath: ColonyFileSystem.VirtualPath) {
         guard let entry = bestRoute(for: path.rawValue) else {
             return (backend: `default`, mountPrefix: .root, backendPath: path)
         }
@@ -155,12 +157,12 @@ extension ColonyCompositeFileSystemBackend {
         return path[idx] == "/"
     }
 
-    private static func strippingPrefix(_ prefix: String, from rawPath: String) throws -> ColonyVirtualPath {
-        if prefix == "/" { return try ColonyVirtualPath(rawPath) }
-        guard hasPathPrefix(rawPath, prefix: prefix) else { return try ColonyVirtualPath(rawPath) }
+    private static func strippingPrefix(_ prefix: String, from rawPath: String) throws -> ColonyFileSystem.VirtualPath {
+        if prefix == "/" { return try ColonyFileSystem.VirtualPath(rawPath) }
+        guard hasPathPrefix(rawPath, prefix: prefix) else { return try ColonyFileSystem.VirtualPath(rawPath) }
         if rawPath.count == prefix.count { return .root }
         let suffix = String(rawPath.dropFirst(prefix.count))
-        return try ColonyVirtualPath(suffix.isEmpty ? "/" : suffix)
+        return try ColonyFileSystem.VirtualPath(suffix.isEmpty ? "/" : suffix)
     }
 
     private static func stripPrefix(_ prefix: String, from rawPattern: String) -> String {
@@ -171,24 +173,24 @@ extension ColonyCompositeFileSystemBackend {
         return suffix.isEmpty ? "/" : suffix
     }
 
-    private static func restoringPrefix(_ prefix: ColonyVirtualPath, to path: ColonyVirtualPath) throws -> ColonyVirtualPath {
+    private static func restoringPrefix(_ prefix: ColonyFileSystem.VirtualPath, to path: ColonyFileSystem.VirtualPath) throws -> ColonyFileSystem.VirtualPath {
         if prefix.rawValue == "/" { return path }
         if path.rawValue == "/" { return prefix }
-        return try ColonyVirtualPath(prefix.rawValue + path.rawValue)
+        return try ColonyFileSystem.VirtualPath(prefix.rawValue + path.rawValue)
     }
 
-    private func restorePrefix(_ prefix: ColonyVirtualPath, in infos: [ColonyFileInfo]) throws -> [ColonyFileInfo] {
+    private func restorePrefix(_ prefix: ColonyFileSystem.VirtualPath, in infos: [ColonyFileSystem.FileInfo]) throws -> [ColonyFileSystem.FileInfo] {
         guard prefix.rawValue != "/" else { return infos }
-        var restored: [ColonyFileInfo] = []
+        var restored: [ColonyFileSystem.FileInfo] = []
         restored.reserveCapacity(infos.count)
         for info in infos {
             let restoredPath = try Self.restoringPrefix(prefix, to: info.path)
-            restored.append(ColonyFileInfo(path: restoredPath, isDirectory: info.isDirectory, sizeBytes: info.sizeBytes))
+            restored.append(ColonyFileSystem.FileInfo(path: restoredPath, isDirectory: info.isDirectory, sizeBytes: info.sizeBytes))
         }
         return restored
     }
 
-    private func virtualRouteDirectories(under path: ColonyVirtualPath) -> [ColonyFileInfo] {
+    private func virtualRouteDirectories(under path: ColonyFileSystem.VirtualPath) -> [ColonyFileSystem.FileInfo] {
         let raw = path.rawValue
         let prefix = raw == "/" ? "/" : (raw + "/")
 
@@ -204,11 +206,11 @@ extension ColonyCompositeFileSystemBackend {
             dirs.insert(String(dirRaw))
         }
 
-        var results: [ColonyFileInfo] = []
+        var results: [ColonyFileSystem.FileInfo] = []
         results.reserveCapacity(dirs.count)
         for dir in dirs.sorted(by: { $0.utf8.lexicographicallyPrecedes($1.utf8) }) {
-            guard let path = try? ColonyVirtualPath(dir) else { continue }
-            results.append(ColonyFileInfo(path: path, isDirectory: true, sizeBytes: nil))
+            guard let path = try? ColonyFileSystem.VirtualPath(dir) else { continue }
+            results.append(ColonyFileSystem.FileInfo(path: path, isDirectory: true, sizeBytes: nil))
         }
         return results
     }
@@ -216,9 +218,9 @@ extension ColonyCompositeFileSystemBackend {
 
 // MARK: - Deterministic merging
 
-extension ColonyCompositeFileSystemBackend {
-    private static func uniquePaths(_ paths: [ColonyVirtualPath]) -> [ColonyVirtualPath] {
-        var byRaw: [String: ColonyVirtualPath] = [:]
+extension ColonyCompositeFileSystemService {
+    private static func uniquePaths(_ paths: [ColonyFileSystem.VirtualPath]) -> [ColonyFileSystem.VirtualPath] {
+        var byRaw: [String: ColonyFileSystem.VirtualPath] = [:]
         byRaw.reserveCapacity(paths.count)
         for path in paths {
             byRaw[path.rawValue] = path
@@ -226,8 +228,8 @@ extension ColonyCompositeFileSystemBackend {
         return Array(byRaw.values)
     }
 
-    private static func mergeAndSort(_ infos: [ColonyFileInfo]) -> [ColonyFileInfo] {
-        var byRaw: [String: ColonyFileInfo] = [:]
+    private static func mergeAndSort(_ infos: [ColonyFileSystem.FileInfo]) -> [ColonyFileSystem.FileInfo] {
+        var byRaw: [String: ColonyFileSystem.FileInfo] = [:]
         byRaw.reserveCapacity(infos.count)
 
         for info in infos {
@@ -246,3 +248,11 @@ extension ColonyCompositeFileSystemBackend {
         return merged
     }
 }
+
+// MARK: - Deprecated Typealiases
+
+@available(*, deprecated, renamed: "ColonyCompositeFileSystemService")
+public typealias ColonyCompositeFileSystemBackend = ColonyCompositeFileSystemService
+
+@available(*, deprecated, renamed: "ColonyFileSystem.CompositeService")
+public typealias ColonyFileSystemCompositeService = ColonyCompositeFileSystemService

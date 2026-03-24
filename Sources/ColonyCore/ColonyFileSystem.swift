@@ -1,131 +1,172 @@
 import Foundation
 
-public struct ColonyVirtualPath: Hashable, Sendable, Codable {
-    public let rawValue: String
-    private init(knownNormalizedValue: String) {
-        self.rawValue = knownNormalizedValue
-    }
+// MARK: - Namespace
 
-    public init(_ rawValue: String) throws {
-        self.rawValue = try Self.normalize(rawValue)
-    }
+public enum ColonyFileSystem {}
 
-    public init(from decoder: any Decoder) throws {
-        if let single = try? decoder.singleValueContainer(),
-           let raw = try? single.decode(String.self)
-        {
+// MARK: - Nested Types
+
+extension ColonyFileSystem {
+    public struct VirtualPath: Hashable, Sendable, Codable {
+        public let rawValue: String
+        private init(knownNormalizedValue: String) {
+            self.rawValue = knownNormalizedValue
+        }
+
+        public init(_ rawValue: String) throws {
+            self.rawValue = try Self.normalize(rawValue)
+        }
+
+        public init(from decoder: any Decoder) throws {
+            if let single = try? decoder.singleValueContainer(),
+               let raw = try? single.decode(String.self)
+            {
+                self.rawValue = try Self.normalize(raw)
+                return
+            }
+
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let raw = try container.decode(String.self, forKey: .rawValue)
             self.rawValue = try Self.normalize(raw)
-            return
         }
 
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let raw = try container.decode(String.self, forKey: .rawValue)
-        self.rawValue = try Self.normalize(raw)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(rawValue)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case rawValue
-    }
-
-    public static var root: ColonyVirtualPath { rootPath }
-    public static var scratchbookRoot: ColonyVirtualPath { scratchbookPath }
-    public static var conversationHistoryRoot: ColonyVirtualPath { conversationHistoryPath }
-    public static var toolAuditRoot: ColonyVirtualPath { toolAuditPath }
-
-    private static let rootPath = ColonyVirtualPath(knownNormalizedValue: "/")
-    private static let scratchbookPath = ColonyVirtualPath(knownNormalizedValue: "/scratchbook")
-    private static let conversationHistoryPath = ColonyVirtualPath(knownNormalizedValue: "/conversation_history")
-    private static let toolAuditPath = ColonyVirtualPath(knownNormalizedValue: "/audit/tool_decisions")
-
-    private static func normalize(_ input: String) throws -> String {
-        if input.contains("..") || input.hasPrefix("~") {
-            throw ColonyFileSystemError.invalidPath(input)
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
         }
 
-        var path = input.replacingOccurrences(of: "\\", with: "/")
-        if path.isEmpty {
-            path = "/"
-        }
-        if path.hasPrefix("/") == false {
-            path = "/" + path
+        private enum CodingKeys: String, CodingKey {
+            case rawValue
         }
 
-        // Collapse duplicate slashes.
-        while path.contains("//") {
-            path = path.replacingOccurrences(of: "//", with: "/")
-        }
+        public static var root: VirtualPath { rootPath }
+        public static var scratchbookRoot: VirtualPath { scratchbookPath }
+        public static var conversationHistoryRoot: VirtualPath { conversationHistoryPath }
+        public static var toolAuditRoot: VirtualPath { toolAuditPath }
 
-        // Canonicalize trailing slash (keep "/" only for root).
-        if path.count > 1, path.hasSuffix("/") {
-            path.removeLast()
-        }
+        private static let rootPath = VirtualPath(knownNormalizedValue: "/")
+        private static let scratchbookPath = VirtualPath(knownNormalizedValue: "/scratchbook")
+        private static let conversationHistoryPath = VirtualPath(knownNormalizedValue: "/conversation_history")
+        private static let toolAuditPath = VirtualPath(knownNormalizedValue: "/audit/tool_decisions")
 
-        return path
+        private static func normalize(_ input: String) throws -> String {
+            if input.contains("..") || input.hasPrefix("~") {
+                throw Error.invalidPath(input)
+            }
+
+            var path = input.replacingOccurrences(of: "\\", with: "/")
+            if path.isEmpty {
+                path = "/"
+            }
+            if path.hasPrefix("/") == false {
+                path = "/" + path
+            }
+
+            // Collapse duplicate slashes.
+            while path.contains("//") {
+                path = path.replacingOccurrences(of: "//", with: "/")
+            }
+
+            // Canonicalize trailing slash (keep "/" only for root).
+            if path.count > 1, path.hasSuffix("/") {
+                path.removeLast()
+            }
+
+            return path
+        }
     }
 }
 
-public struct ColonyFileInfo: Sendable, Codable, Equatable {
-    public let path: ColonyVirtualPath
-    public let isDirectory: Bool
-    public let sizeBytes: Int?
+extension ColonyFileSystem {
+    public struct FileInfo: Sendable, Codable, Equatable {
+        public let path: VirtualPath
+        public let isDirectory: Bool
+        public let sizeBytes: Int?
 
-    public init(path: ColonyVirtualPath, isDirectory: Bool, sizeBytes: Int?) {
-        self.path = path
-        self.isDirectory = isDirectory
-        self.sizeBytes = sizeBytes
+        public init(path: VirtualPath, isDirectory: Bool, sizeBytes: Int?) {
+            self.path = path
+            self.isDirectory = isDirectory
+            self.sizeBytes = sizeBytes
+        }
     }
 }
 
-public struct ColonyGrepMatch: Sendable, Codable, Equatable {
-    public let path: ColonyVirtualPath
-    public let line: Int
-    public let text: String
+extension ColonyFileSystem {
+    public struct GrepMatch: Sendable, Codable, Equatable {
+        public let path: VirtualPath
+        public let line: Int
+        public let text: String
 
-    public init(path: ColonyVirtualPath, line: Int, text: String) {
-        self.path = path
-        self.line = line
-        self.text = text
+        public init(path: VirtualPath, line: Int, text: String) {
+            self.path = path
+            self.line = line
+            self.text = text
+        }
     }
 }
 
-public enum ColonyFileSystemError: Error, Sendable, Equatable {
-    case invalidPath(String)
-    case notFound(ColonyVirtualPath)
-    case isDirectory(ColonyVirtualPath)
-    case alreadyExists(ColonyVirtualPath)
-    case ioError(String)
+extension ColonyFileSystem {
+    public enum Error: Swift.Error, Sendable, Equatable {
+        case invalidPath(String)
+        case notFound(VirtualPath)
+        case isDirectory(VirtualPath)
+        case alreadyExists(VirtualPath)
+        case ioError(String)
+    }
 }
 
-public protocol ColonyFileSystemBackend: Sendable {
-    func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo]
-    func read(at path: ColonyVirtualPath) async throws -> String
-    func write(at path: ColonyVirtualPath, content: String) async throws
-    func edit(
-        at path: ColonyVirtualPath,
-        oldString: String,
-        newString: String,
-        replaceAll: Bool
-    ) async throws -> Int
-    func glob(pattern: String) async throws -> [ColonyVirtualPath]
-    func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch]
+extension ColonyFileSystem {
+    public protocol Service: Sendable {
+        func list(at path: VirtualPath) async throws -> [FileInfo]
+        func read(at path: VirtualPath) async throws -> String
+        func write(at path: VirtualPath, content: String) async throws
+        func edit(
+            at path: VirtualPath,
+            oldString: String,
+            newString: String,
+            replaceAll: Bool
+        ) async throws -> Int
+        func glob(pattern: String) async throws -> [VirtualPath]
+        func grep(pattern: String, glob: String?) async throws -> [GrepMatch]
+    }
 }
 
-public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
-    private var files: [ColonyVirtualPath: String]
+// MARK: - Deprecated Typealiases
 
-    public init(files: [ColonyVirtualPath: String] = [:]) {
+@available(*, deprecated, renamed: "ColonyFileSystem.VirtualPath")
+public typealias ColonyVirtualPath = ColonyFileSystem.VirtualPath
+
+@available(*, deprecated, renamed: "ColonyFileSystem.FileInfo")
+public typealias ColonyFileInfo = ColonyFileSystem.FileInfo
+
+@available(*, deprecated, renamed: "ColonyFileSystem.GrepMatch")
+public typealias ColonyGrepMatch = ColonyFileSystem.GrepMatch
+
+@available(*, deprecated, renamed: "ColonyFileSystem.Error")
+public typealias FileSystemError = ColonyFileSystem.Error
+
+@available(*, deprecated, renamed: "ColonyFileSystem.Error")
+public typealias ColonyFileSystemError = ColonyFileSystem.Error
+
+@available(*, deprecated, renamed: "ColonyFileSystem.Service")
+public typealias ColonyFileSystemService = ColonyFileSystem.Service
+
+@available(*, deprecated, renamed: "ColonyFileSystem.Service")
+public typealias ColonyFileSystemBackend = ColonyFileSystem.Service
+
+// MARK: - In-Memory Backend
+
+public actor ColonyInMemoryFileSystemBackend: ColonyFileSystem.Service {
+    private var files: [ColonyFileSystem.VirtualPath: String]
+
+    public init(files: [ColonyFileSystem.VirtualPath: String] = [:]) {
         self.files = files
     }
 
-    public func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo] {
+    public func list(at path: ColonyFileSystem.VirtualPath) async throws -> [ColonyFileSystem.FileInfo] {
         let prefix = path.rawValue == "/" ? "/" : (path.rawValue + "/")
         var directories: Set<String> = []
-        var results: [ColonyFileInfo] = []
+        var results: [ColonyFileSystem.FileInfo] = []
 
         for (filePath, content) in files {
             guard filePath.rawValue.hasPrefix(prefix) else { continue }
@@ -138,7 +179,7 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
                 directories.insert(dirPath)
             } else {
                 results.append(
-                    ColonyFileInfo(
+                    ColonyFileSystem.FileInfo(
                         path: filePath,
                         isDirectory: false,
                         sizeBytes: content.utf8.count
@@ -148,9 +189,9 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
         }
 
         for dir in directories {
-            let dirPath = try ColonyVirtualPath(dir)
+            let dirPath = try ColonyFileSystem.VirtualPath(dir)
             results.append(
-                ColonyFileInfo(path: dirPath, isDirectory: true, sizeBytes: nil)
+                ColonyFileSystem.FileInfo(path: dirPath, isDirectory: true, sizeBytes: nil)
             )
         }
 
@@ -158,36 +199,36 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
         return results
     }
 
-    public func read(at path: ColonyVirtualPath) async throws -> String {
+    public func read(at path: ColonyFileSystem.VirtualPath) async throws -> String {
         guard let content = files[path] else {
-            throw ColonyFileSystemError.notFound(path)
+            throw ColonyFileSystem.Error.notFound(path)
         }
         return content
     }
 
-    public func write(at path: ColonyVirtualPath, content: String) async throws {
+    public func write(at path: ColonyFileSystem.VirtualPath, content: String) async throws {
         if files[path] != nil {
-            throw ColonyFileSystemError.alreadyExists(path)
+            throw ColonyFileSystem.Error.alreadyExists(path)
         }
         files[path] = content
     }
 
     public func edit(
-        at path: ColonyVirtualPath,
+        at path: ColonyFileSystem.VirtualPath,
         oldString: String,
         newString: String,
         replaceAll: Bool
     ) async throws -> Int {
         guard let content = files[path] else {
-            throw ColonyFileSystemError.notFound(path)
+            throw ColonyFileSystem.Error.notFound(path)
         }
         guard oldString.isEmpty == false else {
-            throw ColonyFileSystemError.ioError("oldString must be non-empty.")
+            throw ColonyFileSystem.Error.ioError("oldString must be non-empty.")
         }
 
         let occurrences = content.components(separatedBy: oldString).count - 1
         if occurrences == 0 {
-            throw ColonyFileSystemError.ioError("No occurrences of the provided oldString were found.")
+            throw ColonyFileSystem.Error.ioError("No occurrences of the provided oldString were found.")
         }
 
         let updated: String
@@ -201,16 +242,16 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
         return replaceAll ? occurrences : 1
     }
 
-    public func glob(pattern: String) async throws -> [ColonyVirtualPath] {
+    public func glob(pattern: String) async throws -> [ColonyFileSystem.VirtualPath] {
         let matches = files.keys
             .filter { Self.matchesGlob(pattern: pattern, path: $0.rawValue) }
             .sorted { $0.rawValue.utf8.lexicographicallyPrecedes($1.rawValue.utf8) }
         return matches
     }
 
-    public func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch] {
+    public func grep(pattern: String, glob: String?) async throws -> [ColonyFileSystem.GrepMatch] {
         guard pattern.isEmpty == false else { return [] }
-        var matches: [ColonyGrepMatch] = []
+        var matches: [ColonyFileSystem.GrepMatch] = []
 
         let candidatePaths = files.keys.filter { path in
             if let glob {
@@ -224,7 +265,7 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
             let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
             for (index, line) in lines.enumerated() where line.contains(pattern) {
                 matches.append(
-                    ColonyGrepMatch(path: path, line: index + 1, text: String(line))
+                    ColonyFileSystem.GrepMatch(path: path, line: index + 1, text: String(line))
                 )
             }
         }
@@ -248,7 +289,9 @@ public actor ColonyInMemoryFileSystemBackend: ColonyFileSystemBackend {
     }
 }
 
-public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
+// MARK: - Disk Backend
+
+public actor ColonyDiskFileSystemBackend: ColonyFileSystem.Service {
     private let canonicalRoot: URL
     private let fileManager: FileManager
 
@@ -257,7 +300,7 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         self.fileManager = fileManager
     }
 
-    public func list(at path: ColonyVirtualPath) async throws -> [ColonyFileInfo] {
+    public func list(at path: ColonyFileSystem.VirtualPath) async throws -> [ColonyFileSystem.FileInfo] {
         let url = try resolve(path, asDirectory: true)
         let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
         let children = try fileManager.contentsOfDirectory(
@@ -265,62 +308,62 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
             includingPropertiesForKeys: keys,
             options: [.skipsHiddenFiles]
         )
-        var results: [ColonyFileInfo] = []
+        var results: [ColonyFileSystem.FileInfo] = []
         results.reserveCapacity(children.count)
         for child in children {
             let resource = try child.resourceValues(forKeys: Set(keys))
             let isDirectory = resource.isDirectory ?? false
             let size = isDirectory ? nil : resource.fileSize
-            results.append(ColonyFileInfo(path: try virtualPath(for: child), isDirectory: isDirectory, sizeBytes: size))
+            results.append(ColonyFileSystem.FileInfo(path: try virtualPath(for: child), isDirectory: isDirectory, sizeBytes: size))
         }
         results.sort { lhs, rhs in lhs.path.rawValue.utf8.lexicographicallyPrecedes(rhs.path.rawValue.utf8) }
         return results
     }
 
-    public func read(at path: ColonyVirtualPath) async throws -> String {
+    public func read(at path: ColonyFileSystem.VirtualPath) async throws -> String {
         let url = try resolve(path, asDirectory: false)
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-            throw ColonyFileSystemError.notFound(path)
+            throw ColonyFileSystem.Error.notFound(path)
         }
         if isDirectory.boolValue {
-            throw ColonyFileSystemError.isDirectory(path)
+            throw ColonyFileSystem.Error.isDirectory(path)
         }
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    public func write(at path: ColonyVirtualPath, content: String) async throws {
+    public func write(at path: ColonyFileSystem.VirtualPath, content: String) async throws {
         let url = try resolve(path, asDirectory: false)
         let parent = url.deletingLastPathComponent()
         let resolvedParent = parent.resolvingSymlinksInPath().standardizedFileURL
         guard Self.isWithinRoot(resolvedParent, root: canonicalRoot) else {
-            throw ColonyFileSystemError.invalidPath(path.rawValue)
+            throw ColonyFileSystem.Error.invalidPath(path.rawValue)
         }
 
         if fileManager.fileExists(atPath: url.path) {
-            throw ColonyFileSystemError.alreadyExists(path)
+            throw ColonyFileSystem.Error.alreadyExists(path)
         }
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true, attributes: nil)
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            throw ColonyFileSystemError.ioError(error.localizedDescription)
+            throw ColonyFileSystem.Error.ioError(error.localizedDescription)
         }
     }
 
     public func edit(
-        at path: ColonyVirtualPath,
+        at path: ColonyFileSystem.VirtualPath,
         oldString: String,
         newString: String,
         replaceAll: Bool
     ) async throws -> Int {
         let existing = try await read(at: path)
         guard oldString.isEmpty == false else {
-            throw ColonyFileSystemError.ioError("oldString must be non-empty.")
+            throw ColonyFileSystem.Error.ioError("oldString must be non-empty.")
         }
         let occurrences = existing.components(separatedBy: oldString).count - 1
         if occurrences == 0 {
-            throw ColonyFileSystemError.ioError("No occurrences of the provided oldString were found.")
+            throw ColonyFileSystem.Error.ioError("No occurrences of the provided oldString were found.")
         }
         let updated: String
         if replaceAll {
@@ -333,14 +376,14 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         do {
             try updated.write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            throw ColonyFileSystemError.ioError(error.localizedDescription)
+            throw ColonyFileSystem.Error.ioError(error.localizedDescription)
         }
         return replaceAll ? occurrences : 1
     }
 
-    public func glob(pattern: String) async throws -> [ColonyVirtualPath] {
+    public func glob(pattern: String) async throws -> [ColonyFileSystem.VirtualPath] {
         let urls = try allFileURLs()
-        let matched = urls.compactMap { url -> ColonyVirtualPath? in
+        let matched = urls.compactMap { url -> ColonyFileSystem.VirtualPath? in
             let virt = try? virtualPath(for: url)
             guard let virt else { return nil }
             guard ColonyInMemoryFileSystemBackend.matchesGlob(pattern: pattern, path: virt.rawValue) else { return nil }
@@ -349,10 +392,10 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         return matched.sorted { $0.rawValue.utf8.lexicographicallyPrecedes($1.rawValue.utf8) }
     }
 
-    public func grep(pattern: String, glob: String?) async throws -> [ColonyGrepMatch] {
+    public func grep(pattern: String, glob: String?) async throws -> [ColonyFileSystem.GrepMatch] {
         guard pattern.isEmpty == false else { return [] }
         let urls = try allFileURLs()
-        var matches: [ColonyGrepMatch] = []
+        var matches: [ColonyFileSystem.GrepMatch] = []
         for url in urls {
             guard let virt = try? virtualPath(for: url) else { continue }
             if let glob, ColonyInMemoryFileSystemBackend.matchesGlob(pattern: glob, path: virt.rawValue) == false {
@@ -361,7 +404,7 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
             let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
             for (index, line) in lines.enumerated() where line.contains(pattern) {
-                matches.append(ColonyGrepMatch(path: virt, line: index + 1, text: String(line)))
+                matches.append(ColonyFileSystem.GrepMatch(path: virt, line: index + 1, text: String(line)))
             }
         }
         matches.sort {
@@ -373,13 +416,13 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
 
     // MARK: - Internals
 
-    private func resolve(_ path: ColonyVirtualPath, asDirectory: Bool) throws -> URL {
+    private func resolve(_ path: ColonyFileSystem.VirtualPath, asDirectory: Bool) throws -> URL {
         let relative = path.rawValue == "/" ? "" : String(path.rawValue.dropFirst())
         let candidate = canonicalRoot.appendingPathComponent(relative, isDirectory: asDirectory)
         let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
 
         guard Self.isWithinRoot(resolved, root: canonicalRoot) else {
-            throw ColonyFileSystemError.invalidPath(path.rawValue)
+            throw ColonyFileSystem.Error.invalidPath(path.rawValue)
         }
         return resolved
     }
@@ -405,7 +448,7 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         return urls
     }
 
-    private func virtualPath(for url: URL) throws -> ColonyVirtualPath {
+    private func virtualPath(for url: URL) throws -> ColonyFileSystem.VirtualPath {
         let standardized = url.standardizedFileURL
         let rootPath = canonicalRoot.path
         let fullPath = standardized.path
@@ -416,11 +459,11 @@ public actor ColonyDiskFileSystemBackend: ColonyFileSystemBackend {
         } else if fullPath.hasPrefix(rootPath + "/") {
             suffix = String(fullPath.dropFirst(rootPath.count))
         } else {
-            throw ColonyFileSystemError.invalidPath(fullPath)
+            throw ColonyFileSystem.Error.invalidPath(fullPath)
         }
 
         let trimmed = suffix.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return try ColonyVirtualPath("/" + trimmed)
+        return try ColonyFileSystem.VirtualPath("/" + trimmed)
     }
 
     private static func isWithinRoot(_ candidate: URL, root: URL) -> Bool {

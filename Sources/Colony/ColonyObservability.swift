@@ -5,17 +5,17 @@ import ColonyCore
 public struct ColonyObservabilityEvent: Codable, Sendable, Equatable {
     public let name: String
     public let timestamp: Date
-    public let runID: UUID?
-    public let sessionID: String?
-    public let threadID: String?
+    public let runID: ColonyRunID?
+    public let sessionID: ColonyHarnessSessionID?
+    public let threadID: ColonyThreadID?
     public let attributes: [String: String]
 
     public init(
         name: String,
         timestamp: Date,
-        runID: UUID? = nil,
-        sessionID: String? = nil,
-        threadID: String? = nil,
+        runID: ColonyRunID? = nil,
+        sessionID: ColonyHarnessSessionID? = nil,
+        threadID: ColonyThreadID? = nil,
         attributes: [String: String] = [:]
     ) {
         self.name = name
@@ -72,7 +72,7 @@ public actor ColonyObservabilityEmitter {
         }
     }
 
-    public func emitHarnessEnvelope(_ envelope: ColonyHarnessEventEnvelope, threadID: HiveThreadID) async {
+    public func emitHarnessEnvelope(_ envelope: ColonyHarnessEventEnvelope, threadID: ColonyThreadID) async {
         var attributes: [String: String] = [
             "event_type": envelope.eventType.rawValue,
             "sequence": String(envelope.sequence),
@@ -86,9 +86,9 @@ public actor ColonyObservabilityEmitter {
         let event = ColonyObservabilityEvent(
             name: "colony.harness.\(envelope.eventType.rawValue)",
             timestamp: envelope.timestamp,
-            runID: envelope.runID,
-            sessionID: envelope.sessionID.rawValue,
-            threadID: threadID.rawValue,
+            runID: ColonyRunID(rawValue: envelope.runID.uuidString),
+            sessionID: envelope.sessionID,
+            threadID: threadID,
             attributes: attributes
         )
 

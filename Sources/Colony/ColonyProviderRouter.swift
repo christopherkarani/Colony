@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public enum ColonyProviderRouterError: Error, Sendable, CustomStringConvertible, Equatable {
+public enum ProviderRoutingError: Error, Sendable, CustomStringConvertible, Equatable {
     case noProvidersConfigured
     case noEligibleProvider(reasons: [String])
     case degraded(message: String)
@@ -19,6 +19,10 @@ public enum ColonyProviderRouterError: Error, Sendable, CustomStringConvertible,
     }
 }
 
+@available(*, deprecated, renamed: "ProviderRoutingError")
+public typealias ColonyProviderRouterError = ProviderRoutingError
+
+@available(*, deprecated, message: "Use ColonyModelRouter with .prioritized strategy instead")
 public struct ColonyProviderRouter: HiveModelRouter, Sendable {
     public struct Provider: Sendable {
         public let id: String
@@ -102,7 +106,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
     fileprivate func complete(request: HiveChatRequest, hints: HiveInferenceHints?) async throws -> HiveChatResponse {
         _ = hints
         guard providers.isEmpty == false else {
-            throw ColonyProviderRouterError.noProvidersConfigured
+            throw ProviderRoutingError.noProvidersConfigured
         }
 
         var failures: [String] = []
@@ -135,7 +139,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         switch policy.gracefulDegradation {
         case .fail:
-            throw ColonyProviderRouterError.noEligibleProvider(reasons: failures)
+            throw ProviderRoutingError.noEligibleProvider(reasons: failures)
         case .syntheticResponse(let message):
             return HiveChatResponse(
                 message: HiveChatMessage(
@@ -163,7 +167,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
             }
         }
 
-        throw lastError ?? ColonyProviderRouterError.noEligibleProvider(reasons: [provider.id + ":unknown failure"])
+        throw lastError ?? ProviderRoutingError.noEligibleProvider(reasons: [provider.id + ":unknown failure"])
     }
 
     private func estimatedRequestCostUSD(for request: HiveChatRequest, provider: Provider) -> Double {

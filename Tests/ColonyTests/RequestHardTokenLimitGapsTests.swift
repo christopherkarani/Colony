@@ -148,7 +148,7 @@ func defaultSubagentRuntime_inheritsOnDeviceHard4kRequestCap() async throws {
 
     // Keep under the cloud profile compaction threshold (~12k) so the user prompt is not dropped before budgeting.
     let prompt = String(repeating: "p", count: 20_000) // ~5k tokens via ColonyApproximateTokenizer
-    _ = try await registry.run(ColonySubagentRequest(prompt: prompt, subagentType: "general-purpose"))
+    _ = try await registry.run(ColonySubagentRequest(prompt: prompt, subagentType: .general))
 
     guard let request = recordingModel.recordedRequests().last else {
         #expect(Bool(false))

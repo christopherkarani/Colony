@@ -2,7 +2,7 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
+package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     private enum RegistryError: Error, Sendable, Equatable {
         case unsupportedSubagentType(String)
         case runInterrupted
@@ -74,9 +74,11 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
     }
 
     public func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult {
-        let type = request.subagentType.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard type == "general-purpose" || type == "compactor" else {
-            throw RegistryError.unsupportedSubagentType(request.subagentType)
+        let type = request.subagentType
+        let isGeneral = type == .general
+        let isCompactor = type == .compactor
+        guard isGeneral || isCompactor else {
+            throw RegistryError.unsupportedSubagentType(request.subagentType.rawValue)
         }
 
         let delegatedPrompt = try await renderDelegatedPrompt(request)
@@ -88,7 +90,7 @@ public struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         )
         configuration.toolApprovalPolicy = .never
 
-        if type == "compactor" {
+        if isCompactor {
             configuration.additionalSystemPrompt = mergeAdditionalSystemPrompt(
                 base: configuration.additionalSystemPrompt,
                 extra: """

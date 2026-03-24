@@ -267,7 +267,7 @@ func taskE_durableRunStateStorePersistsAndRestarts() async throws {
     let store = try ColonyDurableRunStateStore(baseURL: directory)
     let runID = UUID(uuidString: "66A4FF14-ED12-4282-B90C-4D261C3E182A")!
     let sessionID = ColonyHarnessSessionID(rawValue: "session-task-e")
-    let threadID = HiveThreadID("thread-task-e-run")
+    let threadID = ColonyThreadID("thread-task-e-run")
     let timestamp = Date(timeIntervalSince1970: 1_700_000_111)
 
     try await store.appendEvent(
@@ -301,7 +301,7 @@ func taskE_durableRunStateStorePersistsAndRestarts() async throws {
     #expect(events.map(\.eventType) == [.runStarted, .runInterrupted])
 
     let latestInterrupted = try await reopened.latestInterruptedRun(sessionID: sessionID)
-    #expect(latestInterrupted?.runID == runID)
+    #expect(latestInterrupted?.runID.hiveRunID.rawValue == runID)
 }
 
 @Test("Task E artifact store applies retention and redaction")
@@ -314,8 +314,8 @@ func taskE_artifactStoreRetentionAndRedaction() async throws {
         retentionPolicy: ColonyArtifactRetentionPolicy(maxArtifacts: 2, maxAge: nil)
     )
 
-    let threadID = HiveThreadID("thread-task-e-artifact")
-    let runID = HiveRunID(UUID(uuidString: "6511EC8B-1CA8-4D0E-83A4-7537CA6E76C8")!)
+    let threadID = ColonyThreadID("thread-task-e-artifact")
+    let runID = ColonyRunID(hiveRunID: HiveRunID(UUID(uuidString: "6511EC8B-1CA8-4D0E-83A4-7537CA6E76C8")!))
     let base = Date(timeIntervalSince1970: 1_700_000_500)
 
     let first = try await store.put(
@@ -351,17 +351,17 @@ func taskE_artifactStoreRetentionAndRedaction() async throws {
     #expect(records.map(\.id).contains(second.id) == true)
     #expect(records.map(\.id).contains(third.id) == true)
 
-    let firstContent = try await store.readContent(id: first.id)
+    let firstContent = try await store.readContent(id: first.id.rawValue)
     #expect(firstContent == nil)
 
-    let thirdContent = try await store.readContent(id: third.id)
+    let thirdContent = try await store.readContent(id: third.id.rawValue)
     #expect(thirdContent == "safe-3")
 
     let secondRecord = records.first { $0.id == second.id }
     #expect(secondRecord?.redacted == true)
     #expect(secondRecord?.metadata["token"] == "[REDACTED]")
 
-    let secondContent = try await store.readContent(id: second.id)
+    let secondContent = try await store.readContent(id: second.id.rawValue)
     #expect(secondContent == "token=[REDACTED]")
 }
 
@@ -497,7 +497,7 @@ func taskE_durableRunStateRebuildsMissingSnapshot() async throws {
     let store = try ColonyDurableRunStateStore(baseURL: directory)
     let runID = UUID()
     let sessionID = ColonyHarnessSessionID(rawValue: "session-rebuild")
-    let threadID = HiveThreadID("thread-rebuild")
+    let threadID = ColonyThreadID("thread-rebuild")
     let timestamp = Date()
 
     try await store.appendEvent(
@@ -591,11 +591,11 @@ func taskE_observabilityRedactionAndHarnessIntegration() async throws {
     )
 
     let latestState = try await runStateStore.latestRunState(sessionID: ColonyHarnessSessionID(rawValue: "session-observability-task-e"))
-    #expect(latestState?.threadID == "thread-task-e-observability")
+    #expect(latestState?.threadID == ColonyThreadID("thread-task-e-observability"))
     #expect(latestState?.phase == .finished)
     #expect(latestState != nil)
     if let latestState {
-        let persistedEvents = try await runStateStore.loadEvents(runID: latestState.runID)
+        let persistedEvents = try await runStateStore.loadEvents(runID: latestState.runID.hiveRunID.rawValue)
         #expect(persistedEvents.map(\.eventType).contains(.runStarted))
         #expect(persistedEvents.map(\.eventType).contains(.runFinished))
     }

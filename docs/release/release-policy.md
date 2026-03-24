@@ -56,6 +56,32 @@ If a release has no user-facing API changes, state that explicitly.
 4. Create a version tag matching SemVer.
 5. Publish release notes aligned with changelog entries.
 
+## GA Criteria
+
+Before Colony reaches 1.0 GA, the following must be complete:
+
+### API Stability
+- [ ] No public API surface requires importing `HiveCore` to use baseline runtime
+- [ ] All public IDs use `ColonyID<Domain>` or typealiases (no raw String IDs)
+- [ ] No `@unchecked Sendable` in public runtime classes without documented proof
+- [ ] All test-only implementations demoted to `package` access
+
+### Testing & Validation
+- [ ] `swift test` passes with 80%+ coverage
+- [ ] Contract tests pass (`scripts/ci/run-contract-tests.sh`)
+- [ ] E2E approve/deny/resume tests pass (`scripts/ci/run-e2e-tests.sh`)
+- [ ] Security tests pass (`scripts/ci/run-security-tests.sh`)
+
+### Documentation
+- [ ] CHANGELOG.md updated with all breaking changes and migration notes
+- [ ] API reference docs regenerated (`docs/reference/`)
+- [ ] Migration guide published for any breaking changes
+
+### Release Infrastructure
+- [ ] Version set to non-placeholder SemVer in `Colony.swift`
+- [ ] CI green on protected release branch
+- [ ] Dependency lockfile reproducibility verified
+
 ## Non-Goals
 
 - Floating dependency versions.

@@ -111,21 +111,21 @@ private final class MemoryToolChainModel: HiveModelClient, @unchecked Sendable {
 
 @Test("Lane router classifies coding and general intents deterministically")
 func laneRouterClassifiesCodingAndGeneralIntents() {
-    #expect(ColonyAgentFactory.routeLane(forIntent: "Fix this Swift build error and update tests.") == .coding)
-    #expect(ColonyAgentFactory.routeLane(forIntent: "Draft a concise team update email.") == .general)
-    #expect(ColonyAgentFactory.routeLane(forIntent: "Can you decode this base64 string?") == .general)
+    #expect(ColonyAgentFactory.routeLane(forIntent: "Fix this Swift build error and update tests.") == .code)
+    #expect(ColonyAgentFactory.routeLane(forIntent: "Draft a concise team update email.") == .generalPurpose)
+    #expect(ColonyAgentFactory.routeLane(forIntent: "Can you decode this base64 string?") == .generalPurpose)
 }
 
 @Test("Coding lane preset enables coding-specific capabilities")
 func codingLanePresetEnablesCodingSpecificCapabilities() {
-    let coding = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model", lane: .coding)
+    let coding = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model", lane: .code)
     #expect(coding.capabilities.contains(.shell))
     #expect(coding.capabilities.contains(.shellSessions))
     #expect(coding.capabilities.contains(.git))
     #expect(coding.capabilities.contains(.lsp))
     #expect(coding.capabilities.contains(.applyPatch))
 
-    let general = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model", lane: .general)
+    let general = ColonyAgentFactory.configuration(profile: .onDevice4k, modelName: "test-model", lane: .generalPurpose)
     #expect(general.capabilities.contains(.shell) == false)
     #expect(general.capabilities.contains(.git) == false)
     #expect(general.capabilities.contains(.lsp) == false)

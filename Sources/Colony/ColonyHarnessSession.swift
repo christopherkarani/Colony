@@ -2,11 +2,14 @@ import Foundation
 import HiveCore
 import ColonyCore
 
-public enum ColonyHarnessSessionError: Error, Sendable {
+public enum HarnessError: Error, Sendable {
     case runAlreadyActive
     case noInterruptedRun
     case runStatePersistenceFailed(String)
 }
+
+@available(*, deprecated, renamed: "HarnessError")
+public typealias ColonyHarnessSessionError = HarnessError
 
 public actor ColonyHarnessSession {
     public let sessionID: ColonyHarnessSessionID
@@ -46,7 +49,7 @@ public actor ColonyHarnessSession {
 
     public func start(input: String) async throws {
         guard activeAttemptID == nil else {
-            throw ColonyHarnessSessionError.runAlreadyActive
+            throw HarnessError.runAlreadyActive
         }
 
         interruptionQueue.removeAll(keepingCapacity: false)
@@ -75,10 +78,10 @@ public actor ColonyHarnessSession {
 
     public func resume(decision: ColonyToolApprovalDecision) async throws {
         guard activeAttemptID == nil else {
-            throw ColonyHarnessSessionError.runAlreadyActive
+            throw HarnessError.runAlreadyActive
         }
         guard interruptionQueue.isEmpty == false else {
-            throw ColonyHarnessSessionError.noInterruptedRun
+            throw HarnessError.noInterruptedRun
         }
         let interruptedState = interruptionQueue.removeFirst()
 
@@ -295,10 +298,10 @@ public actor ColonyHarnessSession {
 
         if let runStateStore {
             do {
-                try await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
+                try await runStateStore.appendEvent(envelope, threadID: ColonyThreadID(hiveThreadID: runtime.threadID))
             } catch {
                 let rendered = String(reflecting: error)
-                let persistenceError = ColonyHarnessSessionError.runStatePersistenceFailed(rendered)
+                let persistenceError = HarnessError.runStatePersistenceFailed(rendered)
                 for continuation in subscribers.values {
                     continuation.finish(throwing: persistenceError)
                 }
@@ -318,7 +321,7 @@ public actor ColonyHarnessSession {
         }
 
         if let observabilityEmitter {
-            await observabilityEmitter.emitHarnessEnvelope(envelope, threadID: runtime.threadID)
+            await observabilityEmitter.emitHarnessEnvelope(envelope, threadID: ColonyThreadID(hiveThreadID: runtime.threadID))
         }
     }
 
