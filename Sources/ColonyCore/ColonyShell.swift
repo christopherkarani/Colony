@@ -172,14 +172,23 @@ public struct ColonyShellSessionSnapshot: Sendable, Equatable {
 /// For simple command execution, migrate to `ColonyShellService`.
 @available(*, deprecated, renamed: "ColonyShellService", message: "Use ColonyShellService instead. Session management methods are being moved to a separate protocol.")
 public protocol ColonyShellBackend: ColonyShellService {
+    /// Opens an interactive shell session.
     func openSession(_ request: ColonyShellSessionOpenRequest) async throws -> ColonyShellSessionID
+
+    /// Writes data to an open shell session.
     func writeToSession(_ sessionID: ColonyShellSessionID, data: Data) async throws
+
+    /// Reads data from an open shell session.
     func readFromSession(
         _ sessionID: ColonyShellSessionID,
         maxBytes: Int,
         timeoutNanoseconds: UInt64?
     ) async throws -> ColonyShellSessionReadResult
+
+    /// Closes an open shell session.
     func closeSession(_ sessionID: ColonyShellSessionID) async
+
+    /// Lists all open shell sessions.
     func listSessions() async -> [ColonyShellSessionSnapshot]
 }
 

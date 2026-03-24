@@ -3,6 +3,19 @@ import Foundation
 import HiveCore
 import ColonyCore
 
+/// The HiveSchema definition for Colony agents.
+///
+/// This schema defines the channel structure, message types, and input handling
+/// for the Colony runtime loop. It specifies how messages, tool calls, todos,
+/// and final answers flow through the agent graph.
+///
+/// The schema defines these channels:
+/// - `messages` - All chat messages in the conversation
+/// - `llmInputMessages` - Messages being sent to the LLM
+/// - `pendingToolCalls` - Tool calls awaiting execution
+/// - `finalAnswer` - The final response from the agent
+/// - `todos` - Task tracking todos
+/// - `currentToolCall` - The currently executing tool call
 public enum ColonySchema: HiveSchema {
     public typealias Context = ColonyContext
     public typealias Input = String
@@ -112,6 +125,13 @@ public enum ColonySchema: HiveSchema {
     }
 }
 
+/// The runtime context passed to the agent graph nodes.
+///
+/// ColonyContext holds all backend references and configuration needed
+/// by the agent at runtime. Each field represents an optional capability
+/// that may or may not be wired depending on the agent's configuration.
+///
+/// - SeeAlso: `ColonyConfiguration` for agent settings
 public struct ColonyContext: Sendable {
     public let configuration: ColonyConfiguration
     public let filesystem: (any ColonyFileSystemBackend)?
@@ -158,6 +178,15 @@ public struct ColonyContext: Sendable {
     }
 }
 
+/// The compiled Colony agent graph definition.
+///
+/// ColonyAgent contains the node IDs and compilation logic for building
+/// the agent's Hive graph. The agent loop cycles through:
+/// 1. `nodePreModel` - Preprocessing before model call
+/// 2. `nodeModel` - LLM inference
+/// 3. `nodeRouteAfterModel` - Routing decision
+/// 4. `nodeTools` - Tool selection
+/// 5. `nodeToolExecute` - Tool execution
 public enum ColonyAgent {
     public static let nodePreModel = HiveNodeID("preModel")
     public static let nodeModel = HiveNodeID("model")

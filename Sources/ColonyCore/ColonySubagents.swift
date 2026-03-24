@@ -150,7 +150,10 @@ public protocol ColonySubagentService: Sendable {
 /// For simple task delegation, migrate to `ColonySubagentService`.
 @available(*, deprecated, renamed: "ColonySubagentService", message: "Use ColonySubagentService instead. Listing methods are being moved to a separate protocol.")
 public protocol ColonySubagentRegistry: ColonySubagentService {
+    /// Lists all available subagents.
     func listSubagents() -> [ColonySubagentDescriptor]
+
+    /// Runs a subagent task with the given request.
     func run(_ request: ColonySubagentRequest) async throws -> ColonySubagentResult
 }
 
