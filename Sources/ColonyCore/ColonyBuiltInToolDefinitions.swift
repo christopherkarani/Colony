@@ -1,5 +1,23 @@
 import HiveCore
 
+/// Collection of built-in tool definitions for Colony agents.
+///
+/// `ColonyBuiltInToolDefinitions` provides pre-configured `HiveToolDefinition` instances
+/// for all tools that Colony supports out of the box. Each tool includes a name, description,
+/// and JSON schema for its parameters.
+///
+/// Tools are organized by capability:
+/// - **Filesystem**: `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`
+/// - **Planning**: `write_todos`, `read_todos`
+/// - **Shell**: `execute`, `shell_open`, `shell_write`, `shell_read`, `shell_close`
+/// - **Scratchbook/Workspace**: `scratch_read`, `scratch_add`, `scratch_update`, `scratch_complete`, `scratch_pin`, `scratch_unpin`
+/// - **Git**: `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push`, `git_prepare_pr`
+/// - **LSP**: `lsp_symbols`, `lsp_diagnostics`, `lsp_references`, `lsp_apply_edit`
+/// - **Memory**: `wax_recall`, `wax_remember`
+/// - **MCP**: `mcp_list_resources`, `mcp_read_resource`
+/// - **Plugins**: `plugin_list_tools`, `plugin_invoke`
+/// - **Web/Code Search**: `web_search`, `code_search`
+/// - **Misc**: `apply_patch`, `task` (subagent delegation)
 public enum ColonyBuiltInToolDefinitions {
     public static let taskName = "task"
 
@@ -357,6 +375,14 @@ public enum ColonyBuiltInToolDefinitions {
         """
     )
 
+    /// Constructs the `task` tool definition with dynamic subagent availability.
+    ///
+    /// The `task` tool delegates work to a specialized subagent. This factory method
+    /// generates the tool definition with the list of currently available subagents
+    /// embedded in the description.
+    ///
+    /// - Parameter availableSubagents: List of subagents that can be invoked
+    /// - Returns: A `HiveToolDefinition` for the `task` tool
     public static func task(availableSubagents: [ColonySubagentDescriptor]) -> HiveToolDefinition {
         let available: String
         if availableSubagents.isEmpty {

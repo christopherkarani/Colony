@@ -5,18 +5,40 @@ import ColonyCore
 
 // MARK: - Builder Error
 
+/// Error thrown when ColonyBuilder configuration is invalid.
 public struct ColonyBuilderError: Error, Sendable {
+    /// A description of the error.
     public let message: String
 
+    /// Creates a new builder error.
+    ///
+    /// - Parameter message: The error message.
     public init(message: String) {
         self.message = message
     }
 }
 
+/// Profile presets for Colony runtime configuration.
+///
+/// Use profiles to quickly configure Colony for different deployment scenarios.
+/// Each profile sets appropriate token limits, compaction policies, and tool approval rules.
 public enum ColonyProfile: Sendable {
     /// Optimize for on-device runtimes with smaller context windows.
+    ///
+    /// This profile uses:
+    /// - Strict ~4k token budget
+    /// - Compaction at 2,600 tokens
+    /// - Tool result eviction at 700 tokens
+    /// - Scratchbook enabled for state persistence
+    /// - AllowList tool approval policy for built-in safe tools
     case device
+
     /// Optimize for larger context windows and cloud runtimes.
+    ///
+    /// This profile uses:
+    /// - Generous token limits (compaction at 12k, eviction at 20k)
+    /// - No scratchbook by default
+    /// - No tool approval required (`.never` policy)
     case cloud
 }
 
@@ -29,11 +51,26 @@ extension ColonyProfile {
 @available(*, deprecated, renamed: "AgentMode")
 public typealias ColonyLane = AgentMode
 
+/// Configuration preset for specialized agent lanes.
+///
+/// Lanes provide focused configurations for specific task types
+/// (coding, research, knowledge retrieval).
 public struct ColonyLaneConfigurationPreset: Sendable {
+    /// Capabilities required for this lane.
     public var requiredCapabilities: ColonyCapabilities
+
+    /// Whether to include the tool list in the system prompt.
     public var includeToolListInSystemPrompt: Bool?
+
+    /// Additional instructions appended to the system prompt.
     public var additionalSystemPrompt: String?
 
+    /// Creates a new lane configuration preset.
+    ///
+    /// - Parameters:
+    ///   - requiredCapabilities: Required agent capabilities.
+    ///   - includeToolListInSystemPrompt: Whether to include tool list.
+    ///   - additionalSystemPrompt: Additional system prompt content.
     public init(
         requiredCapabilities: ColonyCapabilities = [],
         includeToolListInSystemPrompt: Bool? = nil,
@@ -45,6 +82,9 @@ public struct ColonyLaneConfigurationPreset: Sendable {
     }
 }
 
+/// System clock implementation using DispatchTime.
+///
+/// This clock provides monotonic time for runtime coordination.
 public struct ColonySystemClock: HiveClock, Sendable {
     public init() {}
 
@@ -57,6 +97,10 @@ public struct ColonySystemClock: HiveClock, Sendable {
     }
 }
 
+/// A no-op logger that discards all log messages.
+///
+/// Use this logger when logging is not needed or when running in production
+/// with logging handled by external systems.
 public struct ColonyNoopLogger: HiveLogger, Sendable {
     public init() {}
     public func debug(_ message: String, metadata: [String: String]) {}
@@ -64,6 +108,11 @@ public struct ColonyNoopLogger: HiveLogger, Sendable {
     public func error(_ message: String, metadata: [String: String]) {}
 }
 
+/// An in-memory checkpoint store for development and testing.
+///
+/// This store keeps all checkpoints in memory and does not persist
+/// them across application restarts. Use `ColonyDurableCheckpointStore`
+/// for production persistence.
 public actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
     private var checkpoints: [HiveCheckpoint<Schema>] = []
 
@@ -85,6 +134,22 @@ public actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointSt
 
 // MARK: - ColonyBuilder
 
+/// Builder for configuring and creating Colony runtimes.
+///
+/// `ColonyBuilder` provides a fluent API for constructing `ColonyRuntime` instances
+/// with custom configurations. Use the builder methods to set the model, profile,
+/// capabilities, and backends, then call `build()` to create the runtime.
+///
+/// Example:
+/// ```swift
+/// let runtime = try ColonyBuilder()
+///     .model(name: "llama3.2")
+///     .profile(.device)
+///     .capabilities([.planning, .filesystem, .subagents])
+///     .build()
+/// ```
+///
+/// Note: `ColonyAgentFactory` is a deprecated type alias for `ColonyBuilder`.
 public struct ColonyBuilder: Sendable {
     private var configuration: ColonyConfiguration
     private var profile: ColonyProfile
@@ -188,6 +253,10 @@ public struct ColonyBuilder: Sendable {
 
     // MARK: - Fluent API Methods
 
+    /// Sets the model name for this runtime.
+    ///
+    /// - Parameter name: The model name (e.g., "llama3.2").
+    /// - Returns: A new builder with the model name set.
     public func model(name: String) -> ColonyBuilder {
         var newConfig = configuration
         newConfig.modelName = name
@@ -218,6 +287,10 @@ public struct ColonyBuilder: Sendable {
         )
     }
 
+    /// Sets the profile for this runtime.
+    ///
+    /// - Parameter profile: The profile to use (`.device` or `.cloud`).
+    /// - Returns: A new builder with the profile set.
     public func profile(_ profile: ColonyProfile) -> ColonyBuilder {
         ColonyBuilder(
             configuration: configuration,
@@ -246,6 +319,10 @@ public struct ColonyBuilder: Sendable {
         )
     }
 
+    /// Sets the capabilities for this runtime.
+    ///
+    /// - Parameter capabilities: The capabilities to enable.
+    /// - Returns: A new builder with the capabilities set.
     public func capabilities(_ capabilities: ColonyCapabilities) -> ColonyBuilder {
         var newConfig = configuration
         newConfig.capabilities = capabilities
@@ -278,6 +355,10 @@ public struct ColonyBuilder: Sendable {
 
     // MARK: - Build Method
 
+    /// Builds and returns a configured `ColonyRuntime`.
+    ///
+    /// - Returns: A new `ColonyRuntime` configured with the builder's settings.
+    /// - Throws: `ColonyBuilderError` if the configuration is invalid (e.g., no model name set).
     public func build() throws -> ColonyRuntime {
         guard !configuration.modelName.isEmpty else {
             throw ColonyBuilderError(message: "Model name must be set before building")
@@ -371,6 +452,12 @@ public struct ColonyBuilder: Sendable {
 
     // MARK: - Legacy makeRuntime method
 
+    /// Creates a runtime using the legacy factory method.
+    ///
+    /// This method provides a more verbose API for backward compatibility.
+    /// New code should use `build()` instead.
+    ///
+    /// - Note: This method is deprecated in favor of the fluent builder pattern.
     public func makeRuntime(
         profile: ColonyProfile = .device,
         threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
@@ -495,6 +582,12 @@ public struct ColonyBuilder: Sendable {
 
     // MARK: - Static Helpers
 
+    /// Creates a configuration for the given profile and model name.
+    ///
+    /// - Parameters:
+    ///   - profile: The profile to use.
+    ///   - modelName: The model name.
+    /// - Returns: A configured `ColonyConfiguration`.
     public static func configuration(
         profile: ColonyProfile,
         modelName: String

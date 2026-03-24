@@ -1,6 +1,14 @@
 import HiveCore
 
+/// Protocol for tokenizing chat messages.
+///
+/// Implement this protocol to provide custom tokenization logic for message
+/// compaction and budget calculations.
 public protocol ColonyTokenizer: Sendable {
+    /// Counts the number of tokens in a message list.
+    ///
+    /// - Parameter messages: The messages to count tokens for
+    /// - Returns: An approximate token count
     func countTokens(_ messages: [HiveChatMessage]) -> Int
 }
 

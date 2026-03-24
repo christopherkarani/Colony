@@ -1,10 +1,16 @@
+/// Decision for a single tool call during per-tool approval.
 public enum ColonyPerToolApprovalDecision: String, Codable, Sendable, Equatable {
+    /// The tool call has been approved for execution.
     case approved
+    /// The tool call has been rejected; it will not execute.
     case rejected
 }
 
+/// Represents the approval decision for a single tool call.
 public struct ColonyPerToolApproval: Codable, Sendable, Equatable {
+    /// The unique identifier of the tool call this approval applies to.
     public var toolCallID: String
+    /// The approval decision for this tool call.
     public var decision: ColonyPerToolApprovalDecision
 
     public init(toolCallID: String, decision: ColonyPerToolApprovalDecision) {
@@ -18,11 +24,22 @@ public struct ColonyPerToolApproval: Codable, Sendable, Equatable {
     }
 }
 
+/// Overall tool approval decision from a human-in-the-loop interaction.
+///
+/// Use `ColonyToolApprovalDecision` to represent the result of an approval
+/// session where a user may approve all, reject all, or make per-tool decisions.
 public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
+    /// All tool calls are approved for execution.
     case approved
+    /// All tool calls are rejected; no tools will execute.
     case rejected
+    /// Per-tool decisions; each tool call has its own approval/rejection.
     case perTool([ColonyPerToolApproval])
 
+    /// Creates a per-tool decision from a dictionary mapping tool call IDs to decisions.
+    ///
+    /// - Parameter decisions: Dictionary from tool call ID to decision
+    /// - Returns: A `ColonyToolApprovalDecision.perTool` value
     public static func perTool(_ decisions: [String: ColonyPerToolApprovalDecision]) -> ColonyToolApprovalDecision {
         let normalized = decisions
             .map { ColonyPerToolApproval(toolCallID: $0.key, decision: $0.value) }
@@ -30,6 +47,10 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
         return .perTool(normalized)
     }
 
+    /// Returns the decision for a specific tool call ID.
+    ///
+    /// - Parameter toolCallID: The tool call ID to look up
+    /// - Returns: The decision for the tool call, or `nil` if not found
     public func decision(forToolCallID toolCallID: String) -> ColonyPerToolApprovalDecision? {
         switch self {
         case .approved:
@@ -96,15 +117,44 @@ public enum ColonyToolApprovalDecision: Codable, Sendable, Equatable {
     }
 }
 
+/// Policy determining when tool approval is required from a human.
+///
+/// `ColonyToolApprovalPolicy` controls the human-in-the-loop approval flow:
+/// - `.never` — No approval required; all tools execute automatically
+/// - `.always` — All tools require approval before execution
+/// - `.allowList` — Only tools NOT in the allow list require approval
+///
+/// Example:
+/// ```swift
+/// // Default: tools not in the list require approval
+/// let policy = ColonyToolApprovalPolicy.allowList(["ls", "read_file", "glob", "grep"])
+///
+/// // All tools require approval
+/// let strictPolicy: ColonyToolApprovalPolicy = .always
+///
+/// // No approval required
+/// let permissivePolicy: ColonyToolApprovalPolicy = .never
+/// ```
 public enum ColonyToolApprovalPolicy: Sendable {
+    /// No tool requires approval; all tools execute automatically.
     case never
+    /// Every tool requires approval before execution.
     case always
+    /// Only tools NOT in the provided set require approval.
     case allowList(Set<String>)
 
+    /// Convenience factory for creating an allow list from an array.
+    ///
+    /// - Parameter allowed: List of tool names that do NOT require approval
+    /// - Returns: An `.allowList` policy with the provided set
     public static func allowList(_ allowed: [String]) -> ColonyToolApprovalPolicy {
         .allowList(Set(allowed))
     }
 
+    /// Determines whether a specific tool requires approval.
+    ///
+    /// - Parameter toolName: The name of the tool to check
+    /// - Returns: `true` if the tool requires approval
     public func requiresApproval(for toolName: String) -> Bool {
         switch self {
         case .never:
@@ -116,6 +166,10 @@ public enum ColonyToolApprovalPolicy: Sendable {
         }
     }
 
+    /// Determines whether any of the provided tools require approval.
+    ///
+    /// - Parameter toolCalls: List of tool names to check
+    /// - Returns: `true` if any tool requires approval
     public func requiresApproval(for toolCalls: [String]) -> Bool {
         toolCalls.contains(where: requiresApproval(for:))
     }

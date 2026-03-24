@@ -1,10 +1,16 @@
 import Foundation
 
+/// A single item in the persistent memory store.
 public struct ColonyMemoryItem: Sendable, Codable, Equatable {
+    /// Unique identifier for this memory item.
     public var id: String
+    /// The content/text of this memory item.
     public var content: String
+    /// Tags for categorizing and filtering this item.
     public var tags: [String]
+    /// Arbitrary key-value metadata.
     public var metadata: [String: String]
+    /// Relevance score from a search query (set by the service after search).
     public var score: Double?
 
     public init(
@@ -24,8 +30,11 @@ public struct ColonyMemoryItem: Sendable, Codable, Equatable {
 
 // MARK: - New Request/Response Types (verb-based)
 
+/// Request to search for memory items.
 public struct ColonyMemorySearchRequest: Sendable, Codable, Equatable {
+    /// The search query string.
     public var query: String
+    /// Maximum number of results to return, or `nil` for implementation default.
     public var limit: Int?
 
     public init(query: String, limit: Int? = nil) {
@@ -34,7 +43,9 @@ public struct ColonyMemorySearchRequest: Sendable, Codable, Equatable {
     }
 }
 
+/// Response containing search results.
 public struct ColonyMemorySearchResponse: Sendable, Codable, Equatable {
+    /// Matching memory items, ordered by relevance.
     public var items: [ColonyMemoryItem]
 
     public init(items: [ColonyMemoryItem]) {
@@ -42,9 +53,13 @@ public struct ColonyMemorySearchResponse: Sendable, Codable, Equatable {
     }
 }
 
+/// Request to store a new memory item.
 public struct ColonyMemoryStoreRequest: Sendable, Codable, Equatable {
+    /// The content to store.
     public var content: String
+    /// Tags to associate with this item.
     public var tags: [String]
+    /// Arbitrary metadata to store alongside the content.
     public var metadata: [String: String]
 
     public init(
@@ -58,7 +73,9 @@ public struct ColonyMemoryStoreRequest: Sendable, Codable, Equatable {
     }
 }
 
+/// Response after storing a memory item.
 public struct ColonyMemoryStoreResponse: Sendable, Codable, Equatable {
+    /// The unique identifier assigned to the stored item.
     public var id: String
 
     public init(id: String) {
@@ -82,8 +99,22 @@ public typealias ColonyMemoryRememberResult = ColonyMemoryStoreResponse
 
 // MARK: - Service Protocol
 
+/// Service protocol for persistent memory operations.
+///
+/// Implement this protocol to provide custom memory backends for Colony.
+/// Memory services store and retrieve semi-permanent information that persists
+/// across agent invocations.
 public protocol ColonyMemoryService: Sendable {
+    /// Searches for memory items matching the query.
+    ///
+    /// - Parameter request: The search request containing a query string
+    /// - Returns: Search results ordered by relevance
     func search(_ request: ColonyMemorySearchRequest) async throws -> ColonyMemorySearchResponse
+
+    /// Stores a new memory item.
+    ///
+    /// - Parameter request: The store request containing content and metadata
+    /// - Returns: A response containing the assigned ID for the new item
     func store(_ request: ColonyMemoryStoreRequest) async throws -> ColonyMemoryStoreResponse
 }
 

@@ -1,14 +1,22 @@
 import Foundation
 
+/// Terminal emulation mode for shell sessions.
 public enum ColonyShellTerminalMode: String, Sendable, Codable {
+    /// Simple pipes-based I/O without terminal emulation.
     case pipes
+    /// PTY-based terminal with full emulation (supports colors, cursor control, etc.).
     case pty
 }
 
+/// Request to execute a shell command.
 public struct ColonyShellExecutionRequest: Sendable, Equatable {
+    /// The command string to execute.
     public var command: String
+    /// The working directory for the command, or `nil` for inherited.
     public var workingDirectory: ColonyVirtualPath?
+    /// Execution timeout in nanoseconds, or `nil` for no timeout.
     public var timeoutNanoseconds: UInt64?
+    /// Terminal emulation mode, or `nil` for default (`.pipes`).
     public var terminalMode: ColonyShellTerminalMode?
 
     public init(
@@ -24,10 +32,15 @@ public struct ColonyShellExecutionRequest: Sendable, Equatable {
     }
 }
 
+/// Result of a shell command execution.
 public struct ColonyShellExecutionResult: Sendable, Equatable {
+    /// The exit code returned by the process. `0` indicates success.
     public var exitCode: Int32
+    /// Standard output from the command.
     public var stdout: String
+    /// Standard error output from the command.
     public var stderr: String
+    /// Whether the output was truncated due to size limits.
     public var wasTruncated: Bool
 
     public init(
@@ -42,6 +55,9 @@ public struct ColonyShellExecutionResult: Sendable, Equatable {
         self.wasTruncated = wasTruncated
     }
 
+    /// Returns stdout if non-empty, otherwise stderr, otherwise empty string.
+    ///
+    /// Useful when a command only uses one output stream.
     public var combinedOutput: String {
         if stdout.isEmpty { return stderr }
         if stderr.isEmpty { return stdout }
@@ -71,6 +87,7 @@ public protocol ColonyShellService: Sendable {
     func execute(_ request: ColonyShellExecutionRequest) async throws -> ColonyShellExecutionResponse
 }
 
+/// Unique identifier for a persistent shell session.
 public struct ColonyShellSessionID: Hashable, Codable, Sendable, Equatable {
     public let rawValue: String
 
@@ -79,9 +96,14 @@ public struct ColonyShellSessionID: Hashable, Codable, Sendable, Equatable {
     }
 }
 
+/// Request to open a new persistent shell session.
 public struct ColonyShellSessionOpenRequest: Sendable, Equatable {
+    /// The initial command to run in the session.
     public var command: String
+    /// The working directory for the session.
     public var workingDirectory: ColonyVirtualPath?
+    /// Idle timeout in nanoseconds before the session is automatically closed.
+
     public var idleTimeoutNanoseconds: UInt64?
 
     public init(
@@ -95,10 +117,15 @@ public struct ColonyShellSessionOpenRequest: Sendable, Equatable {
     }
 }
 
+/// Result from reading output from a shell session.
 public struct ColonyShellSessionReadResult: Sendable, Equatable {
+    /// Standard output received since the last read.
     public var stdout: String
+    /// Standard error received since the last read.
     public var stderr: String
+    /// Whether end-of-file has been reached (process exited).
     public var eof: Bool
+    /// Whether the output was truncated due to size limits.
     public var wasTruncated: Bool
 
     public init(stdout: String, stderr: String = "", eof: Bool, wasTruncated: Bool = false) {
@@ -109,11 +136,17 @@ public struct ColonyShellSessionReadResult: Sendable, Equatable {
     }
 }
 
+/// Snapshot of a shell session's current state.
 public struct ColonyShellSessionSnapshot: Sendable, Equatable {
+    /// Unique identifier for the session.
     public var id: ColonyShellSessionID
+    /// The command running in this session.
     public var command: String
+    /// The working directory of the session.
     public var workingDirectory: ColonyVirtualPath?
+    /// When the session was opened.
     public var startedAt: Date
+    /// Whether the session's process is still running.
     public var isRunning: Bool
 
     public init(
@@ -182,20 +215,40 @@ public extension ColonyShellBackend {
     }
 }
 
+/// Errors that can occur during shell execution.
 public enum ColonyShellExecutionError: Error, Sendable, Equatable {
+    /// The confinement root URL is invalid (not a file URL).
     case invalidConfinementRoot(String)
+    /// The working directory path is invalid.
     case invalidWorkingDirectory(ColonyVirtualPath)
+    /// The working directory is explicitly denied by policy.
     case workingDirectoryDenied(ColonyVirtualPath)
+    /// The resolved working directory escapes the confinement root.
     case workingDirectoryOutsideConfinement(ColonyVirtualPath)
+    /// Failed to launch the shell process.
     case launchFailed(String)
+    /// The requested session does not exist.
     case sessionNotFound(ColonyShellSessionID)
+    /// Session management is not supported by this backend.
     case sessionManagementUnsupported
 }
 
+/// Policy constraining shell execution to a directory subtree.
+///
+/// `ColonyShellConfinementPolicy` restricts shell commands to a specific directory
+/// and its subdirectories, preventing access to sensitive areas of the filesystem.
 public struct ColonyShellConfinementPolicy: Sendable, Equatable {
+    /// The root directory that all shell commands are confined to.
     public let allowedRoot: URL
+    /// Prefixes that are explicitly denied even within the root.
     public let deniedPrefixes: [ColonyVirtualPath]
 
+    /// Creates a confinement policy with the given root directory.
+    ///
+    /// - Parameters:
+    ///   - allowedRoot: The root URL to confine commands to
+    ///   - deniedPrefixes: Paths within the root to deny access to
+    /// - Throws: `ColonyShellExecutionError.invalidConfinementRoot` if root is not a file URL
     public init(
         allowedRoot: URL,
         deniedPrefixes: [ColonyVirtualPath] = []
@@ -207,6 +260,11 @@ public struct ColonyShellConfinementPolicy: Sendable, Equatable {
         self.deniedPrefixes = deniedPrefixes
     }
 
+    /// Resolves a virtual working directory to a real URL within confinement.
+    ///
+    /// - Parameter workingDirectory: The virtual path, or `nil` for the root
+    /// - Returns: The resolved URL within the confinement root
+    /// - Throws: `ColonyShellExecutionError` if the path is denied or escapes confinement
     public func resolveWorkingDirectory(_ workingDirectory: ColonyVirtualPath?) throws -> URL {
         let requested = workingDirectory ?? .root
 

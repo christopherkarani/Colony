@@ -1,7 +1,12 @@
 import Foundation
 import HiveCore
 
+/// Policy for redacting sensitive information from logs and artifacts.
+///
+/// This policy identifies and redacts sensitive keys (like passwords, tokens, API keys)
+/// and inline secrets from strings before they are logged or stored.
 public struct ColonyRedactionPolicy: Sendable {
+    /// Default keys that are considered sensitive.
     public static let defaultSensitiveKeys: Set<String> = [
         "authorization",
         "api_key",
@@ -14,9 +19,17 @@ public struct ColonyRedactionPolicy: Sendable {
         "arguments_json",
     ]
 
+    /// Keys to redact (case-insensitive matching).
     public var sensitiveKeys: Set<String>
+
+    /// The replacement string for redacted values.
     public var replacement: String
 
+    /// Creates a new redaction policy.
+    ///
+    /// - Parameters:
+    ///   - sensitiveKeys: Keys to redact. Defaults to `defaultSensitiveKeys`.
+    ///   - replacement: Replacement string. Defaults to `"[REDACTED]"`.
     public init(
         sensitiveKeys: Set<String> = ColonyRedactionPolicy.defaultSensitiveKeys,
         replacement: String = "[REDACTED]"
@@ -25,6 +38,12 @@ public struct ColonyRedactionPolicy: Sendable {
         self.replacement = replacement
     }
 
+    /// Redacts a value if its key is sensitive.
+    ///
+    /// - Parameters:
+    ///   - key: The key to check.
+    ///   - value: The value to potentially redact.
+    /// - Returns: The redacted value if the key is sensitive, otherwise the original value.
     public func redact(key: String, value: String) -> String {
         if sensitiveKeys.contains(key.lowercased()) {
             return replacement
@@ -32,6 +51,10 @@ public struct ColonyRedactionPolicy: Sendable {
         return redactInlineSecrets(in: value)
     }
 
+    /// Redacts all sensitive values in a dictionary.
+    ///
+    /// - Parameter values: Dictionary of key-value pairs to redact.
+    /// - Returns: Dictionary with sensitive values redacted.
     public func redact(values: [String: String]) -> [String: String] {
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(values.count)
@@ -43,6 +66,13 @@ public struct ColonyRedactionPolicy: Sendable {
         return redacted
     }
 
+    /// Redacts inline secrets from a string value.
+    ///
+    /// Detects and redacts patterns like bearer tokens, API keys, and credentials
+    /// embedded in strings.
+    ///
+    /// - Parameter value: The string to redact.
+    /// - Returns: The string with inline secrets redacted.
     public func redactInlineSecrets(in value: String) -> String {
         var output = value
 
@@ -72,6 +102,7 @@ public struct ColonyRedactionPolicy: Sendable {
     }
 }
 
+/// Internal utilities for Colony persistence operations.
 enum ColonyPersistenceIO {
     static func ensureDirectoryExists(_ url: URL, fileManager: FileManager) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)

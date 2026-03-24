@@ -1,21 +1,39 @@
 import CryptoKit
 import Foundation
 
+/// The outcome of a tool approval decision.
+///
+/// Tracks how each tool call was processed through the approval workflow.
 public enum ColonyToolAuditDecisionKind: String, Codable, Sendable, Equatable {
+    /// Tool required human approval before execution.
     case approvalRequired = "approval_required"
+    /// Tool was automatically approved based on policy.
     case autoApproved = "auto_approved"
+    /// User explicitly approved this tool call.
     case userApproved = "user_approved"
+    /// User explicitly denied this tool call.
     case userDenied = "user_denied"
 }
 
+/// A single tool approval decision event in the audit log.
+///
+/// Captures all context around a tool call decision for compliance and debugging.
 public struct ColonyToolAuditEvent: Codable, Sendable, Equatable {
+    /// Monotonic timestamp in nanoseconds since an arbitrary epoch.
     public var timestampNanoseconds: UInt64
+    /// Identifier for the thread that processed this tool call.
     public var threadID: String
+    /// Identifier for the task/agent that initiated this tool call.
     public var taskID: String
+    /// Unique identifier for this specific tool call invocation.
     public var toolCallID: String
+    /// Name of the tool that was evaluated.
     public var toolName: String
+    /// Assessed risk level of the tool at evaluation time.
     public var riskLevel: ColonyToolRiskLevel
+    /// The outcome of the approval decision.
     public var decision: ColonyToolAuditDecisionKind
+    /// Optional reason why approval was required (if applicable).
     public var reason: ColonyToolApprovalRequirementReason?
 
     public init(
@@ -39,9 +57,16 @@ public struct ColonyToolAuditEvent: Codable, Sendable, Equatable {
     }
 }
 
+/// The payload of a signed audit log entry.
+///
+/// Contains the sequenced event data with a hash linking to the previous entry,
+/// forming a cryptographically verifiable chain of records.
 public struct ColonyToolAuditRecordPayload: Codable, Sendable, Equatable {
+    /// Monotonically increasing sequence number starting at 1.
     public var sequence: Int
+    /// SHA-256 hex digest of the previous entry in the chain (nil for the first entry).
     public var previousEntryHash: String?
+    /// The audit event being recorded.
     public var event: ColonyToolAuditEvent
 
     public init(sequence: Int, previousEntryHash: String?, event: ColonyToolAuditEvent) {
@@ -51,11 +76,20 @@ public struct ColonyToolAuditRecordPayload: Codable, Sendable, Equatable {
     }
 }
 
+/// A complete signed audit log entry with cryptographic proof.
+///
+/// Combines the sequenced payload with the entry hash and cryptographic signature,
+/// enabling verification of both chain integrity and signer authenticity.
 public struct ColonySignedToolAuditRecord: Codable, Sendable, Equatable {
+    /// The sequenced audit event payload.
     public var payload: ColonyToolAuditRecordPayload
+    /// SHA-256 hex digest of the chained payload data.
     public var entryHash: String
+    /// Base64-encoded cryptographic signature of the entry hash.
     public var signatureBase64: String
+    /// Algorithm used for signing (e.g., "hmac-sha256").
     public var signatureAlgorithm: String
+    /// Identifier of the signing key used.
     public var signerKeyID: String
 
     public init(
@@ -73,8 +107,13 @@ public struct ColonySignedToolAuditRecord: Codable, Sendable, Equatable {
     }
 }
 
+/// Errors that can occur when appending records to the audit log.
+///
+/// These errors indicate chain integrity violations that prevent appending new entries.
 public enum ToolAuditError: Error, Sendable, Equatable {
+    /// The appended record's sequence number does not match the expected next sequence.
     case invalidSequence(expected: Int, actual: Int)
+    /// The appended record's previous entry hash does not match the actual last entry hash.
     case previousHashMismatch(expected: String?, actual: String?)
 }
 
@@ -83,18 +122,33 @@ public enum ToolAuditError: Error, Sendable, Equatable {
 @available(*, deprecated, renamed: "ToolAuditError")
 public typealias ColonyToolAuditError = ToolAuditError
 
+/// Protocol for cryptographic signing of audit log entries.
+///
+/// Implementations provide signing and verification capabilities for the audit chain.
 public protocol ColonyToolAuditSigner: Sendable {
+    /// Unique identifier for the signing key.
     var keyID: String { get }
+    /// Name of the signing algorithm (e.g., "hmac-sha256").
     var algorithm: String { get }
+    /// Signs a message and returns the cryptographic signature.
     func sign(message: Data) throws -> Data
+    /// Verifies a signature against a message.
     func verify(signature: Data, message: Data) -> Bool
 }
 
+/// An HMAC-SHA256 based signer for audit log entries.
+///
+/// Uses CryptoKit's HMAC with SHA-256 for symmetric-key signing of audit records.
 public struct ColonyHMACSHA256ToolAuditSigner: ColonyToolAuditSigner {
     public let keyID: String
     public let algorithm: String = "hmac-sha256"
     private let keyData: Data
 
+    /// Creates a new HMAC-SHA256 signer with the given key data.
+    ///
+    /// - Parameters:
+    ///   - keyData: The shared secret key for HMAC signing.
+    ///   - keyID: Identifier for this key (included in signed records).
     public init(keyData: Data, keyID: String = "default") {
         self.keyData = keyData
         self.keyID = keyID
@@ -113,11 +167,22 @@ public struct ColonyHMACSHA256ToolAuditSigner: ColonyToolAuditSigner {
     }
 }
 
+/// Append-only storage for signed audit log records.
+///
+/// Implementations enforce immutability by validating chain integrity before appending.
+/// Records cannot be modified or deleted after creation.
 public protocol ColonyImmutableToolAuditLogStore: Sendable {
+    /// Appends a new signed record to the log.
+    ///
+    /// - Parameter record: The signed record to append. Must have correct sequence and previous hash.
     func append(_ record: ColonySignedToolAuditRecord) async throws
+    /// Returns all records in the log in chronological order.
     func records() async throws -> [ColonySignedToolAuditRecord]
 }
 
+/// An in-memory implementation of the immutable audit log store.
+///
+/// Intended for short-lived processes or testing. Data is lost on process termination.
 public actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
     private var storage: [ColonySignedToolAuditRecord] = []
 
@@ -145,10 +210,19 @@ public actor ColonyInMemoryToolAuditLogStore: ColonyImmutableToolAuditLogStore {
     }
 }
 
+/// A file system backed implementation of the immutable audit log store.
+///
+/// Records are stored as individual JSON files named `entry-NNNNNNNNNNNN.json` in the
+/// specified path prefix, enabling persistence across process restarts.
 public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore {
     private let filesystem: any ColonyFileSystemBackend
     private let pathPrefix: ColonyVirtualPath
 
+    /// Creates a file system backed audit log store.
+    ///
+    /// - Parameters:
+    ///   - filesystem: The file system backend to use for storage.
+    ///   - pathPrefix: Virtual path prefix for audit entry files (defaults to `.toolAuditRoot`).
     public init(
         filesystem: any ColonyFileSystemBackend,
         pathPrefix: ColonyVirtualPath = .toolAuditRoot
@@ -212,10 +286,19 @@ public actor ColonyFileSystemToolAuditLogStore: ColonyImmutableToolAuditLogStore
     }
 }
 
+/// Records tool approval events to a cryptographically signed audit log.
+///
+/// Combines a signing mechanism with append-only storage to produce a tamper-evident
+/// chain of audit records. Each record links to the previous entry via SHA-256 hash.
 public actor ColonyToolAuditRecorder {
     private let store: any ColonyImmutableToolAuditLogStore
     private let signer: any ColonyToolAuditSigner
 
+    /// Creates a new audit recorder with the specified store and signer.
+    ///
+    /// - Parameters:
+    ///   - store: The append-only store for signed records.
+    ///   - signer: The cryptographic signer for record integrity.
     public init(
         store: any ColonyImmutableToolAuditLogStore,
         signer: any ColonyToolAuditSigner
@@ -276,7 +359,20 @@ public actor ColonyToolAuditRecorder {
     }
 }
 
+/// Verifies the integrity and authenticity of a chain of signed audit records.
+///
+/// Validates:
+/// - Sequence numbers are continuous starting at 1
+/// - Each record's previous hash matches the prior record's entry hash
+/// - Entry hashes match the computed SHA-256 of chained payload data
+/// - Cryptographic signatures are valid for each record
 public enum ColonyToolAuditVerifier {
+    /// Verifies the complete audit chain.
+    ///
+    /// - Parameters:
+    ///   - records: The ordered list of signed audit records to verify.
+    ///   - signer: The signer to use for signature verification.
+    /// - Returns: `true` if the chain is intact and all signatures are valid.
     public static func verify(
         records: [ColonySignedToolAuditRecord],
         signer: any ColonyToolAuditSigner

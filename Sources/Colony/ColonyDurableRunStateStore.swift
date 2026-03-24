@@ -2,21 +2,50 @@ import Foundation
 import HiveCore
 import ColonyCore
 
+/// Represents the current phase of a Colony run.
 public enum ColonyRunPhase: String, Codable, Sendable, Equatable {
+    /// The run is actively executing.
     case running
+    /// The run is paused waiting for user input (e.g., tool approval).
     case interrupted
+    /// The run completed successfully.
     case finished
+    /// The run was cancelled.
     case cancelled
 }
 
+/// A snapshot of run state at a point in time.
+///
+/// This struct captures the complete state of a run including its ID,
+/// phase, and the sequence number of the last event processed.
 public struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
+    /// The unique run identifier.
     public let runID: ColonyRunID
+
+    /// The session this run belongs to.
     public let sessionID: ColonyHarnessSessionID
+
+    /// The thread ID for this run.
     public let threadID: ColonyThreadID
+
+    /// The current phase of the run.
     public let phase: ColonyRunPhase
+
+    /// Sequence number of the last processed event.
     public let lastEventSequence: Int
+
+    /// Timestamp of the last update.
     public let updatedAt: Date
 
+    /// Creates a new run state snapshot.
+    ///
+    /// - Parameters:
+    ///   - runID: The run identifier.
+    ///   - sessionID: The session identifier.
+    ///   - threadID: The thread identifier.
+    ///   - phase: The current phase.
+    ///   - lastEventSequence: Last event sequence number.
+    ///   - updatedAt: Last update timestamp.
     public init(
         runID: ColonyRunID,
         sessionID: ColonyHarnessSessionID,
@@ -34,12 +63,22 @@ public struct ColonyRunStateSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+/// A durable store for run state snapshots and events.
+///
+/// This actor persists run state to the filesystem, enabling recovery
+/// of run state across application restarts and event replay.
 public actor ColonyDurableRunStateStore {
     private let runsDirectoryURL: URL
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// Creates a new durable run state store.
+    ///
+    /// - Parameters:
+    ///   - baseURL: Base directory for storage.
+    ///   - fileManager: File manager to use. Defaults to `.default`.
+    /// - Throws: If the runs directory cannot be created.
     public init(baseURL: URL, fileManager: FileManager = .default) throws {
         self.runsDirectoryURL = baseURL.appendingPathComponent("runs", isDirectory: true)
         self.fileManager = fileManager
@@ -56,6 +95,13 @@ public actor ColonyDurableRunStateStore {
         try ColonyPersistenceIO.ensureDirectoryExists(runsDirectoryURL, fileManager: fileManager)
     }
 
+    /// Appends an event envelope to the run's event log.
+    ///
+    /// Also updates the run state snapshot with the new phase.
+    ///
+    /// - Parameters:
+    ///   - envelope: The event envelope to append.
+    ///   - threadID: The thread ID for the run.
     public func appendEvent(
         _ envelope: ColonyHarnessEventEnvelope,
         threadID: ColonyThreadID
@@ -83,6 +129,10 @@ public actor ColonyDurableRunStateStore {
         try ColonyPersistenceIO.writeJSON(snapshot, to: stateURL, encoder: encoder, fileManager: fileManager)
     }
 
+    /// Loads the run state snapshot for a run.
+    ///
+    /// - Parameter runID: The run identifier.
+    /// - Returns: The run state snapshot, or nil if not found.
     public func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
         let colonyRunID = ColonyRunID(hiveRunID: HiveRunID(runID))
         let runDirectory = runDirectoryURL(runID: runID)
@@ -109,6 +159,10 @@ public actor ColonyDurableRunStateStore {
         return recovered
     }
 
+    /// Lists all run state snapshots with optional limit.
+    ///
+    /// - Parameter limit: Maximum number of snapshots to return.
+    /// - Returns: List of run state snapshots, newest first.
     public func listRunStates(limit: Int? = nil) async throws -> [ColonyRunStateSnapshot] {
         if let limit, limit <= 0 {
             return []
@@ -137,6 +191,12 @@ public actor ColonyDurableRunStateStore {
         return snapshots
     }
 
+    /// Loads events for a run with optional limit.
+    ///
+    /// - Parameters:
+    ///   - runID: The run identifier.
+    ///   - limit: Maximum number of events to return (oldest first).
+    /// - Returns: List of event envelopes.
     public func loadEvents(runID: UUID, limit: Int? = nil) async throws -> [ColonyHarnessEventEnvelope] {
         if let limit, limit <= 0 {
             return []
@@ -162,6 +222,10 @@ public actor ColonyDurableRunStateStore {
         return events
     }
 
+    /// Finds the most recent interrupted run.
+    ///
+    /// - Parameter sessionID: Optional session ID to filter by.
+    /// - Returns: The most recent interrupted run snapshot, or nil.
     public func latestInterruptedRun(sessionID: ColonyHarnessSessionID? = nil) async throws -> ColonyRunStateSnapshot? {
         let snapshots = try await listRunStates()
         return snapshots.first { snapshot in
@@ -173,6 +237,10 @@ public actor ColonyDurableRunStateStore {
         }
     }
 
+    /// Finds the most recent run state for a session.
+    ///
+    /// - Parameter sessionID: Optional session ID to filter by.
+    /// - Returns: The most recent run snapshot, or nil.
     public func latestRunState(sessionID: ColonyHarnessSessionID? = nil) async throws -> ColonyRunStateSnapshot? {
         let snapshots = try await listRunStates()
         return snapshots.first { snapshot in

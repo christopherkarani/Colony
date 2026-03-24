@@ -1,18 +1,33 @@
 import Foundation
 
+/// A single item in the scratchbook/workspace.
+///
+/// `ColonyWorkspaceItem` represents a note, todo, or task that the agent
+/// can create, update, and track. Items are identified by a unique string ID
+/// and contain timestamps for ordering and synchronization.
 public struct ColonyWorkspaceItem: Codable, Sendable, Equatable, Identifiable {
+    /// The kind of workspace item.
     public enum Kind: String, Codable, Sendable, Equatable {
+        /// A free-form note or observation.
         case note
+        /// A todo item without detailed tracking.
         case todo
+        /// A task with phase and progress tracking.
         case task
     }
 
+    /// The completion/active status of a workspace item.
     public enum Status: String, Codable, Sendable, Equatable {
         // Base canonical cases
+        /// Item is open and active.
         case open
+        /// Item is actively being worked on.
         case inProgress = "in_progress"
+        /// Item is blocked by a dependency.
         case blocked
+        /// Item is completed.
         case done
+        /// Item is archived and hidden from default views.
         case archived
 
         // MARK: - Agent-friendly status names (alternative raw values)
@@ -57,15 +72,25 @@ public struct ColonyWorkspaceItem: Codable, Sendable, Equatable, Identifiable {
         }
     }
 
+    /// Unique identifier for this item.
     public let id: String
+    /// The kind of this item (note, todo, or task).
     public var kind: Kind
+    /// The current status of this item.
     public var status: Status
+    /// Short title for this item.
     public var title: String
+    /// Full body/content text.
     public var body: String
+    /// Tags for categorizing this item.
     public var tags: [String]
+    /// Creation timestamp in nanoseconds since epoch.
     public var createdAtNanoseconds: UInt64
+    /// Last update timestamp in nanoseconds since epoch.
     public var updatedAtNanoseconds: UInt64
+    /// For task items, the current phase name.
     public var phase: String?
+    /// For task items, progress from 0.0 to 1.0.
     public var progress: Double?
 
     public init(
@@ -184,8 +209,15 @@ public struct ColonyWorkspaceItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// A collection of workspace items representing the agent's scratchbook.
+///
+/// `ColonyWorkspace` holds all notes, todos, and tasks for a thread/session.
+/// It provides rendering logic to produce a compact view for inclusion in the
+/// system prompt, respecting token and item count limits.
 public struct ColonyWorkspace: Codable, Sendable, Equatable {
+    /// All items in the workspace.
     public var items: [ColonyWorkspaceItem]
+    /// Ordered list of pinned item IDs.
     public var pinnedItemIDs: [ColonyWorkspaceItem.ID]
 
     /// Alias for `pinnedItemIDs` - the set of pinned item IDs.
@@ -211,10 +243,20 @@ public struct ColonyWorkspace: Codable, Sendable, Equatable {
         self.pinnedItemIDs = Array(pinnedItems)
     }
 
+    /// Renders the workspace view using a policy's token and item limits.
+    ///
+    /// - Parameter policy: The scratchbook policy with view constraints
+    /// - Returns: A compact string representation of the workspace
     public func renderView(policy: ColonyScratchbookPolicy) -> String {
         renderView(viewTokenLimit: policy.viewTokenLimit, maxRenderedItems: policy.maxRenderedItems)
     }
 
+    /// Renders the workspace view with explicit limits.
+    ///
+    /// - Parameters:
+    ///   - viewTokenLimit: Maximum tokens to use in the rendered view
+    ///   - maxRenderedItems: Maximum number of items to include
+    /// - Returns: A compact string representation of the workspace
     public func renderView(
         viewTokenLimit: Int,
         maxRenderedItems: Int

@@ -1,6 +1,13 @@
 import HiveCore
 
+/// Namespace for system prompt construction in Colony.
+///
+/// `ColonyPrompts` provides factory methods for constructing system prompts
+/// with appropriate sections based on the agent's configuration and capabilities.
 public enum ColonyPrompts {
+    /// The base system prompt with core agent rules.
+    ///
+    /// This text establishes the foundational behavior expectations for all Colony agents.
     public static let baseSystemPrompt: String = """
 You have tools to help complete the user's objective.
 
@@ -12,6 +19,12 @@ Rules:
 - Update memory files only when asked; never store secrets.
 """
 
+    /// Builds a system prompt with additional text and available tools.
+    ///
+    /// - Parameters:
+    ///   - additional: Additional prompt text to append
+    ///   - availableTools: List of tool definitions to include in the prompt
+    /// - Returns: A complete system prompt string
     public static func systemPrompt(
         additional: String?,
         availableTools: [HiveToolDefinition]
@@ -25,6 +38,14 @@ Rules:
         )
     }
 
+    /// Builds a system prompt with memory, skills, and available tools.
+    ///
+    /// - Parameters:
+    ///   - additional: Additional prompt text to append
+    ///   - memory: Memory content to include
+    ///   - skills: Skills content to include
+    ///   - availableTools: List of tool definitions to include in the prompt
+    /// - Returns: A complete system prompt string
     public static func systemPrompt(
         additional: String?,
         memory: String?,
@@ -40,6 +61,23 @@ Rules:
         )
     }
 
+    /// Builds a complete system prompt with all sections.
+    ///
+    /// The prompt sections are ordered as follows:
+    /// 1. Base system prompt (always)
+    /// 2. Additional prompt text (if provided)
+    /// 3. Scratchbook (if provided, placed before memory/skills for token truncation resilience)
+    /// 4. Memory (if provided)
+    /// 5. Skills (if provided)
+    /// 6. Available tools (if any)
+    ///
+    /// - Parameters:
+    ///   - additional: Additional prompt text to append
+    ///   - memory: Memory content to include
+    ///   - skills: Skills content to include
+    ///   - scratchbook: Scratchbook content to include
+    ///   - availableTools: List of tool definitions to include in the prompt
+    /// - Returns: A complete system prompt string
     public static func systemPrompt(
         additional: String?,
         memory: String?,

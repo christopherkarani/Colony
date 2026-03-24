@@ -2,22 +2,41 @@ import Foundation
 import HiveCore
 import ColonyCore
 
+/// Errors that can occur during harness session operations.
 public enum HarnessError: Error, Sendable {
+    /// A run is already active and a new one cannot be started.
     case runAlreadyActive
+    /// No interrupted run to resume.
     case noInterruptedRun
+    /// Failed to persist run state.
     case runStatePersistenceFailed(String)
 }
 
 @available(*, deprecated, renamed: "HarnessError")
 public typealias ColonyHarnessSessionError = HarnessError
 
+/// A harness session for controlling Colony runs from external clients.
+///
+/// `ColonyHarnessSession` provides a high-level API for starting, stopping,
+/// and resuming Colony runs. It handles event streaming, state persistence,
+/// and observability emission.
 public actor ColonyHarnessSession {
+    /// The unique identifier for this session.
     public let sessionID: ColonyHarnessSessionID
 
+    /// The current lifecycle state of the session.
     public var lifecycleState: ColonyHarnessLifecycleState {
         lifecycleStateStorage
     }
 
+    /// Creates a new harness session with the given runtime.
+    ///
+    /// - Parameters:
+    ///   - runtime: The Colony runtime to control.
+    ///   - sessionID: Optional session ID. Generated if nil.
+    ///   - runStateStore: Optional store for run state persistence.
+    ///   - observabilityEmitter: Optional emitter for observability events.
+    /// - Returns: A new harness session.
     public static func create(
         runtime: ColonyRuntime,
         sessionID: ColonyHarnessSessionID = ColonyHarnessSessionID(rawValue: "session:" + UUID().uuidString.lowercased()),
@@ -32,6 +51,11 @@ public actor ColonyHarnessSession {
         )
     }
 
+    /// Returns a stream of harness events.
+    ///
+    /// Multiple subscribers can receive events from the same session.
+    ///
+    /// - Returns: An async stream of event envelopes.
     public func stream() -> AsyncThrowingStream<ColonyHarnessEventEnvelope, Error> {
         let subscriberID = UUID()
         var subscriberContinuation: AsyncThrowingStream<ColonyHarnessEventEnvelope, Error>.Continuation?
@@ -47,6 +71,10 @@ public actor ColonyHarnessSession {
         return stream
     }
 
+    /// Starts a new run with the given input.
+    ///
+    /// - Parameter input: The user message to start the run with.
+    /// - Throws: `HarnessError.runAlreadyActive` if a run is already in progress.
     public func start(input: String) async throws {
         guard activeAttemptID == nil else {
             throw HarnessError.runAlreadyActive
@@ -68,14 +96,24 @@ public actor ColonyHarnessSession {
         beginAttemptMonitoring(handle: handle, runID: runID)
     }
 
+    /// Returns the first pending interruption if any.
+    ///
+    /// - Returns: The first interruption, or nil if the queue is empty.
     public func interrupted() -> ColonyHarnessInterruption? {
         interruptionQueue.first
     }
 
+    /// Returns all pending interruptions.
+    ///
+    /// - Returns: Array of pending interruptions.
     public func pendingInterruptions() -> [ColonyHarnessInterruption] {
         interruptionQueue
     }
 
+    /// Resumes from an interruption with the given decision.
+    ///
+    /// - Parameter decision: The tool approval decision.
+    /// - Throws: If no interrupted run exists or a run is already active.
     public func resume(decision: ColonyToolApprovalDecision) async throws {
         guard activeAttemptID == nil else {
             throw HarnessError.runAlreadyActive
@@ -124,6 +162,7 @@ public actor ColonyHarnessSession {
         beginAttemptMonitoring(handle: handle, runID: runID)
     }
 
+    /// Stops the current run and clears the session state.
     public func stop() async {
         stopRequested = true
         lifecycleStateStorage = .stopped

@@ -37,7 +37,11 @@ public enum ColonyHarnessEventType: String, Codable, Sendable {
     case toolDenied = "tool_denied"
 }
 
+/// Payload for assistant message delta events.
+///
+/// Contains incremental text chunks from the assistant's streaming response.
 public struct ColonyHarnessAssistantDeltaPayload: Codable, Equatable, Sendable {
+    /// The incremental text delta from the assistant.
     public let delta: String
 
     public init(delta: String) {
@@ -45,9 +49,16 @@ public struct ColonyHarnessAssistantDeltaPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// Payload for tool call request events.
+///
+/// Emitted when the agent requests execution of a tool, containing the tool
+/// name and arguments for approval or execution.
 public struct ColonyHarnessToolRequestPayload: Codable, Equatable, Sendable {
+    /// Unique identifier for this tool call invocation.
     public let toolCallID: String
+    /// Name of the tool being invoked.
     public let toolName: String
+    /// JSON-encoded arguments passed to the tool.
     public let argumentsJSON: String
 
     public init(toolCallID: String, toolName: String, argumentsJSON: String) {
@@ -63,9 +74,15 @@ public struct ColonyHarnessToolRequestPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// Payload for tool execution result events.
+///
+/// Emitted after a tool call completes, indicating success or failure.
 public struct ColonyHarnessToolResultPayload: Codable, Equatable, Sendable {
+    /// Unique identifier for the tool call invocation.
     public let toolCallID: String
+    /// Name of the tool that was executed.
     public let toolName: String
+    /// Whether the tool executed successfully.
     public let success: Bool
 
     public init(toolCallID: String, toolName: String, success: Bool) {
@@ -81,9 +98,15 @@ public struct ColonyHarnessToolResultPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// Payload for tool denial events.
+///
+/// Emitted when a tool call was denied by human approval.
 public struct ColonyHarnessToolDeniedPayload: Codable, Equatable, Sendable {
+    /// Unique identifier for the denied tool call.
     public let toolCallID: String
+    /// Name of the tool that was denied.
     public let toolName: String
+    /// Human-readable reason for the denial.
     public let reason: String
 
     public init(toolCallID: String, toolName: String, reason: String) {

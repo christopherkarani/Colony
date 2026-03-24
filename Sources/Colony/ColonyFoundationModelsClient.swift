@@ -6,6 +6,7 @@ import HiveCore
 import FoundationModels
 #endif
 
+/// Errors specific to on-device Foundation Models operations.
 public enum OnDeviceModelError: Error, Sendable, CustomStringConvertible {
     case foundationModelsUnavailable
     case generationFailed(String)
@@ -33,16 +34,31 @@ extension OnDeviceModelError: LocalizedError {
 }
 
 public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
+    /// Configuration for Foundation Models client.
     public struct Configuration: Sendable {
+        /// Verbosity level for tool instructions.
         public enum ToolInstructionVerbosity: Sendable {
+            /// Compact tool instructions with minimal details.
             case compact
+            /// Verbose tool instructions with full details.
             case verbose
         }
 
+        /// Additional instructions to append to the system prompt.
         public var additionalInstructions: String?
+
+        /// Whether to prewarm the model session on initialization.
         public var prewarmSession: Bool
+
+        /// Verbosity level for tool instructions.
         public var toolInstructionVerbosity: ToolInstructionVerbosity
 
+        /// Creates a new configuration.
+        ///
+        /// - Parameters:
+        ///   - additionalInstructions: Additional system instructions.
+        ///   - prewarmSession: Whether to prewarm the session.
+        ///   - toolInstructionVerbosity: Tool instruction verbosity.
         public init(
             additionalInstructions: String? = nil,
             prewarmSession: Bool = false,
@@ -54,6 +70,9 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         }
     }
 
+    /// Whether Foundation Models are available on this device.
+    ///
+    /// Checks device capability and platform version requirements.
     public static var isAvailable: Bool {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
@@ -68,6 +87,8 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
     }
+
+    // MARK: - HiveModelClient
 
     public func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
         try await streamFinal(request)

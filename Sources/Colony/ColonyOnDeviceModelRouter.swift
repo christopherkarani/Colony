@@ -1,6 +1,7 @@
 import Foundation
 import HiveCore
 
+/// Errors that can occur during on-device routing.
 public enum OnDeviceRoutingError: Error, Sendable, CustomStringConvertible {
     case onDeviceRequiredButUnavailable
 
@@ -40,6 +41,13 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
         }
     }
 
+    /// Creates a new on-device model router.
+    ///
+    /// - Parameters:
+    ///   - onDevice: Optional on-device model client.
+    ///   - fallback: Fallback model client (typically cloud).
+    ///   - policy: Routing policy.
+    ///   - isOnDeviceAvailable: Closure to check on-device availability.
     public init(
         onDevice: AnyHiveModelClient?,
         fallback: AnyHiveModelClient,
@@ -53,6 +61,11 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
     }
 
     /// Convenience initializer that wires `ColonyFoundationModelsClient` as the on-device model.
+    ///
+    /// - Parameters:
+    ///   - fallback: Fallback model client.
+    ///   - policy: Routing policy.
+    ///   - foundationModels: Foundation models client to use for on-device.
     public init(
         fallback: AnyHiveModelClient,
         policy: Policy = Policy(),
@@ -66,6 +79,12 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
         )
     }
 
+    /// Routes a request to either on-device or fallback client.
+    ///
+    /// - Parameters:
+    ///   - request: The chat request.
+    ///   - hints: Inference hints for routing decisions.
+    /// - Returns: Appropriate model client.
     public func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         guard let hints else { return fallback }
 
@@ -107,6 +126,7 @@ public struct ColonyOnDeviceModelRouter: HiveModelRouter, Sendable {
     private let isOnDeviceAvailable: @Sendable () -> Bool
 }
 
+/// A model client that always fails with a specific error.
 private struct ColonyFailingModelClient: HiveModelClient, Sendable {
     let error: OnDeviceRoutingError
 

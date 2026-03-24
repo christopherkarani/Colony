@@ -1,5 +1,8 @@
+/// Metadata describing a registered subagent.
 public struct ColonySubagentDescriptor: Sendable, Codable, Equatable {
+    /// Human-readable name of the subagent.
     public var name: String
+    /// Description of the subagent's capabilities.
     public var description: String
 
     public init(name: String, description: String) {
@@ -8,10 +11,15 @@ public struct ColonySubagentDescriptor: Sendable, Codable, Equatable {
     }
 }
 
+/// Context passed to a subagent for focused task execution.
 public struct ColonySubagentContext: Sendable, Codable, Equatable {
+    /// High-level objective for the subagent to accomplish.
     public var objective: String?
+    /// Constraints or boundaries the subagent should respect.
     public var constraints: [String]
+    /// Criteria that determine whether the task is complete.
     public var acceptanceCriteria: [String]
+    /// Additional notes or context for the subagent.
     public var notes: [String]
 
     public init(
@@ -51,9 +59,13 @@ public struct ColonySubagentContext: Sendable, Codable, Equatable {
     }
 }
 
+/// A reference to a file to include in a subagent task.
 public struct ColonySubagentFileReference: Sendable, Codable, Equatable {
+    /// Virtual path to the file.
     public var path: ColonyVirtualPath
+    /// Optional byte offset to start reading from.
     public var offset: Int?
+    /// Optional limit on bytes to read.
     public var limit: Int?
 
     public init(
@@ -67,10 +79,15 @@ public struct ColonySubagentFileReference: Sendable, Codable, Equatable {
     }
 }
 
+/// Request to create and run a subagent task.
 public struct ColonySubagentRequest: Sendable, Equatable {
+    /// The prompt/instruction for the subagent.
     public var prompt: String
+    /// The type/class of subagent to use.
     public var subagentType: ColonySubagentType
+    /// Optional context for the subagent's execution.
     public var context: ColonySubagentContext?
+    /// Files to include as context for the task.
     public var fileReferences: [ColonySubagentFileReference]
 
     public init(
@@ -86,7 +103,9 @@ public struct ColonySubagentRequest: Sendable, Equatable {
     }
 }
 
+/// Result returned by a subagent task.
 public struct ColonySubagentResult: Sendable, Equatable {
+    /// The content/output produced by the subagent.
     public var content: String
 
     public init(content: String) {

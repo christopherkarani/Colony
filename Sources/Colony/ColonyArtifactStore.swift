@@ -1,25 +1,62 @@
 import Foundation
 import HiveCore
 
+/// Policy for artifact retention management.
+///
+/// Controls how many artifacts to keep and how old they can be.
 public struct ColonyArtifactRetentionPolicy: Sendable {
+    /// Maximum number of artifacts to retain. nil means unlimited.
     public var maxArtifacts: Int?
+
+    /// Maximum age of artifacts in seconds. nil means unlimited.
     public var maxAge: TimeInterval?
 
+    /// Creates a new retention policy.
+    ///
+    /// - Parameters:
+    ///   - maxArtifacts: Maximum artifact count. Defaults to nil (unlimited).
+    ///   - maxAge: Maximum artifact age. Defaults to nil (unlimited).
     public init(maxArtifacts: Int? = nil, maxAge: TimeInterval? = nil) {
         self.maxArtifacts = maxArtifacts
         self.maxAge = maxAge
     }
 }
 
+/// Record describing a stored artifact.
+///
+/// Contains metadata about an artifact without the content itself.
 public struct ColonyArtifactRecord: Codable, Sendable, Equatable {
+    /// Unique identifier for this artifact.
     public let id: ColonyArtifactID
+
+    /// The thread this artifact belongs to.
     public let threadID: ColonyThreadID
+
+    /// The run that created this artifact, if any.
     public let runID: ColonyRunID?
+
+    /// Kind of artifact (e.g., "file", "code", "result").
     public let kind: String
+
+    /// When the artifact was created.
     public let createdAt: Date
+
+    /// Whether the artifact content was redacted.
     public let redacted: Bool
+
+    /// Additional metadata about the artifact.
     public let metadata: [String: String]
 
+    /// Creates a new artifact record.
+    ///
+    /// - Parameters:
+    ///   - id: Artifact ID.
+    ///   - threadID: Thread ID.
+    ///   - runID: Optional run ID.
+    ///   - kind: Artifact kind.
+    ///   - createdAt: Creation timestamp.
+    ///   - redacted: Whether content was redacted.
+    ///   - metadata: Additional metadata.
     public init(
         id: ColonyArtifactID,
         threadID: ColonyThreadID,
@@ -39,6 +76,10 @@ public struct ColonyArtifactRecord: Codable, Sendable, Equatable {
     }
 }
 
+/// A durable store for agent artifacts.
+///
+/// Artifacts are named content produced by the agent (code files, generated docs, etc.)
+/// that outlast the run that created them.
 public actor ColonyArtifactStore {
     private struct StoredArtifact: Codable, Sendable {
         let record: ColonyArtifactRecord
@@ -52,6 +93,14 @@ public actor ColonyArtifactStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// Creates a new artifact store.
+    ///
+    /// - Parameters:
+    ///   - baseURL: Base directory for artifact storage.
+    ///   - retentionPolicy: Policy for artifact retention.
+    ///   - redactionPolicy: Policy for redacting sensitive data.
+    ///   - fileManager: File manager to use.
+    /// - Throws: If the artifacts directory cannot be created.
     public init(
         baseURL: URL,
         retentionPolicy: ColonyArtifactRetentionPolicy = ColonyArtifactRetentionPolicy(),
@@ -75,6 +124,17 @@ public actor ColonyArtifactStore {
         try ColonyPersistenceIO.ensureDirectoryExists(artifactsDirectoryURL, fileManager: fileManager)
     }
 
+    /// Stores a new artifact.
+    ///
+    /// - Parameters:
+    ///   - threadID: Thread ID for the artifact.
+    ///   - runID: Optional run ID.
+    ///   - kind: Kind of artifact.
+    ///   - content: The artifact content.
+    ///   - metadata: Additional metadata.
+    ///   - redact: Whether to redact sensitive data.
+    ///   - createdAt: Creation timestamp.
+    /// - Returns: The artifact record.
     @discardableResult
     public func put(
         threadID: ColonyThreadID,
@@ -107,6 +167,14 @@ public actor ColonyArtifactStore {
         return record
     }
 
+    /// Lists artifact records matching the given criteria.
+    ///
+    /// - Parameters:
+    ///   - threadID: Filter by thread ID.
+    ///   - runID: Filter by run ID.
+    ///   - kind: Filter by artifact kind.
+    ///   - limit: Maximum number to return.
+    /// - Returns: Matching artifact records, newest first.
     public func list(
         threadID: ColonyThreadID? = nil,
         runID: ColonyRunID? = nil,
@@ -139,6 +207,10 @@ public actor ColonyArtifactStore {
         return artifacts
     }
 
+    /// Reads the content of an artifact by ID.
+    ///
+    /// - Parameter id: The artifact ID.
+    /// - Returns: The artifact content, or nil if not found.
     public func readContent(id: String) async throws -> String? {
         let url = artifactURLForID(id)
         guard fileManager.fileExists(atPath: url.path) else {
@@ -148,6 +220,10 @@ public actor ColonyArtifactStore {
         return artifact.content
     }
 
+    /// Enforces retention policy by removing expired artifacts.
+    ///
+    /// - Parameter now: Reference time for age calculation.
+    /// - Returns: IDs of removed artifacts.
     @discardableResult
     public func enforceRetention(now: Date = Date()) async throws -> [String] {
         let artifacts = try loadStoredArtifacts()

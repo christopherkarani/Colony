@@ -1,10 +1,23 @@
 import HiveCore
 
+/// Risk level classification for tools, ordered by increasing severity.
+///
+/// `ColonyToolRiskLevel` classifies tools based on their potential impact:
+/// - `.readOnly` — Read-only operations with no side effects
+/// - `.stateMutation` — Modifies internal agent state (e.g., scratchpad)
+/// - `.mutation` — Modifies files or git state
+/// - `.execution` — Runs arbitrary code or commands
+/// - `.network` — Makes network requests
 public enum ColonyToolRiskLevel: String, Codable, Sendable, CaseIterable, Comparable {
+    /// Read-only operation with no side effects.
     case readOnly = "read_only"
+    /// Modifies internal agent state (e.g., scratchpad, todos).
     case stateMutation = "state_mutation"
+    /// Modifies files, disk state, or git state.
     case mutation
+    /// Executes arbitrary code or commands.
     case execution
+    /// Makes network requests to external services.
     case network
 
     public static func < (lhs: ColonyToolRiskLevel, rhs: ColonyToolRiskLevel) -> Bool {
@@ -27,17 +40,27 @@ public enum ColonyToolRiskLevel: String, Codable, Sendable, CaseIterable, Compar
     }
 }
 
+/// Reason why a tool requires approval.
 public enum ColonyToolApprovalRequirementReason: String, Codable, Sendable, Equatable {
+    /// Required because its risk level mandates approval.
     case mandatoryRiskLevel = "mandatory_risk_level"
+    /// Required because the approval policy is `.always`.
     case policyAlways = "policy_always"
+    /// Required because the tool is not in the allow list.
     case policyNotAllowListed = "policy_not_allow_listed"
 }
 
+/// Result of assessing a single tool call's safety properties.
 public struct ColonyToolSafetyAssessment: Sendable, Equatable {
+    /// The unique identifier of the tool call.
     public var toolCallID: String
+    /// The name of the tool being assessed.
     public var toolName: String
+    /// The risk level assigned to this tool.
     public var riskLevel: ColonyToolRiskLevel
+    /// Whether this tool requires approval before execution.
     public var requiresApproval: Bool
+    /// The reason approval is required, if applicable.
     public var reason: ColonyToolApprovalRequirementReason?
 
     public init(
@@ -55,10 +78,18 @@ public struct ColonyToolSafetyAssessment: Sendable, Equatable {
     }
 }
 
+/// Engine for evaluating tool safety and determining approval requirements.
+///
+/// `ColonyToolSafetyPolicyEngine` combines the tool approval policy with
+/// risk level overrides to produce safety assessments for tool calls.
 public struct ColonyToolSafetyPolicyEngine: Sendable {
+    /// The base approval policy to apply.
     public var approvalPolicy: ColonyToolApprovalPolicy
+    /// Tool-specific risk level overrides.
     public var riskLevelOverrides: [String: ColonyToolRiskLevel]
+    /// Risk levels that always require approval regardless of policy.
     public var mandatoryApprovalRiskLevels: Set<ColonyToolRiskLevel>
+    /// Default risk level for unknown tools.
     public var defaultRiskLevel: ColonyToolRiskLevel
 
     public init(
@@ -73,6 +104,12 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
         self.defaultRiskLevel = defaultRiskLevel
     }
 
+    /// Returns the effective risk level for a tool.
+    ///
+    /// Resolution order: override > built-in default > configured default.
+    ///
+    /// - Parameter toolName: The name of the tool
+    /// - Returns: The risk level to assign to this tool
     public func riskLevel(for toolName: String) -> ColonyToolRiskLevel {
         if let override = riskLevelOverrides[toolName] {
             return override
@@ -83,6 +120,10 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
         return defaultRiskLevel
     }
 
+    /// Assesses the safety of a batch of tool calls.
+    ///
+    /// - Parameter toolCalls: The tool calls to assess
+    /// - Returns: An array of safety assessments, one per tool call
     public func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
         toolCalls.map { call in
             let riskLevel = riskLevel(for: call.name)

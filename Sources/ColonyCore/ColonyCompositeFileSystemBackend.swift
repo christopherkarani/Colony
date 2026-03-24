@@ -2,6 +2,22 @@ import Foundation
 
 // MARK: - Composite Service
 
+/// A filesystem service that routes requests to different backends based on path prefixes.
+///
+/// `ColonyCompositeFileSystemService` provides a mounting mechanism similar to Unix filesystems.
+/// Paths are routed to different backend services based on longest-prefix matching against
+/// a configured route table. Paths that don't match any route fall through to the default backend.
+///
+/// Example:
+/// ```swift
+/// let composite = ColonyCompositeFileSystemService(
+///     default: diskBackend,
+///     routes: [
+///         ColonyFileSystem.VirtualPath.scratchbookRoot: memoryBackend,
+///         try ColonyFileSystem.VirtualPath("/memory"): memoryBackend
+///     ]
+/// )
+/// ```
 public struct ColonyCompositeFileSystemService: ColonyFileSystem.Service {
     public let `default`: any ColonyFileSystem.Service
     public let routes: [ColonyFileSystem.VirtualPath: any ColonyFileSystem.Service]

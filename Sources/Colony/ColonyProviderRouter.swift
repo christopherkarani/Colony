@@ -2,9 +2,15 @@ import Foundation
 import HiveCore
 import ColonyCore
 
+/// Errors that can occur during provider routing.
 public enum ProviderRoutingError: Error, Sendable, CustomStringConvertible, Equatable {
+    /// No providers were configured.
     case noProvidersConfigured
+
+    /// No provider was eligible (e.g., rate limited, cost ceiling exceeded).
     case noEligibleProvider(reasons: [String])
+
+    /// Operation was degraded with a fallback response.
     case degraded(message: String)
 
     public var description: String {
@@ -22,15 +28,36 @@ public enum ProviderRoutingError: Error, Sendable, CustomStringConvertible, Equa
 @available(*, deprecated, renamed: "ProviderRoutingError")
 public typealias ColonyProviderRouterError = ProviderRoutingError
 
+/// A router that selects among multiple providers based on priority and budget.
+///
+/// This router is deprecated. Use `ColonyModelRouter` with the `.prioritized` strategy instead.
 @available(*, deprecated, message: "Use ColonyModelRouter with .prioritized strategy instead")
 public struct ColonyProviderRouter: HiveModelRouter, Sendable {
+    /// A provider configuration for the router.
     public struct Provider: Sendable {
+        /// Unique identifier for this provider.
         public let id: String
+
+        /// The model client for this provider.
         public let client: AnyHiveModelClient
+
+        /// Priority (lower values = higher priority).
         public let priority: Int
+
+        /// Maximum requests per minute, or nil for unlimited.
         public let maxRequestsPerMinute: Int?
+
+        /// Cost per 1K tokens in USD, or nil if unknown.
         public let usdPer1KTokens: Double?
 
+        /// Creates a new provider.
+        ///
+        /// - Parameters:
+        ///   - id: Provider identifier.
+        ///   - client: Model client for this provider.
+        ///   - priority: Priority (lower = higher priority).
+        ///   - maxRequestsPerMinute: Optional rate limit.
+        ///   - usdPer1KTokens: Optional cost per 1K tokens.
         public init(
             id: String,
             client: AnyHiveModelClient,
@@ -46,20 +73,47 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
         }
     }
 
+    /// Policy for graceful degradation when all providers fail.
     public enum GracefulDegradationPolicy: Sendable {
+        /// Fail with an error.
         case fail
+        /// Return a synthetic response with the given message.
         case syntheticResponse(String)
     }
 
+    /// Configuration policy for provider routing.
     public struct Policy: Sendable {
+        /// Maximum retry attempts per provider.
         public var maxAttemptsPerProvider: Int
+
+        /// Initial backoff duration in nanoseconds.
         public var initialBackoffNanoseconds: UInt64
+
+        /// Maximum backoff duration in nanoseconds.
         public var maxBackoffNanoseconds: UInt64
+
+        /// Global rate limit (requests per minute).
         public var globalMaxRequestsPerMinute: Int?
+
+        /// Cost ceiling in USD.
         public var costCeilingUSD: Double?
+
+        /// Estimated output to input token ratio for cost estimation.
         public var estimatedOutputToInputRatio: Double
+
+        /// Graceful degradation policy.
         public var gracefulDegradation: GracefulDegradationPolicy
 
+        /// Creates a new routing policy.
+        ///
+        /// - Parameters:
+        ///   - maxAttemptsPerProvider: Maximum attempts per provider.
+        ///   - initialBackoffNanoseconds: Initial backoff duration.
+        ///   - maxBackoffNanoseconds: Maximum backoff duration.
+        ///   - globalMaxRequestsPerMinute: Optional global rate limit.
+        ///   - costCeilingUSD: Optional cost ceiling.
+        ///   - estimatedOutputToInputRatio: Token ratio for estimation.
+        ///   - gracefulDegradation: Degradation policy.
         public init(
             maxAttemptsPerProvider: Int = 2,
             initialBackoffNanoseconds: UInt64 = 100_000_000,
@@ -84,6 +138,13 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
         let sleep: @Sendable (UInt64) async throws -> Void
     }
 
+    /// Creates a new provider router.
+    ///
+    /// - Parameters:
+    ///   - providers: List of providers (sorted by priority).
+    ///   - policy: Routing policy.
+    ///   - now: Clock for time measurements.
+    ///   - sleep: Async sleep function.
     public init(
         providers: [Provider],
         policy: Policy = Policy(),
@@ -102,6 +163,8 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
     public func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         AnyHiveModelClient(ColonyProviderRoutingClient(router: self, hints: hints))
     }
+
+    // MARK: - Private
 
     fileprivate func complete(request: HiveChatRequest, hints: HiveInferenceHints?) async throws -> HiveChatResponse {
         _ = hints

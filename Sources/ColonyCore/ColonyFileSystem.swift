@@ -2,12 +2,28 @@ import Foundation
 
 // MARK: - Namespace
 
+/// Namespace for Colony's virtual filesystem types.
+///
+/// The virtual filesystem provides a consistent, path-based interface for file operations
+/// across different backend implementations (memory, disk, etc.).
 public enum ColonyFileSystem {}
 
 // MARK: - Nested Types
 
 extension ColonyFileSystem {
+    /// A normalized, validated virtual path within Colony's filesystem.
+    ///
+    /// `VirtualPath` represents an absolute path within the virtual filesystem.
+    /// Paths are normalized on construction: duplicate slashes are collapsed, trailing
+    /// slashes are removed (except for root `/`), and `..` components are rejected.
+    ///
+    /// Example:
+    /// ```swift
+    /// let path = try ColonyFileSystem.VirtualPath("/foo/bar")
+    /// let root = ColonyFileSystem.VirtualPath.root
+    /// ```
     public struct VirtualPath: Hashable, Sendable, Codable {
+        /// The normalized string value of the path.
         public let rawValue: String
         private init(knownNormalizedValue: String) {
             self.rawValue = knownNormalizedValue
@@ -78,9 +94,13 @@ extension ColonyFileSystem {
 }
 
 extension ColonyFileSystem {
+    /// Metadata about a file or directory in the virtual filesystem.
     public struct FileInfo: Sendable, Codable, Equatable {
+        /// The path to this file or directory.
         public let path: VirtualPath
+        /// Whether this entry is a directory.
         public let isDirectory: Bool
+        /// Size in bytes, `nil` for directories.
         public let sizeBytes: Int?
 
         public init(path: VirtualPath, isDirectory: Bool, sizeBytes: Int?) {
@@ -92,9 +112,13 @@ extension ColonyFileSystem {
 }
 
 extension ColonyFileSystem {
+    /// A single line match from a grep search.
     public struct GrepMatch: Sendable, Codable, Equatable {
+        /// Path to the file containing the match.
         public let path: VirtualPath
+        /// 1-based line number of the match.
         public let line: Int
+        /// The full text of the matching line.
         public let text: String
 
         public init(path: VirtualPath, line: Int, text: String) {
@@ -106,27 +130,74 @@ extension ColonyFileSystem {
 }
 
 extension ColonyFileSystem {
+    /// Errors that can occur during filesystem operations.
     public enum Error: Swift.Error, Sendable, Equatable {
+        /// Path contains invalid components (e.g., `..`, `~`).
         case invalidPath(String)
+        /// The requested path does not exist.
         case notFound(VirtualPath)
+        /// The path exists but is a directory (file operation expected).
         case isDirectory(VirtualPath)
+        /// The path already exists (create operation failed).
         case alreadyExists(VirtualPath)
+        /// A generic I/O error with a description.
         case ioError(String)
     }
 }
 
 extension ColonyFileSystem {
+    /// Protocol for filesystem service implementations.
+    ///
+    /// Implement this protocol to provide custom filesystem backends for Colony.
+    /// The service provides a consistent interface for file operations regardless
+    /// of the underlying storage mechanism.
     public protocol Service: Sendable {
+        /// Lists the contents of a directory.
+        ///
+        /// - Parameter path: The directory path to list
+        /// - Returns: Array of file info entries in the directory
         func list(at path: VirtualPath) async throws -> [FileInfo]
+
+        /// Reads the contents of a file.
+        ///
+        /// - Parameter path: The file path to read
+        /// - Returns: The file contents as a string
         func read(at path: VirtualPath) async throws -> String
+
+        /// Writes content to a file (fails if file exists).
+        ///
+        /// - Parameters:
+        ///   - path: The file path to write
+        ///   - content: The content to write
         func write(at path: VirtualPath, content: String) async throws
+
+        /// Edits a file by replacing text.
+        ///
+        /// - Parameters:
+        ///   - path: The file path to edit
+        ///   - oldString: The text to find and replace
+        ///   - newString: The replacement text
+        ///   - replaceAll: Whether to replace all occurrences or just the first
+        /// - Returns: The number of replacements made
         func edit(
             at path: VirtualPath,
             oldString: String,
             newString: String,
             replaceAll: Bool
         ) async throws -> Int
+
+        /// Finds paths matching a glob pattern.
+        ///
+        /// - Parameter pattern: Glob pattern (supports `*` and `?`)
+        /// - Returns: Array of matching paths
         func glob(pattern: String) async throws -> [VirtualPath]
+
+        /// Searches for lines matching a pattern.
+        ///
+        /// - Parameters:
+        ///   - pattern: The text pattern to search for
+        ///   - glob: Optional glob pattern to filter files
+        /// - Returns: Array of matching lines with context
         func grep(pattern: String, glob: String?) async throws -> [GrepMatch]
     }
 }

@@ -1,12 +1,22 @@
 import Foundation
 import HiveCore
 
+/// A durable checkpoint store that persists to the filesystem.
+///
+/// This store saves checkpoints as JSON files organized by thread ID,
+/// enabling recovery of agent state across application restarts.
 public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
     private let baseURL: URL
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// Creates a new durable checkpoint store at the specified URL.
+    ///
+    /// - Parameters:
+    ///   - baseURL: Base directory for checkpoint storage.
+    ///   - fileManager: File manager to use. Defaults to `.default`.
+    /// - Throws: If the directory cannot be created.
     public init(baseURL: URL, fileManager: FileManager = .default) throws {
         self.baseURL = baseURL
         self.fileManager = fileManager
@@ -19,6 +29,9 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         try ColonyPersistenceIO.ensureDirectoryExists(baseURL, fileManager: fileManager)
     }
 
+    /// Saves a checkpoint to durable storage.
+    ///
+    /// - Parameter checkpoint: The checkpoint to save.
     public func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
         let threadDirectory = threadDirectoryURL(threadID: checkpoint.threadID)
         try ColonyPersistenceIO.ensureDirectoryExists(threadDirectory, fileManager: fileManager)
@@ -28,6 +41,10 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         try ColonyPersistenceIO.writeJSON(checkpoint, to: fileURL, encoder: encoder, fileManager: fileManager)
     }
 
+    /// Loads the latest checkpoint for a thread.
+    ///
+    /// - Parameter threadID: The thread ID to load checkpoints for.
+    /// - Returns: The latest checkpoint, or nil if none exist.
     public func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
         let checkpoints = try loadCheckpoints(threadID: threadID)
         return checkpoints.max(by: { lhs, rhs in
@@ -38,6 +55,12 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         })?.checkpoint
     }
 
+    /// Lists checkpoints for a thread with optional limit.
+    ///
+    /// - Parameters:
+    ///   - threadID: The thread ID.
+    ///   - limit: Maximum number of checkpoints to return.
+    /// - Returns: List of checkpoint summaries, newest first.
     public func listCheckpoints(threadID: HiveThreadID, limit: Int?) async throws -> [HiveCheckpointSummary] {
         if let limit, limit <= 0 {
             return []
@@ -70,6 +93,12 @@ public actor ColonyDurableCheckpointStore<Schema: HiveSchema>: HiveCheckpointQue
         return summaries
     }
 
+    /// Loads a specific checkpoint by ID.
+    ///
+    /// - Parameters:
+    ///   - threadID: The thread ID.
+    ///   - id: The checkpoint ID.
+    /// - Returns: The checkpoint if found.
     public func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<Schema>? {
         let checkpoints = try loadCheckpoints(threadID: threadID)
             .filter { $0.checkpoint.id == id }

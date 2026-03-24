@@ -1,6 +1,16 @@
 import Foundation
 
+/// Namespace for scratchbook persistence operations.
+///
+/// `ColonyScratchbookStore` provides static methods for loading and saving
+/// scratchbook/workspace data to a filesystem backend.
 public enum ColonyScratchbookStore {
+    /// Computes the virtual path for a scratchbook file given a thread ID.
+    ///
+    /// - Parameters:
+    ///   - threadID: The thread/scrapbook identifier
+    ///   - policy: The scratchbook policy defining the path prefix
+    /// - Returns: The virtual path where the scratchbook file should be stored
     public static func path(
         threadID: String,
         policy: ColonyScratchbookPolicy
@@ -10,6 +20,13 @@ public enum ColonyScratchbookStore {
         return try ColonyVirtualPath(policy.pathPrefix.rawValue + "/" + filename)
     }
 
+    /// Loads a scratchbook from a filesystem backend.
+    ///
+    /// - Parameters:
+    ///   - filesystem: The filesystem backend to read from
+    ///   - threadID: The thread/scrapbook identifier
+    ///   - policy: The scratchbook policy
+    /// - Returns: The loaded `ColonyScratchbook`, or an empty one if not found
     public static func load(
         filesystem: any ColonyFileSystemBackend,
         threadID: String,
@@ -39,6 +56,13 @@ public enum ColonyScratchbookStore {
         return try JSONDecoder().decode(ColonyScratchbook.self, from: data)
     }
 
+    /// Saves a scratchbook to a filesystem backend.
+    ///
+    /// - Parameters:
+    ///   - scratchbook: The scratchbook to save
+    ///   - filesystem: The filesystem backend to write to
+    ///   - threadID: The thread/scrapbook identifier
+    ///   - policy: The scratchbook policy
     public static func save(
         _ scratchbook: ColonyScratchbook,
         filesystem: any ColonyFileSystemBackend,
@@ -57,6 +81,10 @@ public enum ColonyScratchbookStore {
 
     // MARK: - Helpers
 
+    /// Sanitizes a thread ID into a safe filename component.
+    ///
+    /// Converts the thread ID to a safe ASCII string, replacing unsafe characters
+    /// with underscores and removing leading/trailing underscores.
     private static func sanitizeThreadID(_ threadID: String) -> String {
         let trimmed = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return "thread" }
@@ -93,6 +121,7 @@ public enum ColonyScratchbookStore {
         return raw.isEmpty ? "thread" : raw
     }
 
+    /// Writes content to a path, handling the already-exists case via edit.
     private static func writeOrOverwrite(
         filesystem: any ColonyFileSystemBackend,
         path: ColonyVirtualPath,
