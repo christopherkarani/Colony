@@ -96,9 +96,11 @@ All providers are `Provider` enum cases in `Colony` namespace. The enum is inter
 
 ### Design Decision
 - Variadic providers: first = primary, rest = fallbacks in order
-- If primary fails, next provider is tried
+- If primary fails (network error, timeout, rate limit, non-recoverable inference error), next provider is tried
+- Retryable errors: network timeout, 429 rate limit, 5xx server error
+- Non-retryable errors: invalid API key, authentication failure — do NOT fall back
 - Continues until success or all providers exhausted
-- Error if all providers fail
+- Error if all providers fail (aggregated error with reasons from each)
 
 ### Example
 
@@ -125,6 +127,8 @@ Colony.agent(.ollama(baseURL: "..."), profile: .cloud)
 |---------|-------------|----------|
 | `.device` | ~4k | Scratchbook enabled, strict compaction |
 | `.cloud` | Generous | No scratchbook, relaxed limits |
+
+**Note:** `.device` replaces the legacy `.onDevice4k` name (deprecated, removed).
 
 ---
 
@@ -241,19 +245,23 @@ import Colony
 
 // New API
 let runtime = Colony.agent(.foundationModels(), profile: .device)
+
+// Migration note: old `.onDevice4k` is now `.device`
 ```
 
 ---
 
-## 9. Types to Remove
+## 9. Types to Remove / Rename
 
-| Type | Reason |
+| Type | Status |
 |------|--------|
-| `ColonyBuilder` | Replaced by `Colony.agent()` |
-| `ColonyAgentFactory` | Deprecated alias for `ColonyBuilder` |
-| `Colony.start()` | Deprecated entry point |
-| `ColonyBootstrap` | Deprecated entry point |
-| `makeRuntime()` | Had the model client gap |
+| `ColonyBuilder` | Removed — replaced by `Colony.agent()` |
+| `ColonyAgentFactory` | Removed — deprecated alias |
+| `Colony.start()` | Removed — deprecated entry point |
+| `ColonyBootstrap` | Removed — deprecated entry point |
+| `makeRuntime()` | Removed — had the model client gap |
+| `ColonyProfile.onDevice4k` | Renamed to `.device` |
+| `ColonyProfile.cloud` | Unchanged |
 
 ---
 
