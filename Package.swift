@@ -64,7 +64,7 @@ let package = Package(
         .testTarget(
             name: "ColonyResearchAssistantExampleTests",
             dependencies: ["ColonyResearchAssistantExample"],
-            exclude: ["CLAUDE.md", ".DS_Store"]
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "ColonyControlPlaneTests",
