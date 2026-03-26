@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Result of applying a unified patch.
 public struct ColonyApplyPatchResult: Sendable, Codable, Equatable {
@@ -123,7 +123,7 @@ public protocol ColonyMCPBackend: Sendable {
 /// Protocol for plugin tool registry operations.
 public protocol ColonyPluginToolRegistry: Sendable {
     /// Lists all tools available from this plugin registry.
-    func listTools() -> [HiveToolDefinition]
+    func listTools() -> [ColonyToolDefinition]
     /// Invokes a plugin tool by name with the given arguments.
     func invoke(name: String, argumentsJSON: String) async throws -> String
 }

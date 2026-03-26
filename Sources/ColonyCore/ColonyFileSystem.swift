@@ -204,25 +204,18 @@ extension ColonyFileSystem {
 
 // MARK: - Deprecated Typealiases
 
-@available(*, deprecated, renamed: "ColonyFileSystem.VirtualPath")
 public typealias ColonyVirtualPath = ColonyFileSystem.VirtualPath
 
-@available(*, deprecated, renamed: "ColonyFileSystem.FileInfo")
 public typealias ColonyFileInfo = ColonyFileSystem.FileInfo
 
-@available(*, deprecated, renamed: "ColonyFileSystem.GrepMatch")
 public typealias ColonyGrepMatch = ColonyFileSystem.GrepMatch
 
-@available(*, deprecated, renamed: "ColonyFileSystem.Error")
 public typealias FileSystemError = ColonyFileSystem.Error
 
-@available(*, deprecated, renamed: "ColonyFileSystem.Error")
 public typealias ColonyFileSystemError = ColonyFileSystem.Error
 
-@available(*, deprecated, renamed: "ColonyFileSystem.Service")
 public typealias ColonyFileSystemService = ColonyFileSystem.Service
 
-@available(*, deprecated, renamed: "ColonyFileSystem.Service")
 public typealias ColonyFileSystemBackend = ColonyFileSystem.Service
 
 // MARK: - In-Memory Backend

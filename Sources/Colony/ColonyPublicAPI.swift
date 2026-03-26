@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 // MARK: - ColonyModel
@@ -106,7 +106,7 @@ public struct ColonyProviderConfiguration: Sendable {
     public var id: String
 
     /// The model client for this provider.
-    public var client: AnyHiveModelClient
+    public var client: any ColonyModelClient
 
     /// Priority (lower values = higher priority).
     public var priority: Int
@@ -127,7 +127,7 @@ public struct ColonyProviderConfiguration: Sendable {
     ///   - usdPer1KTokens: Optional cost per 1K tokens.
     public init(
         id: String,
-        client: AnyHiveModelClient,
+        client: any ColonyModelClient,
         priority: Int = 0,
         maxRequestsPerMinute: Int? = nil,
         usdPer1KTokens: Double? = nil

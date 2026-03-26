@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@_spi(ColonyInternal) import Swarm
 import Colony
 
 @Suite("ColonyRunControl")
@@ -24,15 +25,15 @@ struct ColonyRunControlTests {
             return
         }
 
-        let eventInterruptID = startEvents.compactMap { event -> HiveInterruptID? in
+        let eventInterruptID = startEvents.compactMap { event -> ColonyInterruptID? in
             guard case let .runInterrupted(interruptID) = event.kind else { return nil }
             return interruptID
         }.first
         let correlatedInterruptID = try #require(eventInterruptID)
-        #expect(correlatedInterruptID == interruption.interrupt.id)
+        #expect(correlatedInterruptID == interruption.interruptID)
 
         let resumeHandle = await runtime.runControl.resume(
-            .init(interruptID: interruption.interrupt.id, decision: .approved)
+            .init(interruptID: interruption.interruptID, decision: .approved)
         )
         #expect(resumeHandle.attemptID != startHandle.attemptID)
 
@@ -64,7 +65,7 @@ struct ColonyRunControlTests {
             return
         }
 
-        let staleInterruptID = HiveInterruptID("stale-interrupt-id")
+        let staleInterruptID = ColonyInterruptID("stale-interrupt-id")
         let staleHandle = await runtime.runControl.resume(
             .init(interruptID: staleInterruptID, decision: .approved)
         )
@@ -75,8 +76,8 @@ struct ColonyRunControlTests {
         } catch let error as HiveRuntimeError {
             switch error {
             case let .resumeInterruptMismatch(expected, found):
-                #expect(expected == interruption.interrupt.id)
-                #expect(found == staleInterruptID)
+                #expect(expected == interruption.interruptID.hiveInterruptID)
+                #expect(found == staleInterruptID.hiveInterruptID)
             default:
                 Issue.record("Expected resumeInterruptMismatch but received \(error).")
             }
@@ -93,7 +94,9 @@ struct ColonyRunControlTests {
         let startHandle = await runtime.runControl.start(
             .init(
                 input: "Write /note.md",
-                optionsOverride: HiveRunOptions(checkpointPolicy: .onInterrupt)
+                optionsOverride: ColonyRun.Options(
+                    HiveRunOptions(checkpointPolicy: .onInterrupt)
+                )
             )
         )
         let startOutcome = try await startHandle.outcome.value
@@ -102,14 +105,14 @@ struct ColonyRunControlTests {
             return
         }
 
-        let completionOptions = HiveRunOptions(
+        let completionOptions = ColonyRun.Options(
             maxSteps: 200,
             maxConcurrentTasks: 4,
             checkpointPolicy: .everyStep
         )
         let firstResume = await runtime.runControl.resume(
             .init(
-                interruptID: interruption.interrupt.id,
+                interruptID: interruption.interruptID,
                 decision: .approved,
                 optionsOverride: completionOptions
             )
@@ -118,7 +121,7 @@ struct ColonyRunControlTests {
 
         let duplicateResume = await runtime.runControl.resume(
             .init(
-                interruptID: interruption.interrupt.id,
+                interruptID: interruption.interruptID,
                 decision: .approved,
                 optionsOverride: completionOptions
             )
@@ -154,7 +157,7 @@ struct ColonyRunControlTests {
         }
 
         let resumeHandle = await runtime.runControl.resume(
-            .init(interruptID: interruption.interrupt.id, decision: .rejected)
+            .init(interruptID: interruption.interruptID, decision: .rejected)
         )
         let resumedOutcome = try await resumeHandle.outcome.value
         guard case let .finished(output, _) = resumedOutcome,
@@ -190,23 +193,23 @@ private func makeRuntime(
     model: AnyHiveModelClient,
     filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend()
 ) throws -> ColonyRuntime {
-    try ColonyAgentFactory().makeRuntime(
-        profile: .onDevice4k,
-        threadID: HiveThreadID(threadID),
-        modelName: "test-model",
-        model: model,
-        filesystem: filesystem,
-        configure: { configuration in
+    try ColonyBuilder()
+        .profile(.onDevice4k)
+        .threadID(HiveThreadID(threadID))
+        .model(name: "test-model")
+        .model(model)
+        .filesystem(filesystem)
+        .configure { configuration in
             configuration.capabilities = [.filesystem]
             configuration.toolApprovalPolicy = .always
             configuration.summarizationPolicy = nil
             configuration.toolResultEvictionTokenLimit = nil
         }
-    )
+        .build()
 }
 
-private func collectEvents(_ stream: AsyncThrowingStream<HiveEvent, Error>) async -> [HiveEvent] {
-    var events: [HiveEvent] = []
+private func collectEvents(_ stream: AsyncThrowingStream<ColonyRun.Event, Error>) async -> [ColonyRun.Event] {
+    var events: [ColonyRun.Event] = []
     do {
         for try await event in stream {
             events.append(event)

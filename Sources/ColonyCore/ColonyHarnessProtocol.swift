@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Stable identifier for a harness session.
 public struct ColonyHarnessSessionID: Hashable, Codable, Sendable {
@@ -227,11 +227,11 @@ public struct ColonyHarnessEventEnvelope: Codable, Equatable, Sendable {
 
 /// Pending interruption surfaced through the harness session API.
 public struct ColonyHarnessInterruption: Sendable {
-    public let runID: UUID
-    public let interruptID: HiveInterruptID
-    public let toolCalls: [HiveToolCall]
+    public let runID: ColonyRunID
+    public let interruptID: ColonyInterruptID
+    public let toolCalls: [ColonyToolCall]
 
-    public init(runID: UUID, interruptID: HiveInterruptID, toolCalls: [HiveToolCall]) {
+    public init(runID: ColonyRunID, interruptID: ColonyInterruptID, toolCalls: [ColonyToolCall]) {
         self.runID = runID
         self.interruptID = interruptID
         self.toolCalls = toolCalls

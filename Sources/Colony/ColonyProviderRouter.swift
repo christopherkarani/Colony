@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// Errors that can occur during provider routing.
@@ -25,21 +25,19 @@ public enum ProviderRoutingError: Error, Sendable, CustomStringConvertible, Equa
     }
 }
 
-@available(*, deprecated, renamed: "ProviderRoutingError")
 public typealias ColonyProviderRouterError = ProviderRoutingError
 
 /// A router that selects among multiple providers based on priority and budget.
 ///
 /// This router is deprecated. Use `ColonyModelRouter` with the `.prioritized` strategy instead.
-@available(*, deprecated, message: "Use ColonyModelRouter with .prioritized strategy instead")
-public struct ColonyProviderRouter: HiveModelRouter, Sendable {
+public struct ColonyProviderRouter: ColonyModelClient, Sendable {
     /// A provider configuration for the router.
     public struct Provider: Sendable {
         /// Unique identifier for this provider.
         public let id: String
 
         /// The model client for this provider.
-        public let client: AnyHiveModelClient
+        public let client: any ColonyModelClient
 
         /// Priority (lower values = higher priority).
         public let priority: Int
@@ -60,7 +58,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
         ///   - usdPer1KTokens: Optional cost per 1K tokens.
         public init(
             id: String,
-            client: AnyHiveModelClient,
+            client: any ColonyModelClient,
             priority: Int = 0,
             maxRequestsPerMinute: Int? = nil,
             usdPer1KTokens: Double? = nil
@@ -160,7 +158,33 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
         self.state = ColonyProviderBudgetState()
     }
 
-    public func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+    public func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
+        let response = try await complete(request: request.hiveChatRequest, hints: nil)
+        return ColonyInferenceResponse(response)
+    }
+
+    public func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let response = try await generate(request)
+                    if response.content.isEmpty == false {
+                        continuation.yield(.token(response.content))
+                    }
+                    continuation.yield(.final(response))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+
+    package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
         AnyHiveModelClient(ColonyProviderRoutingClient(router: self, hints: hints))
     }
 
@@ -221,7 +245,7 @@ public struct ColonyProviderRouter: HiveModelRouter, Sendable {
 
         for attempt in 1 ... maxAttempts {
             do {
-                return try await provider.client.complete(request)
+                return try await ColonyModelClientBridge(client: provider.client).complete(request)
             } catch {
                 lastError = error
                 guard attempt < maxAttempts else { break }

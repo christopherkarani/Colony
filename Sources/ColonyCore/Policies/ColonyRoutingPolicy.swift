@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 // MARK: - RetryPolicy
 
@@ -42,7 +42,7 @@ public struct ProviderRoute: Sendable {
     public let id: String
 
     /// The model client for this route.
-    public let client: any HiveModelClient
+    public let client: any ColonyModelClient
 
     /// Priority for this route (lower numbers = higher priority).
     public let priority: Int
@@ -63,7 +63,7 @@ public struct ProviderRoute: Sendable {
     ///   - usdPer1KTokens: Cost per 1K tokens in USD (default: nil)
     public init(
         id: String,
-        client: any HiveModelClient,
+        client: any ColonyModelClient,
         priority: Int = 0,
         maxRequestsPerMinute: Int? = nil,
         usdPer1KTokens: Double? = nil
@@ -155,15 +155,15 @@ public struct CostPolicy: Sendable {
 /// Strategy for routing model requests to appropriate providers.
 public enum RoutingStrategy: Sendable {
     /// Use a single model client for all requests.
-    case single(any HiveModelClient)
+    case single(any ColonyModelClient)
 
     /// Try providers in priority order with retry policy.
     case prioritized([ProviderRoute], RetryPolicy)
 
     /// Use on-device when available, with fallback and privacy controls.
     case onDevice(
-        onDevice: (any HiveModelClient)?,
-        fallback: any HiveModelClient,
+        onDevice: (any ColonyModelClient)?,
+        fallback: any ColonyModelClient,
         privacy: PrivacyBehavior
     )
 

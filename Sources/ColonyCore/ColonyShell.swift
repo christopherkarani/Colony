@@ -170,7 +170,6 @@ public struct ColonyShellSessionSnapshot: Sendable, Equatable {
 ///
 /// The backend protocol extends `ColonyShellService` with session management capabilities.
 /// For simple command execution, migrate to `ColonyShellService`.
-@available(*, deprecated, renamed: "ColonyShellService", message: "Use ColonyShellService instead. Session management methods are being moved to a separate protocol.")
 public protocol ColonyShellBackend: ColonyShellService {
     /// Opens an interactive shell session.
     func openSession(_ request: ColonyShellSessionOpenRequest) async throws -> ColonyShellSessionID

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@_spi(ColonyInternal) import Swarm
 @testable import Colony
 
 private func requireCodableAndSendable<T: Codable & Sendable>(_: T.Type) {}

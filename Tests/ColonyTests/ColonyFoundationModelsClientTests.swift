@@ -1,4 +1,5 @@
 import Testing
+@_spi(ColonyInternal) import Swarm
 @testable import Colony
 
 private let sampleTools: [HiveToolDefinition] = [

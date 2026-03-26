@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// The main runtime wrapper for Colony agent execution.
@@ -23,21 +23,21 @@ public struct ColonyRuntime: Sendable {
     public let runControl: ColonyRunControl
 
     /// The thread ID for this runtime's conversation.
-    public var threadID: HiveThreadID { runControl.threadID }
+    public var threadID: ColonyThreadID { runControl.threadID }
 
     /// The underlying Hive runtime.
-    public var runtime: HiveRuntime<ColonySchema> { runControl.runtime }
+    package var runtime: HiveRuntime<ColonySchema> { runControl.runtime }
 
     /// Run options controlling execution behavior.
-    public var options: HiveRunOptions { runControl.options }
+    public var options: ColonyRun.Options { runControl.options }
 
     /// Creates a new runtime with the specified run control.
     ///
     /// - Parameter runControl: The run control handle to wrap.
-    public init(
-        threadID: HiveThreadID,
+    package init(
+        threadID: ColonyThreadID,
         runtime: HiveRuntime<ColonySchema>,
-        options: HiveRunOptions
+        options: ColonyRun.Options
     ) {
         self.runControl = ColonyRunControl(
             threadID: threadID,
@@ -46,7 +46,7 @@ public struct ColonyRuntime: Sendable {
         )
     }
 
-    public init(runControl: ColonyRunControl) {
+    package init(runControl: ColonyRunControl) {
         self.runControl = runControl
     }
 
@@ -57,7 +57,7 @@ public struct ColonyRuntime: Sendable {
     ///
     /// - Parameter text: The user's message to send to the agent.
     /// - Returns: A handle for the started run.
-    public func sendUserMessage(_ text: String) async -> HiveRunHandle<ColonySchema> {
+    public func sendUserMessage(_ text: String) async -> ColonyRun.Handle {
         await runControl.start(.init(input: text))
     }
 
@@ -71,9 +71,9 @@ public struct ColonyRuntime: Sendable {
     ///   - decision: The user's decision about the pending tool calls.
     /// - Returns: A handle for the resumed run.
     public func resumeToolApproval(
-        interruptID: HiveInterruptID,
+        interruptID: ColonyInterruptID,
         decision: ColonyToolApprovalDecision
-    ) async -> HiveRunHandle<ColonySchema> {
+    ) async -> ColonyRun.Handle {
         await runControl.resume(
             .init(
                 interruptID: interruptID,
@@ -92,9 +92,9 @@ public struct ColonyRuntime: Sendable {
     ///   - perToolDecisions: A dictionary mapping tool call IDs to their decisions.
     /// - Returns: A handle for the resumed run.
     public func resumeToolApproval(
-        interruptID: HiveInterruptID,
+        interruptID: ColonyInterruptID,
         perToolDecisions: [String: ColonyPerToolApprovalDecision]
-    ) async -> HiveRunHandle<ColonySchema> {
+    ) async -> ColonyRun.Handle {
         await resumeToolApproval(
             interruptID: interruptID,
             decision: .perTool(

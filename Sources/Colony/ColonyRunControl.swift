@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// Request to start a new Colony run with a user message.
@@ -9,7 +9,7 @@ public struct ColonyRunStartRequest: Sendable {
     public var input: String
 
     /// Optional override for runtime options. If nil, uses runtime defaults.
-    public var optionsOverride: HiveRunOptions?
+    public var optionsOverride: ColonyRun.Options?
 
     /// Creates a new start request.
     ///
@@ -18,7 +18,7 @@ public struct ColonyRunStartRequest: Sendable {
     ///   - optionsOverride: Optional runtime options override.
     public init(
         input: String,
-        optionsOverride: HiveRunOptions? = nil
+        optionsOverride: ColonyRun.Options? = nil
     ) {
         self.input = input
         self.optionsOverride = optionsOverride
@@ -31,13 +31,13 @@ public struct ColonyRunStartRequest: Sendable {
 /// and optional runtime options override.
 public struct ColonyRunResumeRequest: Sendable {
     /// The ID of the interruption to resume from.
-    public var interruptID: HiveInterruptID
+    public var interruptID: ColonyInterruptID
 
     /// The user's decision about the pending tool calls.
     public var decision: ColonyToolApprovalDecision
 
     /// Optional override for runtime options. If nil, uses runtime defaults.
-    public var optionsOverride: HiveRunOptions?
+    public var optionsOverride: ColonyRun.Options?
 
     /// Creates a new resume request.
     ///
@@ -46,9 +46,9 @@ public struct ColonyRunResumeRequest: Sendable {
     ///   - decision: The tool approval decision.
     ///   - optionsOverride: Optional runtime options override.
     public init(
-        interruptID: HiveInterruptID,
+        interruptID: ColonyInterruptID,
         decision: ColonyToolApprovalDecision,
-        optionsOverride: HiveRunOptions? = nil
+        optionsOverride: ColonyRun.Options? = nil
     ) {
         self.interruptID = interruptID
         self.decision = decision
@@ -63,13 +63,13 @@ public struct ColonyRunResumeRequest: Sendable {
 /// underlying Hive runtime with Colony-specific logic.
 public struct ColonyRunControl: Sendable {
     /// The thread ID for this run's conversation.
-    public let threadID: HiveThreadID
+    public let threadID: ColonyThreadID
 
     /// The underlying Hive runtime.
-    public let runtime: HiveRuntime<ColonySchema>
+    package let runtime: HiveRuntime<ColonySchema>
 
     /// Default run options.
-    public let options: HiveRunOptions
+    public let options: ColonyRun.Options
 
     /// Creates a new run control handle.
     ///
@@ -77,10 +77,10 @@ public struct ColonyRunControl: Sendable {
     ///   - threadID: The thread ID for the conversation.
     ///   - runtime: The underlying Hive runtime.
     ///   - options: Default run options.
-    public init(
-        threadID: HiveThreadID,
+    package init(
+        threadID: ColonyThreadID,
         runtime: HiveRuntime<ColonySchema>,
-        options: HiveRunOptions
+        options: ColonyRun.Options
     ) {
         self.threadID = threadID
         self.runtime = runtime
@@ -91,26 +91,28 @@ public struct ColonyRunControl: Sendable {
     ///
     /// - Parameter request: The start request containing the input message.
     /// - Returns: A handle for the started run.
-    public func start(_ request: ColonyRunStartRequest) async -> HiveRunHandle<ColonySchema> {
-        let effectiveOptions = request.optionsOverride ?? options
-        return await runtime.run(
-            threadID: threadID,
+    public func start(_ request: ColonyRunStartRequest) async -> ColonyRun.Handle {
+        let effectiveOptions = (request.optionsOverride ?? options).hiveRunOptions
+        let handle = await runtime.run(
+            threadID: threadID.hiveThreadID,
             input: request.input,
             options: effectiveOptions
         )
+        return ColonyRun.Handle(wrapping: handle)
     }
 
     /// Resumes a run after an interruption.
     ///
     /// - Parameter request: The resume request containing interruption ID and decision.
     /// - Returns: A handle for the resumed run.
-    public func resume(_ request: ColonyRunResumeRequest) async -> HiveRunHandle<ColonySchema> {
-        let effectiveOptions = request.optionsOverride ?? options
-        return await runtime.resume(
-            threadID: threadID,
-            interruptID: request.interruptID,
+    public func resume(_ request: ColonyRunResumeRequest) async -> ColonyRun.Handle {
+        let effectiveOptions = (request.optionsOverride ?? options).hiveRunOptions
+        let handle = await runtime.resume(
+            threadID: threadID.hiveThreadID,
+            interruptID: request.interruptID.hiveInterruptID,
             payload: .toolApproval(decision: request.decision),
             options: effectiveOptions
         )
+        return ColonyRun.Handle(wrapping: handle)
     }
 }

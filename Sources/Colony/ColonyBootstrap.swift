@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 // MARK: - ColonyBootstrap (Deprecated)
@@ -30,12 +30,12 @@ public enum ColonyBootstrap {
     public static func bootstrap(
         modelName: String,
         profile: ColonyProfile = .device,
-        threadID: HiveThreadID? = nil
+        threadID: ColonyThreadID? = nil
     ) throws -> ColonyRuntime {
         let factory = ColonyAgentFactory()
         return try factory.makeRuntime(
             profile: profile,
-            threadID: threadID ?? HiveThreadID("colony:" + UUID().uuidString),
+            threadID: (threadID ?? ColonyThreadID("colony:" + UUID().uuidString)).hiveThreadID,
             modelName: modelName
         )
     }

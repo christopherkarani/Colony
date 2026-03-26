@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@_spi(ColonyInternal) import Swarm
 @testable import Colony
 
 private struct SafetyNoopClock: HiveClock {

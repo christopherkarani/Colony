@@ -1,6 +1,7 @@
 import Foundation
 import Dispatch
 import Testing
+@_spi(ColonyInternal) import Swarm
 @testable import Colony
 
 private enum TaskETestError: Error {
@@ -109,6 +110,39 @@ private final class DelayedFixedModelClient: HiveModelClient, @unchecked Sendabl
                 do {
                     let response = try await self.complete(request)
                     continuation.yield(.final(response))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+private struct TestColonyModelClientBridge: ColonyModelClient, Sendable {
+    let client: AnyHiveModelClient
+
+    init(_ client: some HiveModelClient) {
+        self.client = AnyHiveModelClient(client)
+    }
+
+    func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
+        ColonyInferenceResponse(try await client.complete(request.hiveChatRequest))
+    }
+
+    func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
+        let stream = client.stream(request.hiveChatRequest)
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await chunk in stream {
+                        switch chunk {
+                        case .token(let text):
+                            continuation.yield(.token(text))
+                        case .final(let response):
+                            continuation.yield(.final(ColonyInferenceResponse(response)))
+                        }
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -374,14 +408,14 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
         providers: [
             ColonyProviderRouter.Provider(
                 id: "primary",
-                client: AnyHiveModelClient(providerA),
+                client: TestColonyModelClientBridge(providerA),
                 priority: 0,
                 maxRequestsPerMinute: 10,
                 usdPer1KTokens: 0.001
             ),
             ColonyProviderRouter.Provider(
                 id: "secondary",
-                client: AnyHiveModelClient(providerB),
+                client: TestColonyModelClientBridge(providerB),
                 priority: 1,
                 maxRequestsPerMinute: 1,
                 usdPer1KTokens: 0.001
@@ -406,14 +440,14 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
         tools: []
     )
 
-    let routedClient = router.route(request, hints: nil)
-    let first = try await routedClient.complete(request)
+    let routedRequest = ColonyInferenceRequest(request)
+    let first = try await router.generate(routedRequest)
     #expect(first.message.content == "ok-from-b")
     #expect(await providerA.snapshotRequestCount() == 2)
     #expect(await providerB.snapshotRequestCount() == 1)
 
     // Second request should hit secondary provider rate ceiling and degrade.
-    let second = try await routedClient.complete(request)
+    let second = try await router.generate(routedRequest)
     #expect(second.message.content == "degraded")
 
     let expensiveProvider = FixedModelClient(content: "expensive")
@@ -421,7 +455,7 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
         providers: [
             ColonyProviderRouter.Provider(
                 id: "expensive",
-                client: AnyHiveModelClient(expensiveProvider),
+                client: TestColonyModelClientBridge(expensiveProvider),
                 priority: 0,
                 maxRequestsPerMinute: nil,
                 usdPer1KTokens: 10
@@ -440,8 +474,7 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
         sleep: { _ in }
     )
 
-    let costClient = costCappedRouter.route(request, hints: nil)
-    let degraded = try await costClient.complete(request)
+    let degraded = try await costCappedRouter.generate(routedRequest)
     #expect(degraded.message.content == "budget-exhausted")
     #expect(await expensiveProvider.snapshotRequestCount() == 0)
 }
@@ -453,7 +486,7 @@ func taskE_providerRouterConcurrentRateCeilingReservation() async throws {
         providers: [
             ColonyProviderRouter.Provider(
                 id: "single",
-                client: AnyHiveModelClient(provider),
+                client: TestColonyModelClientBridge(provider),
                 priority: 0,
                 maxRequestsPerMinute: 1,
                 usdPer1KTokens: nil
@@ -477,12 +510,12 @@ func taskE_providerRouterConcurrentRateCeilingReservation() async throws {
         messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
         tools: []
     )
-    let client = router.route(request, hints: nil)
+    let routedRequest = ColonyInferenceRequest(request)
 
-    async let first = client.complete(request)
-    async let second = client.complete(request)
+    async let first = router.generate(routedRequest)
+    async let second = router.generate(routedRequest)
     let responses = try await [first, second]
-    let responseContents = Set(responses.map(\.message.content))
+    let responseContents = Set(responses.map { $0.message.content })
 
     #expect(responseContents.contains("ok"))
     #expect(responseContents.contains("rate-limited"))

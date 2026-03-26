@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Payload attached to an interrupt when the runtime pauses for human input.
 ///
@@ -8,7 +8,7 @@ public enum ColonyInterruptPayload: Codable, Sendable {
     /// Runtime paused because tool approval is required before execution.
     ///
     /// Contains the list of tool calls that need approval.
-    case toolApprovalRequired(toolCalls: [HiveToolCall])
+    case toolApprovalRequired(toolCalls: [ColonyToolCall])
 }
 
 /// Payload attached to a resume operation to continue interrupted execution.

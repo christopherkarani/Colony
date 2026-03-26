@@ -12,5 +12,4 @@ public enum BudgetError: Error, Sendable, Equatable {
 
 // MARK: - Backward Compatibility
 
-@available(*, deprecated, renamed: "BudgetError")
 public typealias ColonyBudgetError = BudgetError

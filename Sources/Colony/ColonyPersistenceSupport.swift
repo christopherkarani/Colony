@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Policy for redacting sensitive information from logs and artifacts.
 ///

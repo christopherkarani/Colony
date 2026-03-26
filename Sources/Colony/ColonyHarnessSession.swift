@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// Errors that can occur during harness session operations.
@@ -85,7 +85,7 @@ public actor ColonyHarnessSession {
         lifecycleStateStorage = .running
 
         let handle = await runtime.sendUserMessage(input)
-        let runID = handle.runID.rawValue
+        let runID = handle.runID
 
         await emit(
             runID: runID,
@@ -146,7 +146,7 @@ public actor ColonyHarnessSession {
             interruptID: interruptedState.interruptID,
             decision: decision
         )
-        let runID = handle.runID.rawValue
+        let runID = handle.runID
 
         await emit(
             runID: runID,
@@ -190,9 +190,9 @@ public actor ColonyHarnessSession {
     private var interruptionQueue: [ColonyHarnessInterruption] = []
     private var stopRequested: Bool = false
 
-    private var activeAttemptID: HiveRunAttemptID?
-    private var activeRunID: UUID?
-    private var activeOutcomeTask: Task<HiveRunOutcome<ColonySchema>, Error>?
+    private var activeAttemptID: ColonyRunAttemptID?
+    private var activeRunID: ColonyRunID?
+    private var activeOutcomeTask: Task<ColonyRun.Outcome, Error>?
     private var eventPumpTask: Task<Void, Never>?
     private var outcomeMonitorTask: Task<Void, Never>?
 
@@ -211,7 +211,7 @@ public actor ColonyHarnessSession {
         self.observabilityEmitter = observabilityEmitter
     }
 
-    private func beginAttemptMonitoring(handle: HiveRunHandle<ColonySchema>, runID: UUID) {
+    private func beginAttemptMonitoring(handle: ColonyRun.Handle, runID: ColonyRunID) {
         activeAttemptID = handle.attemptID
         activeRunID = runID
         activeOutcomeTask = handle.outcome
@@ -246,7 +246,7 @@ public actor ColonyHarnessSession {
         }
     }
 
-    private func processRuntimeEvent(_ event: HiveEvent, runID: UUID) async {
+    private func processRuntimeEvent(_ event: ColonyRun.Event, runID: ColonyRunID) async {
         switch event.kind {
         case .modelToken(let text):
             await emit(
@@ -277,7 +277,7 @@ public actor ColonyHarnessSession {
         }
     }
 
-    private func processOutcome(_ outcome: HiveRunOutcome<ColonySchema>, runID: UUID) async {
+    private func processOutcome(_ outcome: ColonyRun.Outcome, runID: ColonyRunID) async {
         switch outcome {
         case .finished:
             lifecycleStateStorage = stopRequested ? .stopped : .idle
@@ -292,11 +292,11 @@ public actor ColonyHarnessSession {
             await emit(runID: runID, eventType: .runCancelled, payload: .none)
 
         case .interrupted(let interruption):
-            switch interruption.interrupt.payload {
+            switch interruption.payload {
             case .toolApprovalRequired(let toolCalls):
                 let queuedInterruption = ColonyHarnessInterruption(
                     runID: runID,
-                    interruptID: interruption.interrupt.id,
+                    interruptID: interruption.interruptID,
                     toolCalls: toolCalls
                 )
                 interruptionQueue.append(queuedInterruption)
@@ -319,14 +319,14 @@ public actor ColonyHarnessSession {
         }
     }
 
-    private func emit(runID: UUID, eventType: ColonyHarnessEventType, payload: ColonyHarnessEventPayload) async {
+    private func emit(runID: ColonyRunID, eventType: ColonyHarnessEventType, payload: ColonyHarnessEventPayload) async {
         sequenceCounter += 1
         let envelope = ColonyHarnessEventEnvelope(
             protocolVersion: .v1,
             eventType: eventType,
             sequence: sequenceCounter,
             timestamp: Date(),
-            runID: runID,
+            runID: runID.hiveRunID.rawValue,
             sessionID: sessionID,
             payload: payload
         )
@@ -337,7 +337,7 @@ public actor ColonyHarnessSession {
 
         if let runStateStore {
             do {
-                try await runStateStore.appendEvent(envelope, threadID: ColonyThreadID(hiveThreadID: runtime.threadID))
+                try await runStateStore.appendEvent(envelope, threadID: runtime.threadID)
             } catch {
                 let rendered = String(reflecting: error)
                 let persistenceError = HarnessError.runStatePersistenceFailed(rendered)
@@ -360,11 +360,11 @@ public actor ColonyHarnessSession {
         }
 
         if let observabilityEmitter {
-            await observabilityEmitter.emitHarnessEnvelope(envelope, threadID: ColonyThreadID(hiveThreadID: runtime.threadID))
+            await observabilityEmitter.emitHarnessEnvelope(envelope, threadID: runtime.threadID)
         }
     }
 
-    private func completeAttempt(attemptID: HiveRunAttemptID) async {
+    private func completeAttempt(attemptID: ColonyRunAttemptID) async {
         guard activeAttemptID == attemptID else {
             return
         }

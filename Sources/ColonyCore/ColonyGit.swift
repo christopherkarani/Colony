@@ -346,49 +346,37 @@ public protocol ColonyGitService: Sendable {
 
 // MARK: - Deprecated Type Aliases and Shims
 
-@available(*, deprecated, renamed: "ColonyGitService")
 public typealias ColonyGitBackend = ColonyGitService
 
-@available(*, deprecated, renamed: "ColonyGitStatusResponse")
 public typealias ColonyGitStatusResult = ColonyGitStatusResponse
 
-@available(*, deprecated, renamed: "ColonyGitDiffResponse")
 public typealias ColonyGitDiffResult = ColonyGitDiffResponse
 
-@available(*, deprecated, renamed: "ColonyGitCommitResponse")
 public typealias ColonyGitCommitResult = ColonyGitCommitResponse
 
-@available(*, deprecated, renamed: "ColonyGitBranchResponse")
 public typealias ColonyGitBranchResult = ColonyGitBranchResponse
 
-@available(*, deprecated, renamed: "ColonyGitPushResponse")
 public typealias ColonyGitPushResult = ColonyGitPushResponse
 
-@available(*, deprecated, renamed: "ColonyGitPreparePullRequestResponse")
 public typealias ColonyGitPreparePullRequestResult = ColonyGitPreparePullRequestResponse
 
 public extension ColonyGitService {
-    @available(*, deprecated, renamed: "getStatus")
     func status(_ request: ColonyGitStatusRequest) async throws -> ColonyGitStatusResponse {
         try await getStatus(request)
     }
 
-    @available(*, deprecated, renamed: "getDiff")
     func diff(_ request: ColonyGitDiffRequest) async throws -> ColonyGitDiffResponse {
         try await getDiff(request)
     }
 
-    @available(*, deprecated, renamed: "createCommit")
     func commit(_ request: ColonyGitCommitRequest) async throws -> ColonyGitCommitResponse {
         try await createCommit(request)
     }
 
-    @available(*, deprecated, renamed: "manageBranch")
     func branch(_ request: ColonyGitBranchRequest) async throws -> ColonyGitBranchResponse {
         try await manageBranch(request)
     }
 
-    @available(*, deprecated, renamed: "pushChanges")
     func push(_ request: ColonyGitPushRequest) async throws -> ColonyGitPushResponse {
         try await pushChanges(request)
     }

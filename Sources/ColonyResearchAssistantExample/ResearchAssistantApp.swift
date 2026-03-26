@@ -34,14 +34,12 @@ struct ResearchAssistantApp: Sendable {
 
         let rootURL = URL(fileURLWithPath: options.root, isDirectory: true)
         let filesystem = ColonyDiskFileSystemBackend(root: rootURL)
-        let factory = ColonyAgentFactory()
-
-        let runtime = try factory.makeRuntime(
-            profile: options.profile.colonyProfile,
-            modelName: "colony-research-assistant",
-            model: resolved.client,
-            filesystem: filesystem,
-            configure: { config in
+        let runtime = try ColonyAgentFactory()
+            .profile(options.profile.colonyProfile)
+            .model(name: "colony-research-assistant")
+            .model(resolved.client)
+            .filesystem(filesystem)
+            .configure { config in
                 config.capabilities = [.planning, .filesystem, .subagents]
                 config.toolApprovalPolicy = .allowList([
                     "ls",
@@ -56,7 +54,7 @@ struct ResearchAssistantApp: Sendable {
                 config.toolResultEvictionTokenLimit = nil
                 config.additionalSystemPrompt = Self.researchAssistantSystemPrompt
             }
-        )
+            .build()
 
         print("Colony Research Assistant (\(resolved.selection.rawValue))")
         print("Root: \(options.root)")
@@ -71,7 +69,7 @@ struct ResearchAssistantApp: Sendable {
                 break
             }
 
-            let input = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let input = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
             if input.isEmpty {
                 continue
             }
@@ -81,7 +79,7 @@ struct ResearchAssistantApp: Sendable {
             }
 
             do {
-                let handle = await runtime.runControl.start(.init(input: input))
+                let handle = await runtime.runControl.start(ColonyRunStartRequest(input: input))
                 let answer = try await resolveOutcomeLoop(handle: handle, runtime: runtime)
                 print(answer)
             } catch let error as OnDeviceModelError {
@@ -94,7 +92,7 @@ struct ResearchAssistantApp: Sendable {
     }
 
     private func resolveOutcomeLoop(
-        handle: HiveRunHandle<ColonySchema>,
+        handle: ColonyRun.Handle,
         runtime: ColonyRuntime
     ) async throws -> String {
         var currentHandle = handle
@@ -103,43 +101,47 @@ struct ResearchAssistantApp: Sendable {
             let outcome = try await currentHandle.outcome.value
             switch outcome {
             case let .finished(output, _):
-                return try renderFinalAnswer(from: output)
+                return renderFinalAnswer(from: output)
 
             case let .cancelled(output, _):
-                let answer = try renderFinalAnswer(from: output)
+                let answer = renderFinalAnswer(from: output)
                 return "Run was cancelled.\n\(answer)"
 
             case let .outOfSteps(maxSteps, output, _):
-                let answer = try renderFinalAnswer(from: output)
+                let answer = renderFinalAnswer(from: output)
                 return "Run reached max steps (\(maxSteps)).\n\(answer)"
 
             case let .interrupted(interruption):
-                switch interruption.interrupt.payload {
+                switch interruption.payload {
                 case .toolApprovalRequired(let toolCalls):
                     let decision = promptForApproval(toolCalls: toolCalls)
                     currentHandle = await runtime.runControl.resume(
-                        .init(interruptID: interruption.interrupt.id, decision: decision)
+                        ColonyRunResumeRequest(
+                            interruptID: interruption.interruptID,
+                            decision: decision
+                        )
                     )
                 }
             }
         }
     }
 
-    private func renderFinalAnswer(from output: HiveRunOutput<ColonySchema>) throws -> String {
+    private func renderFinalAnswer(from output: ColonyRun.Output) -> String {
         switch output {
         case .fullStore(let store):
-            return try store.get(ColonySchema.Channels.finalAnswer) ?? "(no final answer)"
-        case .channels:
-            return "(run completed with channel-only output; final answer was not materialized in full-store mode)"
+            return (try? store.get(ColonySchema.Channels.finalAnswer)) ?? "(no final answer)"
+        case .channels(let values):
+            let finalAnswer = values.first(where: { $0.channelID == ColonyChannelID(hiveChannelID: ColonySchema.Channels.finalAnswer.id) })?.value as? String
+            return finalAnswer ?? "(no final answer)"
         }
     }
 
-    private func promptForApproval(toolCalls: [HiveToolCall]) -> ColonyToolApprovalDecision {
-        let names = toolCalls.map(\.name).joined(separator: ", ")
+    private func promptForApproval(toolCalls: [ColonyToolCall]) -> ColonyToolApprovalDecision {
+        let names = toolCalls.map { $0.name }.joined(separator: ", ")
         print("Tool approval required for: \(names)")
         print("Approve? [y/N/c(ancel)]: ", terminator: "")
         fflush(stdout)
-        let response = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let response = readLine()?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).lowercased() ?? ""
         if response == "y" || response == "yes" {
             return .approved
         }

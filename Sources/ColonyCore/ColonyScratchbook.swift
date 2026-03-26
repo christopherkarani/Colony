@@ -502,8 +502,6 @@ public struct ColonyWorkspace: Codable, Sendable, Equatable {
 
 // MARK: - Deprecation Aliases (Old Names)
 
-@available(*, deprecated, renamed: "ColonyWorkspaceItem")
 public typealias ColonyScratchItem = ColonyWorkspaceItem
 
-@available(*, deprecated, renamed: "ColonyWorkspace")
 public typealias ColonyScratchbook = ColonyWorkspace

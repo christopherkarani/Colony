@@ -1,6 +1,6 @@
 import Dispatch
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 // MARK: - Builder Error
@@ -43,12 +43,10 @@ public enum ColonyProfile: Sendable {
 }
 
 extension ColonyProfile {
-    @available(*, deprecated, renamed: "device")
     public static let onDevice4k: Self = .device
 }
 
 /// Deprecated type alias for backward compatibility. Use `AgentMode` instead.
-@available(*, deprecated, renamed: "AgentMode")
 public typealias ColonyLane = AgentMode
 
 /// Configuration preset for specialized agent lanes.
@@ -85,7 +83,7 @@ public struct ColonyLaneConfigurationPreset: Sendable {
 /// System clock implementation using DispatchTime.
 ///
 /// This clock provides monotonic time for runtime coordination.
-public struct ColonySystemClock: HiveClock, Sendable {
+package struct ColonySystemClock: HiveClock, Sendable {
     public init() {}
 
     public func nowNanoseconds() -> UInt64 {
@@ -101,7 +99,7 @@ public struct ColonySystemClock: HiveClock, Sendable {
 ///
 /// Use this logger when logging is not needed or when running in production
 /// with logging handled by external systems.
-public struct ColonyNoopLogger: HiveLogger, Sendable {
+package struct ColonyNoopLogger: HiveLogger, Sendable {
     public init() {}
     public func debug(_ message: String, metadata: [String: String]) {}
     public func info(_ message: String, metadata: [String: String]) {}
@@ -113,16 +111,16 @@ public struct ColonyNoopLogger: HiveLogger, Sendable {
 /// This store keeps all checkpoints in memory and does not persist
 /// them across application restarts. Use `ColonyDurableCheckpointStore`
 /// for production persistence.
-public actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
+package actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
     private var checkpoints: [HiveCheckpoint<Schema>] = []
 
-    public init() {}
+    package init() {}
 
-    public func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+    package func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
     }
 
-    public func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+    package func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
         checkpoints
             .filter { $0.threadID == threadID }
             .max { lhs, rhs in
@@ -201,6 +199,58 @@ public struct ColonyBuilder: Sendable {
         self.configureRunOptions = { _ in }
     }
 
+    private func copy(
+        configuration: ColonyConfiguration? = nil,
+        profile: ColonyProfile? = nil,
+        threadID: HiveThreadID? = nil,
+        model: AnyHiveModelClient?? = nil,
+        modelRouter: ((any HiveModelRouter)?)? = nil,
+        inferenceHints: HiveInferenceHints?? = nil,
+        tools: AnyHiveToolRegistry?? = nil,
+        filesystem: ((any ColonyFileSystemBackend)?)? = nil,
+        shell: ((any ColonyShellBackend)?)? = nil,
+        git: ((any ColonyGitBackend)?)? = nil,
+        lsp: ((any ColonyLSPBackend)?)? = nil,
+        applyPatch: ((any ColonyApplyPatchBackend)?)? = nil,
+        webSearch: ((any ColonyWebSearchBackend)?)? = nil,
+        codeSearch: ((any ColonyCodeSearchBackend)?)? = nil,
+        mcp: ((any ColonyMCPBackend)?)? = nil,
+        memory: ((any ColonyMemoryBackend)?)? = nil,
+        plugins: ((any ColonyPluginToolRegistry)?)? = nil,
+        subagents: ((any ColonySubagentRegistry)?)? = nil,
+        checkpointStore: AnyHiveCheckpointStore<ColonySchema>?? = nil,
+        durableCheckpointDirectoryURL: URL?? = nil,
+        clock: (any HiveClock)? = nil,
+        logger: (any HiveLogger)? = nil,
+        configureRunOptions: (@Sendable (inout HiveRunOptions) -> Void)? = nil
+    ) -> ColonyBuilder {
+        ColonyBuilder(
+            configuration: configuration ?? self.configuration,
+            profile: profile ?? self.profile,
+            threadID: threadID ?? self.threadID,
+            model: model ?? self.model,
+            modelRouter: modelRouter ?? self.modelRouter,
+            inferenceHints: inferenceHints ?? self.inferenceHints,
+            tools: tools ?? self.tools,
+            filesystem: filesystem ?? self.filesystem,
+            shell: shell ?? self.shell,
+            git: git ?? self.git,
+            lsp: lsp ?? self.lsp,
+            applyPatch: applyPatch ?? self.applyPatch,
+            webSearch: webSearch ?? self.webSearch,
+            codeSearch: codeSearch ?? self.codeSearch,
+            mcp: mcp ?? self.mcp,
+            memory: memory ?? self.memory,
+            plugins: plugins ?? self.plugins,
+            subagents: subagents ?? self.subagents,
+            checkpointStore: checkpointStore ?? self.checkpointStore,
+            durableCheckpointDirectoryURL: durableCheckpointDirectoryURL ?? self.durableCheckpointDirectoryURL,
+            clock: clock ?? self.clock,
+            logger: logger ?? self.logger,
+            configureRunOptions: configureRunOptions ?? self.configureRunOptions
+        )
+    }
+
     private init(
         configuration: ColonyConfiguration,
         profile: ColonyProfile,
@@ -260,31 +310,7 @@ public struct ColonyBuilder: Sendable {
     public func model(name: String) -> ColonyBuilder {
         var newConfig = configuration
         newConfig.modelName = name
-        return ColonyBuilder(
-            configuration: newConfig,
-            profile: profile,
-            threadID: threadID,
-            model: model,
-            modelRouter: modelRouter,
-            inferenceHints: inferenceHints,
-            tools: tools,
-            filesystem: filesystem,
-            shell: shell,
-            git: git,
-            lsp: lsp,
-            applyPatch: applyPatch,
-            webSearch: webSearch,
-            codeSearch: codeSearch,
-            mcp: mcp,
-            memory: memory,
-            plugins: plugins,
-            subagents: subagents,
-            checkpointStore: checkpointStore,
-            durableCheckpointDirectoryURL: durableCheckpointDirectoryURL,
-            clock: clock,
-            logger: logger,
-            configureRunOptions: configureRunOptions
-        )
+        return copy(configuration: newConfig)
     }
 
     /// Sets the profile for this runtime.
@@ -292,31 +318,7 @@ public struct ColonyBuilder: Sendable {
     /// - Parameter profile: The profile to use (`.device` or `.cloud`).
     /// - Returns: A new builder with the profile set.
     public func profile(_ profile: ColonyProfile) -> ColonyBuilder {
-        ColonyBuilder(
-            configuration: configuration,
-            profile: profile,
-            threadID: threadID,
-            model: model,
-            modelRouter: modelRouter,
-            inferenceHints: inferenceHints,
-            tools: tools,
-            filesystem: filesystem,
-            shell: shell,
-            git: git,
-            lsp: lsp,
-            applyPatch: applyPatch,
-            webSearch: webSearch,
-            codeSearch: codeSearch,
-            mcp: mcp,
-            memory: memory,
-            plugins: plugins,
-            subagents: subagents,
-            checkpointStore: checkpointStore,
-            durableCheckpointDirectoryURL: durableCheckpointDirectoryURL,
-            clock: clock,
-            logger: logger,
-            configureRunOptions: configureRunOptions
-        )
+        copy(profile: profile)
     }
 
     /// Sets the capabilities for this runtime.
@@ -326,31 +328,116 @@ public struct ColonyBuilder: Sendable {
     public func capabilities(_ capabilities: ColonyCapabilities) -> ColonyBuilder {
         var newConfig = configuration
         newConfig.capabilities = capabilities
-        return ColonyBuilder(
-            configuration: newConfig,
-            profile: profile,
-            threadID: threadID,
-            model: model,
-            modelRouter: modelRouter,
-            inferenceHints: inferenceHints,
-            tools: tools,
-            filesystem: filesystem,
-            shell: shell,
-            git: git,
-            lsp: lsp,
-            applyPatch: applyPatch,
-            webSearch: webSearch,
-            codeSearch: codeSearch,
-            mcp: mcp,
-            memory: memory,
-            plugins: plugins,
-            subagents: subagents,
-            checkpointStore: checkpointStore,
-            durableCheckpointDirectoryURL: durableCheckpointDirectoryURL,
-            clock: clock,
-            logger: logger,
-            configureRunOptions: configureRunOptions
-        )
+        return copy(configuration: newConfig)
+    }
+
+    public func threadID(_ threadID: ColonyThreadID) -> ColonyBuilder {
+        copy(threadID: threadID.hiveThreadID)
+    }
+
+    package func threadID(_ threadID: HiveThreadID) -> ColonyBuilder {
+        copy(threadID: threadID)
+    }
+
+    public func model(_ model: any ColonyModelClient) -> ColonyBuilder {
+        copy(model: AnyHiveModelClient(ColonyModelClientBridge(client: model)))
+    }
+
+    package func model(_ model: AnyHiveModelClient) -> ColonyBuilder {
+        copy(model: model)
+    }
+
+    public func modelRouter(_ modelRouter: any ColonyModelClient) -> ColonyBuilder {
+        model(modelRouter)
+    }
+
+    package func modelRouter(_ modelRouter: any HiveModelRouter) -> ColonyBuilder {
+        copy(modelRouter: modelRouter)
+    }
+
+    public func routingPolicy(_ policy: ColonyRoutingPolicy) -> ColonyBuilder {
+        copy(modelRouter: Self.modelRouter(policy: policy))
+    }
+
+    package func inferenceHints(_ inferenceHints: HiveInferenceHints?) -> ColonyBuilder {
+        copy(inferenceHints: inferenceHints)
+    }
+
+    package func tools(_ tools: AnyHiveToolRegistry?) -> ColonyBuilder {
+        copy(tools: tools)
+    }
+
+    public func filesystem(_ filesystem: (any ColonyFileSystemBackend)?) -> ColonyBuilder {
+        copy(filesystem: filesystem)
+    }
+
+    public func shell(_ shell: (any ColonyShellBackend)?) -> ColonyBuilder {
+        copy(shell: shell)
+    }
+
+    public func git(_ git: (any ColonyGitBackend)?) -> ColonyBuilder {
+        copy(git: git)
+    }
+
+    public func lsp(_ lsp: (any ColonyLSPBackend)?) -> ColonyBuilder {
+        copy(lsp: lsp)
+    }
+
+    public func applyPatch(_ applyPatch: (any ColonyApplyPatchBackend)?) -> ColonyBuilder {
+        copy(applyPatch: applyPatch)
+    }
+
+    public func webSearch(_ webSearch: (any ColonyWebSearchBackend)?) -> ColonyBuilder {
+        copy(webSearch: webSearch)
+    }
+
+    public func codeSearch(_ codeSearch: (any ColonyCodeSearchBackend)?) -> ColonyBuilder {
+        copy(codeSearch: codeSearch)
+    }
+
+    public func mcp(_ mcp: (any ColonyMCPBackend)?) -> ColonyBuilder {
+        copy(mcp: mcp)
+    }
+
+    public func memory(_ memory: (any ColonyMemoryBackend)?) -> ColonyBuilder {
+        copy(memory: memory)
+    }
+
+    public func plugins(_ plugins: (any ColonyPluginToolRegistry)?) -> ColonyBuilder {
+        copy(plugins: plugins)
+    }
+
+    public func subagents(_ subagents: (any ColonySubagentRegistry)?) -> ColonyBuilder {
+        copy(subagents: subagents)
+    }
+
+    package func checkpointStore(_ checkpointStore: AnyHiveCheckpointStore<ColonySchema>?) -> ColonyBuilder {
+        copy(checkpointStore: checkpointStore)
+    }
+
+    public func durableCheckpointDirectoryURL(_ url: URL?) -> ColonyBuilder {
+        copy(durableCheckpointDirectoryURL: url)
+    }
+
+    package func clock(_ clock: any HiveClock) -> ColonyBuilder {
+        copy(clock: clock)
+    }
+
+    package func logger(_ logger: any HiveLogger) -> ColonyBuilder {
+        copy(logger: logger)
+    }
+
+    public func configure(_ configure: @Sendable (inout ColonyConfiguration) -> Void) -> ColonyBuilder {
+        var updated = configuration
+        configure(&updated)
+        return copy(configuration: updated)
+    }
+
+    package func configureRunOptions(_ configure: @Sendable @escaping (inout HiveRunOptions) -> Void) -> ColonyBuilder {
+        copy(configureRunOptions: { options in
+            self.configureRunOptions(&options)
+            configure(&options)
+        })
     }
 
     // MARK: - Build Method
@@ -363,44 +450,23 @@ public struct ColonyBuilder: Sendable {
         guard !configuration.modelName.isEmpty else {
             throw ColonyBuilderError(message: "Model name must be set before building")
         }
+        guard model != nil || modelRouter != nil else {
+            throw ColonyBuilderError(message: "Configure a model client or routing policy before building")
+        }
 
-        var config = Self.configuration(profile: profile, modelName: configuration.modelName)
+        let finalConfiguration = Self.mergedConfiguration(
+            profile: profile,
+            overrides: configuration
+        )
 
-        // Apply any custom configuration overrides
-        config.capabilities = configuration.capabilities
-
-        let resolvedSubagents: (any ColonySubagentRegistry)? = {
-            if let subagents { return subagents }
-            guard config.capabilities.contains(.subagents) else { return nil }
-            guard let model else { return nil }
-            return ColonyDefaultSubagentRegistry(
-                profile: profile,
-                modelName: configuration.modelName,
-                model: model,
-                clock: clock,
-                logger: logger,
-                filesystem: filesystem
-            )
-        }()
-
-        // Ensure capability gating is consistent with configured backends.
-        var capabilities = config.capabilities
-        if filesystem != nil { capabilities.insert(.filesystem) } else { capabilities.remove(.filesystem) }
-        if shell != nil { capabilities.insert(.shell) } else { capabilities.remove(.shell) }
-        if shell != nil { capabilities.insert(.shellSessions) } else { capabilities.remove(.shellSessions) }
-        if git != nil { capabilities.insert(.git) } else { capabilities.remove(.git) }
-        if lsp != nil { capabilities.insert(.lsp) } else { capabilities.remove(.lsp) }
-        if applyPatch != nil { capabilities.insert(.applyPatch) } else { capabilities.remove(.applyPatch) }
-        if webSearch != nil { capabilities.insert(.webSearch) } else { capabilities.remove(.webSearch) }
-        if codeSearch != nil { capabilities.insert(.codeSearch) } else { capabilities.remove(.codeSearch) }
-        if memory != nil { capabilities.insert(.memory) } else { capabilities.remove(.memory) }
-        if mcp != nil { capabilities.insert(.mcp) } else { capabilities.remove(.mcp) }
-        if plugins != nil { capabilities.insert(.plugins) } else { capabilities.remove(.plugins) }
-        if resolvedSubagents != nil { capabilities.insert(.subagents) } else { capabilities.remove(.subagents) }
-        config.capabilities = capabilities
-
-        let context = ColonyContext(
-            configuration: config,
+        return try makeRuntime(
+            profile: profile,
+            threadID: threadID,
+            modelName: finalConfiguration.modelName,
+            model: model,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints,
+            tools: tools,
             filesystem: filesystem,
             shell: shell,
             git: git,
@@ -411,43 +477,16 @@ public struct ColonyBuilder: Sendable {
             mcp: mcp,
             memory: memory,
             plugins: plugins,
-            subagents: resolvedSubagents
-        )
-
-        let defaultCheckpointStore: AnyHiveCheckpointStore<ColonySchema>
-        if let checkpointStore {
-            defaultCheckpointStore = checkpointStore
-        } else if let durableCheckpointDirectoryURL {
-            defaultCheckpointStore = AnyHiveCheckpointStore(
-                try ColonyDurableCheckpointStore<ColonySchema>(baseURL: durableCheckpointDirectoryURL)
-            )
-        } else {
-            defaultCheckpointStore = AnyHiveCheckpointStore(ColonyInMemoryCheckpointStore<ColonySchema>())
-        }
-
-        let environment = HiveEnvironment<ColonySchema>(
-            context: context,
+            subagents: subagents,
+            checkpointStore: checkpointStore,
+            durableCheckpointDirectoryURL: durableCheckpointDirectoryURL,
             clock: clock,
             logger: logger,
-            model: model,
-            modelRouter: modelRouter,
-            inferenceHints: inferenceHints,
-            tools: tools,
-            checkpointStore: defaultCheckpointStore
+            configure: { config in
+                config = finalConfiguration
+            },
+            configureRunOptions: configureRunOptions
         )
-
-        let graph = try ColonyAgent.compile()
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
-
-        var options = Self.runOptions(profile: profile)
-        configureRunOptions(&options)
-
-        let runControl = ColonyRunControl(
-            threadID: threadID,
-            runtime: runtime,
-            options: options
-        )
-        return ColonyRuntime(runControl: runControl)
     }
 
     // MARK: - Legacy makeRuntime method
@@ -458,7 +497,7 @@ public struct ColonyBuilder: Sendable {
     /// New code should use `build()` instead.
     ///
     /// - Note: This method is deprecated in favor of the fluent builder pattern.
-    public func makeRuntime(
+    package func makeRuntime(
         profile: ColonyProfile = .device,
         threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
         modelName: String,
@@ -573,9 +612,9 @@ public struct ColonyBuilder: Sendable {
         configureRunOptions(&options)
 
         let runControl = ColonyRunControl(
-            threadID: threadID,
+            threadID: ColonyThreadID(hiveThreadID: threadID),
             runtime: runtime,
-            options: options
+            options: ColonyRun.Options(options)
         )
         return ColonyRuntime(runControl: runControl)
     }
@@ -667,6 +706,22 @@ public struct ColonyBuilder: Sendable {
             config.includeToolListInSystemPrompt = true
             return config
         }
+    }
+
+    private static func mergedConfiguration(
+        profile: ColonyProfile,
+        overrides: ColonyConfiguration
+    ) -> ColonyConfiguration {
+        var configuration = Self.configuration(
+            profile: profile,
+            modelName: overrides.modelName
+        )
+        configuration = overrides.mergingOnto(configuration)
+        return configuration
+    }
+
+    private static func modelRouter(policy: ColonyRoutingPolicy) -> any HiveModelRouter {
+        BuilderRoutingPolicyAdapter(policy: policy)
     }
 
     public static func configuration(
@@ -782,7 +837,7 @@ public struct ColonyBuilder: Sendable {
         }
     }
 
-    public static func runOptions(profile: ColonyProfile) -> HiveRunOptions {
+    package static func runOptions(profile: ColonyProfile) -> HiveRunOptions {
         switch profile {
         case .device:
             return HiveRunOptions(
@@ -800,7 +855,139 @@ public struct ColonyBuilder: Sendable {
     }
 }
 
+private struct BuilderRoutingPolicyAdapter: HiveModelRouter, Sendable {
+    private let policy: ColonyRoutingPolicy
+
+    init(policy: ColonyRoutingPolicy) {
+        self.policy = policy
+    }
+
+    func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+        switch policy.strategy {
+        case .onDevice(let onDevice, let fallback, let privacy):
+            let router = ColonyOnDeviceModelRouter(
+                onDevice: onDevice.map { AnyHiveModelClient(ColonyModelClientBridge(client: $0)) },
+                fallback: AnyHiveModelClient(ColonyModelClientBridge(client: fallback)),
+                policy: .init(
+                    privacyBehavior: privacy == .requireOnDevice ? .requireOnDevice : .preferOnDevice
+                )
+            )
+            return router.route(request, hints: hints)
+        default:
+            return AnyHiveModelClient(ColonyModelClientBridge(client: ColonyModelRouter(strategy: Self.strategy(from: policy))))
+        }
+    }
+
+    private static func strategy(from policy: ColonyRoutingPolicy) -> ColonyModelRouter.Strategy {
+        switch policy.strategy {
+        case .single(let client):
+            return .single(client)
+        case .prioritized(let routes, let retryPolicy):
+            return .prioritized(
+                routes.map {
+                    .init(
+                        providerID: $0.id,
+                        client: $0.client,
+                        weight: Self.weight(for: $0)
+                    )
+                },
+                .init(
+                    maxAttempts: retryPolicy.maxAttempts,
+                    initialBackoff: retryPolicy.baseDelay,
+                    maxBackoff: retryPolicy.maxDelay
+                )
+            )
+        case .onDevice(let onDevice, let fallback, let privacy):
+            return .onDevice(
+                onDevice: onDevice,
+                fallback: fallback,
+                privacy: privacy == .requireOnDevice ? .preferOnDevice : .allowCloudForComplexTasks
+            )
+        case .costOptimized(let routes, let costPolicy):
+            return .costOptimized(
+                routes.map {
+                    .init(
+                        providerID: $0.id,
+                        client: $0.client,
+                        weight: Self.weight(for: $0)
+                    )
+                },
+                .init(
+                    costCeilingUSD: costPolicy.maxCostPerRequest.map { NSDecimalNumber(decimal: $0).doubleValue },
+                    preferLowerCost: true
+                )
+            )
+        }
+    }
+
+    private static func weight(for route: ProviderRoute) -> Double {
+        route.usdPer1KTokens ?? Double(route.priority + 1)
+    }
+}
+
+private extension ColonyConfiguration {
+    func mergingOnto(_ base: ColonyConfiguration, defaults: ColonyConfiguration = ColonyConfiguration(modelName: "")) -> ColonyConfiguration {
+        ColonyConfiguration(
+            capabilities: capabilities != defaults.capabilities ? capabilities : base.capabilities,
+            modelName: modelName.isEmpty == false ? modelName : base.modelName,
+            toolApprovalPolicy: toolApprovalPolicy.isMeaningfullyDifferent(from: defaults.toolApprovalPolicy) ? toolApprovalPolicy : base.toolApprovalPolicy,
+            toolApprovalRuleStore: toolApprovalRuleStore ?? base.toolApprovalRuleStore,
+            toolRiskLevelOverrides: toolRiskLevelOverrides.isEmpty == false ? toolRiskLevelOverrides : base.toolRiskLevelOverrides,
+            mandatoryApprovalRiskLevels: mandatoryApprovalRiskLevels != defaults.mandatoryApprovalRiskLevels ? mandatoryApprovalRiskLevels : base.mandatoryApprovalRiskLevels,
+            defaultToolRiskLevel: defaultToolRiskLevel != defaults.defaultToolRiskLevel ? defaultToolRiskLevel : base.defaultToolRiskLevel,
+            toolAuditRecorder: toolAuditRecorder ?? base.toolAuditRecorder,
+            compactionPolicy: compactionPolicy.isMeaningfullyDifferent(from: defaults.compactionPolicy) ? compactionPolicy : base.compactionPolicy,
+            scratchbookPolicy: scratchbookPolicy.isMeaningfullyDifferent(from: defaults.scratchbookPolicy) ? scratchbookPolicy : base.scratchbookPolicy,
+            includeToolListInSystemPrompt: includeToolListInSystemPrompt != defaults.includeToolListInSystemPrompt ? includeToolListInSystemPrompt : base.includeToolListInSystemPrompt,
+            additionalSystemPrompt: additionalSystemPrompt ?? base.additionalSystemPrompt,
+            memorySources: memorySources.isEmpty ? base.memorySources : memorySources,
+            skillSources: skillSources.isEmpty ? base.skillSources : skillSources,
+            summarizationPolicy: summarizationPolicy ?? base.summarizationPolicy,
+            requestHardTokenLimit: requestHardTokenLimit ?? base.requestHardTokenLimit,
+            toolResultEvictionTokenLimit: toolResultEvictionTokenLimit ?? base.toolResultEvictionTokenLimit,
+            systemPromptMemoryTokenLimit: systemPromptMemoryTokenLimit ?? base.systemPromptMemoryTokenLimit,
+            systemPromptSkillsTokenLimit: systemPromptSkillsTokenLimit ?? base.systemPromptSkillsTokenLimit
+        )
+    }
+}
+
+private extension ColonyToolApprovalPolicy {
+    func isMeaningfullyDifferent(from other: ColonyToolApprovalPolicy) -> Bool {
+        switch (self, other) {
+        case (.never, .never), (.always, .always):
+            return false
+        case (.allowList(let lhs), .allowList(let rhs)):
+            return lhs != rhs
+        default:
+            return true
+        }
+    }
+}
+
+private extension ColonyCompactionPolicy {
+    func isMeaningfullyDifferent(from other: ColonyCompactionPolicy) -> Bool {
+        switch (self, other) {
+        case (.disabled, .disabled):
+            return false
+        case let (.maxMessages(lhs), .maxMessages(rhs)):
+            return lhs != rhs
+        case let (.maxTokens(lhs), .maxTokens(rhs)):
+            return lhs != rhs
+        default:
+            return true
+        }
+    }
+}
+
+private extension ColonyScratchbookPolicy {
+    func isMeaningfullyDifferent(from other: ColonyScratchbookPolicy) -> Bool {
+        pathPrefix != other.pathPrefix
+            || viewTokenLimit != other.viewTokenLimit
+            || maxRenderedItems != other.maxRenderedItems
+            || autoCompact != other.autoCompact
+    }
+}
+
 // MARK: - Deprecation Shims
 
-@available(*, deprecated, renamed: "ColonyBuilder")
 public typealias ColonyAgentFactory = ColonyBuilder

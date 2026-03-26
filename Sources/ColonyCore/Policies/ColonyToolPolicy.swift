@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Unified policy struct that combines approval and safety concerns for tool execution.
 /// Replaces `ColonyToolApprovalPolicy` and `ColonyToolRiskLevel` handling.
@@ -87,7 +87,7 @@ public struct ColonyToolPolicy: Sendable {
     ///
     /// - Parameter toolCalls: The tool calls to assess.
     /// - Returns: An array of safety assessments for each tool call.
-    public func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
+    public func assess(toolCalls: [ColonyToolCall]) -> [ColonyToolSafetyAssessment] {
         toolCalls.map { call in
             let riskLevel = riskLevel(for: call.name)
 
@@ -188,6 +188,12 @@ public enum ToolPermissionPolicy: Sendable, Equatable {
     /// - Returns: `true` if any tool requires approval.
     public func requiresApproval(for toolNames: [String]) -> Bool {
         toolNames.contains(where: requiresApproval(for:))
+    }
+}
+
+package extension ColonyToolPolicy {
+    func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
+        assess(toolCalls: toolCalls.map(ColonyToolCall.init))
     }
 }
 

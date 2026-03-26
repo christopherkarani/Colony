@@ -216,7 +216,6 @@ extension WorkingMemoryPolicy {
 
 extension ColonyResourcePolicy {
     /// Creates a resource policy from legacy policy types
-    @available(*, deprecated, message: "Use ColonyResourcePolicy.init directly")
     public init(
         compactionPolicy: ColonyCompactionPolicy,
         summarizationPolicy: ColonySummarizationPolicy?,
