@@ -1,4 +1,5 @@
 import Testing
+@_spi(ColonyInternal) import Swarm
 import Colony
 @testable import ColonyResearchAssistantExample
 
@@ -10,22 +11,21 @@ func mockResearchModelCompletesTaskLoop() async throws {
         ]
     )
 
-    let factory = ColonyAgentFactory()
-    let runtime = try factory.makeRuntime(
-        profile: .onDevice4k,
-        modelName: "test-model",
-        model: AnyHiveModelClient(MockResearchModel()),
-        filesystem: fs,
-        configure: { config in
+    let runtime = try ColonyBuilder()
+        .profile(.onDevice4k)
+        .model(name: "test-model")
+        .model(MockResearchModel())
+        .filesystem(fs)
+        .configure { config in
             config.capabilities = [.planning, .filesystem, .subagents]
             config.toolApprovalPolicy = .never
             config.mandatoryApprovalRiskLevels = []
             config.summarizationPolicy = nil
             config.toolResultEvictionTokenLimit = nil
         }
-    )
+        .build()
 
-    let handle = await runtime.runControl.start(.init(input: "Research this repository architecture."))
+    let handle = await runtime.runControl.start(ColonyRunStartRequest(input: "Research this repository architecture."))
     let outcome = try await handle.outcome.value
 
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
@@ -41,7 +41,7 @@ func mockResearchModelCompletesTaskLoop() async throws {
 
     let messages = try store.get(ColonySchema.Channels.messages)
     guard let assistantTaskMessage = messages.first(where: { message in
-        message.role == .assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })
+        message.role == HiveChatRole.assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })
     }) else {
         #expect(Bool(false))
         return
@@ -53,7 +53,7 @@ func mockResearchModelCompletesTaskLoop() async throws {
     }
 
     let matchingToolMessage = messages.first(where: { message in
-        message.role == .tool && message.toolCallID == taskCallID
+        message.role == HiveChatRole.tool && message.toolCallID == taskCallID
     })
     #expect(matchingToolMessage != nil)
 }

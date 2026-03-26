@@ -119,7 +119,6 @@ public enum ToolAuditError: Error, Sendable, Equatable {
 
 // MARK: - Backward Compatibility
 
-@available(*, deprecated, renamed: "ToolAuditError")
 public typealias ColonyToolAuditError = ToolAuditError
 
 /// Protocol for cryptographic signing of audit log entries.

@@ -259,23 +259,19 @@ public protocol ColonyLSPService: Sendable {
 
 // MARK: - Deprecated Backward Compatibility
 
-@available(*, deprecated, renamed: "ColonyLSPService")
 public typealias ColonyLSPBackend = ColonyLSPService
 
 public extension ColonyLSPService {
-    @available(*, deprecated, renamed: "findSymbols")
     func symbols(_ request: ColonyLSPSymbolsRequest) async throws -> [ColonyLSPSymbol] {
         let response = try await findSymbols(request)
         return response.symbols
     }
 
-    @available(*, deprecated, renamed: "getDiagnostics")
     func diagnostics(_ request: ColonyLSPDiagnosticsRequest) async throws -> [ColonyLSPDiagnostic] {
         let response = try await getDiagnostics(request)
         return response.diagnostics
     }
 
-    @available(*, deprecated, renamed: "findReferences")
     func references(_ request: ColonyLSPReferencesRequest) async throws -> [ColonyLSPReference] {
         let response = try await findReferences(request)
         return response.references

@@ -1,5 +1,91 @@
 # Colony Production Readiness Plan
 
+## Current Execution: Production Dependency Policy
+
+- [x] Audit package manifests for production-default local dependency behavior.
+- [x] Remove automatic local-path fallback from `Colony/Package.swift`; local `Swarm` usage is now explicit opt-in via `COLONY_USE_LOCAL_SWARM_PATH=1`.
+- [ ] Verify `Swarm` and `Colony` build/test cleanly in production dependency mode with zero warnings.
+
+### Review Notes for Current Execution
+
+- Published GitHub tags are the production source of truth.
+- Local package paths remain available only for explicit iteration workflows and must never be auto-selected in released manifests.
+- The previous `Colony` manifest behavior of preferring `../Swarm` whenever it existed was invalid for production because it leaked monorepo assumptions into downstream consumption.
+- Current release blocker: the published `Membrane` and `Conduit` manifests still pull `mlx-swift`, `mlx-swift-lm`, and `mlx-swift-examples` during dependency resolution, so a full remote-source verification cannot pass until fixed tags are released upstream.
+
+## Current Execution: Hide Hive from Public API
+
+- [ ] Freeze the target boundary: `Swarm` is the only public dependency for `Colony`; `HiveCore` and `SwarmHive` become implementation details only.
+- [ ] Inventory every public Hive-shaped symbol in `Swarm` and `Colony` and classify each as `replace with Swarm-owned type`, `replace with Colony-owned type`, `make internal`, or `delete`.
+
+### Phase 1 — Collapse the Public Bridge Product
+
+- [ ] Move the implementation currently under `Swarm/Sources/Swarm/HiveSwarm` into the main `Swarm` target under an internal-only namespace/path.
+- [ ] Stop excluding `HiveSwarm` from the `Swarm` target once the files are relocated or merged.
+- [ ] Keep `HiveCore` imports only in internal implementation files that back the Swarm runtime bridge.
+- [ ] Delete `Swarm/Sources/Swarm/HiveSwarm/HiveCoreReexports.swift`.
+- [ ] Remove `@_exported import HiveCore` from `Swarm/Sources/Swarm/Swarm.swift`.
+- [ ] Remove the `SwarmHive` product and target from `Swarm/Package.swift`.
+- [ ] Update `Swarm` tests to import `Swarm` only, except for test-only direct `HiveCore` fixtures where internal bridge behavior is being asserted.
+
+### Phase 2 — Define Swarm-Owned Runtime Abstractions
+
+- [ ] Introduce Swarm-owned public types/protocols for the runtime surface currently leaking Hive types.
+- [ ] Replace public `Hive*`-typed request/response/message/tool abstractions with Swarm-owned equivalents or wrappers.
+- [ ] Replace public run/checkpoint/event/interrupt identifiers exposed by `Swarm` with Swarm-owned identifiers.
+- [ ] Keep Hive-backed engines, codecs, checkpoints, and workflow adapters internal to `Swarm`.
+- [ ] Audit `Swarm/Sources/Swarm/Workflow/*` and any other non-bridge files that still import `HiveCore`; reduce those imports to internal-only implementation boundaries.
+
+### Phase 3 — Rebase Colony onto Swarm Only
+
+- [ ] Remove `@_exported import SwarmHive` from `Colony/Sources/Colony/Colony.swift`.
+- [ ] Remove all `import SwarmHive` statements from `Colony` sources and tests.
+- [ ] Change `Colony/Package.swift` so public Colony targets depend on `Swarm` only, not `SwarmHive`.
+- [ ] Replace all public Hive-shaped Colony APIs with Colony-owned or Swarm-owned abstractions.
+- [ ] Rework `ColonyBuilder`, `ColonyRuntime`, `ColonyRunControl`, `ColonyRuntimeSurface`, routers, model clients, tool definitions, interrupt payloads, and typed IDs so no public signature mentions `Hive*` or `AnyHive*`.
+- [ ] Restrict any temporary compatibility shims to internal or package scope; do not preserve Hive-shaped public aliases.
+
+### Phase 4 — Cleanup and Surface Audit
+
+- [ ] Remove any remaining public Hive exposure from `ColonyCore`, `ColonyControlPlane`, and shared support modules.
+- [ ] Confirm `Swarm` no longer re-exports Hive and no longer ships a discoverable `SwarmHive` product.
+- [ ] Confirm users of `Colony` and `Swarm` can build without importing `HiveCore` or knowing Hive exists.
+- [ ] Update docs and migration notes to reflect the new public runtime surface.
+
+### Verification
+
+- [ ] `rg -n "@_exported import HiveCore|@_exported import SwarmHive" Swarm/Sources Colony/Sources` returns no matches.
+- [ ] `rg -n "\\.library\\(name: \\\"SwarmHive\\\"|name: \\\"SwarmHive\\\"" Swarm/Package.swift` returns no matches.
+- [ ] `rg -n "public .*Hive|public typealias .*Hive|open .*Hive" Swarm/Sources Colony/Sources -g '*.swift'` returns no public Hive-shaped API.
+- [ ] `rg -n "^import SwarmHive$" Colony/Sources Colony/Tests -g '*.swift'` returns no matches.
+- [ ] `cd Swarm && swift build && swift test` passes with zero warnings.
+- [ ] `cd Colony && swift build && swift test` passes with zero warnings.
+
+### Review Notes for This Execution
+
+- Hiding Hive from the public API and hiding `SwarmHive` from the package graph are separate tasks; the latter only becomes possible once Colony stops importing `SwarmHive`.
+- The execution order is fixed: first fold the bridge into `Swarm`, then replace public types, then remove the product, then rebase `Colony`.
+- This is a breaking API migration. Preserving raw public Hive-shaped APIs would directly conflict with the goal.
+
+## Current Execution: Colony on Swarm
+
+- [x] Write the implementation plan and freeze the dependency-inversion goal.
+- [x] Repoint `Colony` package dependencies from `Hive` to `Swarm`.
+- [x] Move Colony source imports off direct `HiveCore` usage and onto the `Swarm` package bridge.
+- [x] Re-export the Hive boundary from `Swarm` so existing Colony runtime types continue to compile during the migration.
+- [x] Update Colony tests to compile without a direct `Hive` package dependency.
+- [x] Run targeted Colony builds and the isolated Colony test-target build.
+- [x] Run the broader package test suite after removing the unrelated `DeepResearchApp` package targets.
+
+## Review Notes for Current Execution
+
+- Scope for this pass: dependency inversion first, not a full public API redesign.
+- Success condition for this pass: `Colony` no longer declares a direct `Hive` package dependency and compiles through `Swarm`.
+- Follow-up work may still be needed to fully eliminate Hive-shaped public Colony APIs, but not to remove the direct package dependency.
+- `Colony` now depends on `Swarm` products instead of a direct `Hive` package reference; the compatibility surface currently flows through `SwarmHive`.
+- Verified locally: `swift build --target Colony`, `swift build --target ColonyCore`, `swift build --target ColonyTests`, and `swift build --target Swarm`.
+- The previous package-wide blocker was the unrelated `DeepResearchApp` target graph; the app target graph and source/test tree are now removed so verification is Colony-only.
+
 ## Scope
 Prepare Colony for external production release with stable API guarantees, runtime safety, and operational readiness on iOS 26+ / macOS 26+.
 

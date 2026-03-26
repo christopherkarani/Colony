@@ -85,16 +85,12 @@ public struct ColonyMemoryStoreResponse: Sendable, Codable, Equatable {
 
 // MARK: - Deprecated Request/Response Types
 
-@available(*, deprecated, renamed: "ColonyMemorySearchRequest")
 public typealias ColonyMemoryRecallRequest = ColonyMemorySearchRequest
 
-@available(*, deprecated, renamed: "ColonyMemorySearchResponse")
 public typealias ColonyMemoryRecallResult = ColonyMemorySearchResponse
 
-@available(*, deprecated, renamed: "ColonyMemoryStoreRequest")
 public typealias ColonyMemoryRememberRequest = ColonyMemoryStoreRequest
 
-@available(*, deprecated, renamed: "ColonyMemoryStoreResponse")
 public typealias ColonyMemoryRememberResult = ColonyMemoryStoreResponse
 
 // MARK: - Service Protocol
@@ -120,18 +116,15 @@ public protocol ColonyMemoryService: Sendable {
 
 // MARK: - Deprecated Protocol Name
 
-@available(*, deprecated, renamed: "ColonyMemoryService")
 public typealias ColonyMemoryBackend = ColonyMemoryService
 
 // MARK: - Deprecated Method Shims
 
 public extension ColonyMemoryService {
-    @available(*, deprecated, renamed: "search")
     func recall(_ request: ColonyMemoryRecallRequest) async throws -> ColonyMemoryRecallResult {
         try await search(request)
     }
 
-    @available(*, deprecated, renamed: "store")
     func remember(_ request: ColonyMemoryRememberRequest) async throws -> ColonyMemoryRememberResult {
         try await store(request)
     }

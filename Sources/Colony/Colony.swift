@@ -1,5 +1,4 @@
 @_exported import ColonyCore
-@_exported import HiveCore
 
 // MARK: - Colony Namespace
 
@@ -32,6 +31,7 @@ public enum Colony {
         try ColonyBuilder()
             .model(name: modelName)
             .profile(profile)
+            .configure(configure)
             .build()
     }
 }

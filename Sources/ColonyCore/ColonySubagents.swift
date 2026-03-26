@@ -148,7 +148,6 @@ public protocol ColonySubagentService: Sendable {
 ///
 /// The registry protocol extends `ColonySubagentService` with subagent listing capabilities.
 /// For simple task delegation, migrate to `ColonySubagentService`.
-@available(*, deprecated, renamed: "ColonySubagentService", message: "Use ColonySubagentService instead. Listing methods are being moved to a separate protocol.")
 public protocol ColonySubagentRegistry: ColonySubagentService {
     /// Lists all available subagents.
     func listSubagents() -> [ColonySubagentDescriptor]

@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Namespace for system prompt construction in Colony.
 ///
@@ -27,7 +27,7 @@ Rules:
     /// - Returns: A complete system prompt string
     public static func systemPrompt(
         additional: String?,
-        availableTools: [HiveToolDefinition]
+        availableTools: [ColonyToolDefinition]
     ) -> String {
         systemPrompt(
             additional: additional,
@@ -50,7 +50,7 @@ Rules:
         additional: String?,
         memory: String?,
         skills: String?,
-        availableTools: [HiveToolDefinition]
+        availableTools: [ColonyToolDefinition]
     ) -> String {
         systemPrompt(
             additional: additional,
@@ -83,7 +83,7 @@ Rules:
         memory: String?,
         skills: String?,
         scratchbook: String?,
-        availableTools: [HiveToolDefinition]
+        availableTools: [ColonyToolDefinition]
     ) -> String {
         var sections: [String] = [baseSystemPrompt]
         if let additional, additional.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {

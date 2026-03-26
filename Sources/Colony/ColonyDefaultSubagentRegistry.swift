@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {

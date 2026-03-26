@@ -6,7 +6,6 @@ public enum ControlPlaneServiceError: Error, Sendable, Equatable {
 
 // MARK: - Backward Compatibility
 
-@available(*, deprecated, renamed: "ControlPlaneServiceError")
 public typealias ColonyControlPlaneServiceError = ControlPlaneServiceError
 
 public actor ColonyControlPlaneService {

@@ -3,7 +3,7 @@
 import Foundation
 import PackageDescription
 
-let useLocalHivePath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_HIVE_PATH"] == "1"
+let useLocalSwarmPath = ProcessInfo.processInfo.environment["COLONY_USE_LOCAL_SWARM_PATH"] == "1"
 
 let package = Package(
     name: "Colony",
@@ -16,20 +16,19 @@ let package = Package(
         .library(name: "ColonyCore", targets: ["ColonyCore"]),
         .library(name: "ColonyControlPlane", targets: ["ColonyControlPlane"]),
         .executable(name: "ColonyResearchAssistantExample", targets: ["ColonyResearchAssistantExample"]),
-        .executable(name: "DeepResearchApp", targets: ["DeepResearchApp"]),
     ],
     dependencies: [
-        // Default: remote pinned Hive dependency.
-        // Local fallback: set COLONY_USE_LOCAL_HIVE_PATH=1 for offline/dev workflows.
-        useLocalHivePath
-            ? .package(path: ".deps/Hive/Sources/Hive")
-            : .package(url: "https://github.com/christopherkarani/Hive.git", exact: "0.1.5"),
+        // Production default: always resolve Swarm from GitHub.
+        // Local path usage is opt-in for development only and must not be relied on for release manifests.
+        useLocalSwarmPath
+            ? .package(path: "../Swarm")
+            : .package(url: "https://github.com/christopherkarani/Swarm.git", exact: "0.4.7"),
     ],
     targets: [
         .target(
             name: "ColonyCore",
             dependencies: [
-                .product(name: "HiveCore", package: "Hive"),
+                .product(name: "Swarm", package: "Swarm"),
             ],
             exclude: ["CLAUDE.md"]
         ),
@@ -37,7 +36,7 @@ let package = Package(
             name: "Colony",
             dependencies: [
                 "ColonyCore",
-                .product(name: "HiveCore", package: "Hive"),
+                .product(name: "Swarm", package: "Swarm"),
             ],
             exclude: ["CLAUDE.md"]
         ),
@@ -46,23 +45,12 @@ let package = Package(
             dependencies: [
                 "Colony",
                 "ColonyCore",
-                .product(name: "HiveCore", package: "Hive"),
             ]
         ),
         .executableTarget(
             name: "ColonyResearchAssistantExample",
             dependencies: ["Colony"],
             exclude: ["CLAUDE.md"],
-        ),
-        .executableTarget(
-            name: "DeepResearchApp",
-            dependencies: ["Colony"],
-            path: "Sources/DeepResearchApp",
-            exclude: [
-                "Models/CLAUDE.md",
-                "ViewModels/CLAUDE.md",
-                "Views/CLAUDE.md",
-            ]
         ),
         .testTarget(
             name: "ColonyTests",
@@ -75,15 +63,12 @@ let package = Package(
         ),
         .testTarget(
             name: "ColonyResearchAssistantExampleTests",
-            dependencies: ["ColonyResearchAssistantExample"]
+            dependencies: ["ColonyResearchAssistantExample"],
+            exclude: ["CLAUDE.md", ".DS_Store"]
         ),
         .testTarget(
             name: "ColonyControlPlaneTests",
             dependencies: ["ColonyControlPlane"]
-        ),
-        .testTarget(
-            name: "DeepResearchAppTests",
-            dependencies: ["DeepResearchApp"]
         ),
     ]
 )

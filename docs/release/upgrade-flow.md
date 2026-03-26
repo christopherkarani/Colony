@@ -1,20 +1,22 @@
 # Upgrade Flow
 
-Last updated: 2026-02-10
+Last updated: 2026-03-26
 
 ## For Colony Maintainers
 
 1. Review `CHANGELOG.md` and classify the next release (`MAJOR`/`MINOR`/`PATCH`).
-2. Validate dependency policy:
-   - `scripts/ci/check-dependency-policy.sh`
-   - `scripts/ci/bootstrap-hive.sh`
-3. Run targeted quality gates:
+2. Release `Swarm` first and note the exact tag to consume from Colony.
+3. Update `Colony/Package.swift` to that exact `Swarm` tag.
+4. Validate dependency policy:
+   - `EXPECTED_SWARM_VERSION=<tag> scripts/ci/check-dependency-policy.sh`
+   - `EXPECTED_SWARM_VERSION=<tag> scripts/ci/verify-remote-release.sh`
+5. Run targeted quality gates:
    - `scripts/ci/run-contract-tests.sh`
    - `scripts/ci/run-e2e-tests.sh`
    - `scripts/ci/run-security-tests.sh`
-4. Run full suite:
+6. Run full suite:
    - `swift test`
-5. Tag and publish release notes.
+7. Tag and publish release notes.
 
 ## For Colony Consumers
 
@@ -28,6 +30,6 @@ Last updated: 2026-02-10
 ## Dependency Update Guardrails
 
 - Keep dependencies reproducible with committed `Package.resolved`.
-- Keep Hive pin metadata in `HIVE_DEPENDENCY.lock` (URL/tag/revision) in sync with `Package.swift`.
-- Use `COLONY_USE_LOCAL_HIVE_PATH=1` only for offline/local fallback workflows (with `.deps/Hive/Sources/Hive` bootstrapped).
-- Avoid local path dependencies for Hive in released code.
+- Keep the `Swarm` dependency aligned between `Package.swift` and `Package.resolved`.
+- Use `COLONY_USE_LOCAL_SWARM_PATH=1` only for explicit local iteration workflows.
+- Avoid local path dependencies in released code.

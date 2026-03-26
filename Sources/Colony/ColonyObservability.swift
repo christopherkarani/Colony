@@ -1,5 +1,5 @@
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// An observability event emitted by Colony.

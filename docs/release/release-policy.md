@@ -1,10 +1,10 @@
 # Release Policy
 
-Last updated: 2026-02-10
+Last updated: 2026-03-26
 
 ## Scope
 
-This policy defines how Colony is versioned, released, and consumed safely in CI.
+This policy defines how Colony is versioned, released, and consumed safely in CI and from GitHub tags.
 
 ## Semantic Versioning
 
@@ -16,24 +16,17 @@ Colony follows SemVer (`MAJOR.MINOR.PATCH`).
 
 ## Dependency Policy
 
-- Legacy sibling path dependencies (for example `../hive/...`) are forbidden.
-- Hive is pinned through `HIVE_DEPENDENCY.lock` (URL, tag, revision) and a matching remote pin in `Package.swift`.
-- Local fallback (`COLONY_USE_LOCAL_HIVE_PATH=1`) is allowed only for offline/dev workflows and must resolve from `.deps/Hive/Sources/Hive`.
-- `Package.resolved` is required and must be reproducible after `swift package resolve`.
-- Dependency policy is enforced by `scripts/ci/check-dependency-policy.sh` and CI.
+- Released Colony builds must resolve `Swarm` from GitHub, not from a sibling checkout.
+- Local fallback (`COLONY_USE_LOCAL_SWARM_PATH=1`) is allowed only for local iteration and must never be the production default.
+- Before a Colony release tag is cut, `Package.swift` must pin `Swarm` with `exact:` to the newly released `Swarm` tag.
+- `Package.resolved` is required and must be reproducible after `swift package resolve` in remote-only mode.
+- Dependency policy is enforced by `scripts/ci/check-dependency-policy.sh` and the release verification script.
 
-## Hive Tag Assumption
+## Release Ordering
 
-Task F required removing the ad-hoc `../hive` dependency and enforcing pinned dependency sourcing for Hive.
-
-Assumption used on 2026-02-10:
-- Hive remote URL: `https://github.com/christopherkarani/Hive.git`
-- Pinned tag: `0.1.2`
-- Pinned revision: `3074a0e24d6ab9db1f454dc072fa5caba1461310`
-
-Rationale:
-- `0.1.2` is the pinned stable semver tag used for reproducible builds.
-- Remote SwiftPM pinning removes local checkout drift and aligns dependency checks across developer machines and CI.
+- `Swarm` releases first.
+- `Colony` then updates to that exact released `Swarm` tag.
+- `Colony` is tagged only after remote-only verification passes against that published `Swarm` release.
 
 ## Changelog and Upgrade Notes
 
@@ -51,10 +44,11 @@ If a release has no user-facing API changes, state that explicitly.
    - contract tests
    - E2E approve/deny/resume tests
    - security tests
-2. Run `scripts/ci/check-dependency-policy.sh` locally.
-3. Update `CHANGELOG.md` and upgrade notes.
-4. Create a version tag matching SemVer.
-5. Publish release notes aligned with changelog entries.
+2. Run `EXPECTED_SWARM_VERSION=<tag> scripts/ci/check-dependency-policy.sh` locally.
+3. Run `EXPECTED_SWARM_VERSION=<tag> scripts/ci/verify-remote-release.sh`.
+4. Update `CHANGELOG.md` and upgrade notes.
+5. Create a version tag matching SemVer.
+6. Publish release notes aligned with changelog entries.
 
 ## GA Criteria
 
@@ -81,9 +75,11 @@ Before Colony reaches 1.0 GA, the following must be complete:
 - [ ] Version set to non-placeholder SemVer in `Colony.swift`
 - [ ] CI green on protected release branch
 - [ ] Dependency lockfile reproducibility verified
+- [ ] Colony pins the exact released `Swarm` tag
 
 ## Non-Goals
 
-- Floating dependency versions.
+- Floating dependency versions on a release branch.
 - Branch-based dependency references for released code.
 - Manual release steps without changelog and CI evidence.
+- Releasing Colony before the dependent Swarm tag exists.

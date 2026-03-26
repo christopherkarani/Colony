@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Policy controlling when and how conversation history is compacted.
 ///
@@ -19,9 +19,9 @@ public enum ColonyCompactionPolicy: Sendable {
     ///   - tokenizer: The tokenizer to use for counting tokens
     /// - Returns: A compacted message list, or `nil` if no compaction is needed
     public func compact(
-        _ messages: [HiveChatMessage],
+        _ messages: [ColonyMessage],
         tokenizer: any ColonyTokenizer
-    ) -> [HiveChatMessage]? {
+    ) -> [ColonyMessage]? {
         switch self {
         case .disabled:
             return nil
@@ -43,3 +43,11 @@ public enum ColonyCompactionPolicy: Sendable {
     }
 }
 
+package extension ColonyCompactionPolicy {
+    func compact(
+        _ messages: [HiveChatMessage],
+        tokenizer: any ColonyTokenizer
+    ) -> [HiveChatMessage]? {
+        compact(messages.map(ColonyMessage.init), tokenizer: tokenizer)?.map(\.hiveChatMessage)
+    }
+}

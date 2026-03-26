@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Protocol for tokenizing chat messages.
 ///
@@ -9,7 +9,7 @@ public protocol ColonyTokenizer: Sendable {
     ///
     /// - Parameter messages: The messages to count tokens for
     /// - Returns: An approximate token count
-    func countTokens(_ messages: [HiveChatMessage]) -> Int
+    func countTokens(_ messages: [ColonyMessage]) -> Int
 }
 
 /// Cheap, deterministic fallback tokenizer.
@@ -20,7 +20,7 @@ public protocol ColonyTokenizer: Sendable {
 public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
     public init() {}
 
-    public func countTokens(_ messages: [HiveChatMessage]) -> Int {
+    public func countTokens(_ messages: [ColonyMessage]) -> Int {
         let chars = messages.reduce(into: 0) { partial, message in
             partial += message.id.count
             partial += message.role.rawValue.count
@@ -33,5 +33,11 @@ public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
             }
         }
         return max(1, chars / 4)
+    }
+}
+
+package extension ColonyTokenizer {
+    func countTokens(_ messages: [HiveChatMessage]) -> Int {
+        countTokens(messages.map(ColonyMessage.init))
     }
 }

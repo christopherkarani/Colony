@@ -1,6 +1,6 @@
 import CryptoKit
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -33,7 +33,7 @@ extension OnDeviceModelError: LocalizedError {
     }
 }
 
-public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
+public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
     /// Configuration for Foundation Models client.
     public struct Configuration: Sendable {
         /// Verbosity level for tool instructions.
@@ -88,13 +88,49 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         self.configuration = configuration
     }
 
-    // MARK: - HiveModelClient
+    // MARK: - ColonyModelClient
 
-    public func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
-        try await streamFinal(request)
+    public func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
+        ColonyInferenceResponse(try await complete(request.hiveChatRequest))
     }
 
-    public func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    public func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
+        let stream = stream(request.hiveChatRequest)
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await chunk in stream {
+                        switch chunk {
+                        case .token(let token):
+                            continuation.yield(.token(token))
+                        case .final(let response):
+                            continuation.yield(.final(ColonyInferenceResponse(response)))
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    // MARK: - Hive Bridge
+
+    package func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        var finalResponse: HiveChatResponse?
+        for try await chunk in stream(request) {
+            if case .final(let response) = chunk {
+                finalResponse = response
+            }
+        }
+        guard let finalResponse else {
+            throw OnDeviceModelError.generationFailed("Missing final response chunk.")
+        }
+        return finalResponse
+    }
+
+    package func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             return streamAvailable(request)
@@ -214,27 +250,24 @@ public struct ColonyFoundationModelsClient: HiveModelClient, Sendable {
         case .compact:
             let toolList = tools
                 .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-                .map { tool in
+                .map { tool -> String in
                     let argsSummary = compactArgumentSummary(from: tool.parametersJSONSchema)
                     if argsSummary.isEmpty {
                         return "- \(tool.name)"
                     }
-                    return "- \(tool.name)\n  args: \(argsSummary)"
+                    return "- \(tool.name) | args: \(argsSummary)"
                 }
                 .joined(separator: "\n")
 
             return """
-            Tool calling:
-            - Emit JSON in tags: \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
-            - One block per call; no other text when calling tools.
-
+            Tool calls only: \(Self.toolCallOpenTag){"name":"tool_name","arguments":{...}}\(Self.toolCallCloseTag)
             Available tools:
             \(toolList)
             """
         case .verbose:
             let toolList = tools
                 .sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
-                .map { tool in
+                .map { tool -> String in
                     """
                     - \(tool.name): \(tool.description)
                       parameters_json_schema: \(tool.parametersJSONSchema)

@@ -1,6 +1,6 @@
 import CryptoKit
 import Foundation
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// The HiveSchema definition for Colony agents.
@@ -16,25 +16,25 @@ import ColonyCore
 /// - `finalAnswer` - The final response from the agent
 /// - `todos` - Task tracking todos
 /// - `currentToolCall` - The currently executing tool call
-public enum ColonySchema: HiveSchema {
-    public typealias Context = ColonyContext
-    public typealias Input = String
-    public typealias InterruptPayload = ColonyInterruptPayload
-    public typealias ResumePayload = ColonyResumePayload
+package enum ColonySchema: HiveSchema {
+    package typealias Context = ColonyContext
+    package typealias Input = String
+    package typealias InterruptPayload = ColonyInterruptPayload
+    package typealias ResumePayload = ColonyResumePayload
 
-    public enum Channels {
-        public static let messages = HiveChannelKey<ColonySchema, [HiveChatMessage]>(HiveChannelID("messages"))
-        public static let llmInputMessages = HiveChannelKey<ColonySchema, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
-        public static let pendingToolCalls = HiveChannelKey<ColonySchema, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
-        public static let finalAnswer = HiveChannelKey<ColonySchema, String?>(HiveChannelID("finalAnswer"))
-        public static let todos = HiveChannelKey<ColonySchema, [ColonyTodo]>(HiveChannelID("todos"))
+    package enum Channels {
+        package static let messages = HiveChannelKey<ColonySchema, [HiveChatMessage]>(HiveChannelID("messages"))
+        package static let llmInputMessages = HiveChannelKey<ColonySchema, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
+        package static let pendingToolCalls = HiveChannelKey<ColonySchema, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
+        package static let finalAnswer = HiveChannelKey<ColonySchema, String?>(HiveChannelID("finalAnswer"))
+        package static let todos = HiveChannelKey<ColonySchema, [ColonyTodo]>(HiveChannelID("todos"))
 
-        public static let currentToolCall = HiveChannelKey<ColonySchema, HiveToolCall>(HiveChannelID("currentToolCall"))
+        package static let currentToolCall = HiveChannelKey<ColonySchema, HiveToolCall>(HiveChannelID("currentToolCall"))
     }
 
-    public static let removeAllMessagesID = "__remove_all__"
+    package static let removeAllMessagesID = "__remove_all__"
 
-    public static var channelSpecs: [AnyHiveChannelSpec<ColonySchema>] {
+    package static var channelSpecs: [AnyHiveChannelSpec<ColonySchema>] {
         let messagesCodec = HiveAnyCodec(HiveJSONCodec<[HiveChatMessage]>(id: "colony.messages.v1"))
         let toolCallsCodec = HiveAnyCodec(HiveJSONCodec<[HiveToolCall]>(id: "colony.pending-tool-calls.v1"))
         let currentToolCallCodec = HiveAnyCodec(HiveJSONCodec<HiveToolCall>(id: "colony.current-tool-call.v1"))
@@ -109,7 +109,7 @@ public enum ColonySchema: HiveSchema {
         ]
     }
 
-    public static func inputWrites(
+    package static func inputWrites(
         _ input: String,
         inputContext: HiveInputContext
     ) throws -> [AnyHiveWrite<ColonySchema>] {
@@ -187,14 +187,14 @@ public struct ColonyContext: Sendable {
 /// 3. `nodeRouteAfterModel` - Routing decision
 /// 4. `nodeTools` - Tool selection
 /// 5. `nodeToolExecute` - Tool execution
-public enum ColonyAgent {
-    public static let nodePreModel = HiveNodeID("preModel")
-    public static let nodeModel = HiveNodeID("model")
-    public static let nodeRouteAfterModel = HiveNodeID("routeAfterModel")
-    public static let nodeTools = HiveNodeID("tools")
-    public static let nodeToolExecute = HiveNodeID("toolExecute")
+package enum ColonyAgent {
+    package static let nodePreModel = HiveNodeID("preModel")
+    package static let nodeModel = HiveNodeID("model")
+    package static let nodeRouteAfterModel = HiveNodeID("routeAfterModel")
+    package static let nodeTools = HiveNodeID("tools")
+    package static let nodeToolExecute = HiveNodeID("toolExecute")
 
-    public static func compile(graphVersionOverride: String? = nil) throws -> CompiledHiveGraph<ColonySchema> {
+    package static func compile(graphVersionOverride: String? = nil) throws -> CompiledHiveGraph<ColonySchema> {
         var builder = HiveGraphBuilder<ColonySchema>(start: [nodePreModel])
 
         builder.addNode(nodePreModel, preModel)
@@ -264,7 +264,7 @@ public enum ColonyAgent {
     private static func model(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
         let messages = try input.store.get(ColonySchema.Channels.messages)
         let llmInputMessages = try input.store.get(ColonySchema.Channels.llmInputMessages)
-        let externalTools = input.environment.tools?.listTools() ?? []
+        let externalTools = input.context.plugins?.listTools() ?? []
         let builtInTools = builtInToolDefinitions(for: input.context)
         let tools = dedupeToolsByName(builtIn: builtInTools, external: externalTools)
 
@@ -314,9 +314,11 @@ public enum ColonyAgent {
 
         let inputMessages = (llmInputMessages ?? messages)
 
-        let messageTokenLimit: Int?
+        let hiveTools = tools.map(\.hiveToolDefinition)
+        let toolBudgetMessages = toolDefinitionBudgetMessages(hiveTools)
+
         if let hardLimit = input.context.configuration.requestHardTokenLimit {
-            let toolTokenCount = toolDefinitionTokenCount(tools, tokenizer: input.context.tokenizer)
+            let toolTokenCount = input.context.tokenizer.countTokens(toolBudgetMessages)
             guard toolTokenCount < hardLimit else {
                 throw ColonyBudgetError.toolDefinitionsExceedHardRequestTokenLimit(
                     requestHardTokenLimit: hardLimit,
@@ -324,24 +326,19 @@ public enum ColonyAgent {
                     toolCount: tools.count
                 )
             }
-            // Our tokenizer is an approximation (chars/4) over the *combined* request payload. When we subtract
-            // tool-definition tokens and then bound messages independently, integer division rounding can carry
-            // and exceed the hard cap by ~1 token. Subtract an additional 1 token as conservative padding.
-            messageTokenLimit = max(1, hardLimit - toolTokenCount - 1)
-        } else {
-            messageTokenLimit = nil
         }
 
         let requestMessages = requestMessagesWithHardTokenLimit(
             systemMessage: systemMessage,
             conversationMessages: inputMessages,
-            tokenLimit: messageTokenLimit,
+            reservedMessages: toolBudgetMessages,
+            tokenLimit: input.context.configuration.requestHardTokenLimit,
             tokenizer: input.context.tokenizer
         )
         let request = HiveChatRequest(
             model: input.context.configuration.modelName,
             messages: requestMessages,
-            tools: tools
+            tools: hiveTools
         )
 
         let modelClient: AnyHiveModelClient
@@ -394,12 +391,7 @@ public enum ColonyAgent {
         return HiveNodeOutput(writes: writes)
     }
 
-    private static func toolDefinitionTokenCount(
-        _ tools: [HiveToolDefinition],
-        tokenizer: any ColonyTokenizer
-    ) -> Int {
-        guard tools.isEmpty == false else { return 0 }
-
+    private static func toolDefinitionBudgetMessages(_ tools: [HiveToolDefinition]) -> [HiveChatMessage] {
         let content: String = {
             do {
                 let encoder = JSONEncoder()
@@ -416,12 +408,19 @@ public enum ColonyAgent {
             }
         }()
 
-        return tokenizer.countTokens([HiveChatMessage(id: "budget:tools", role: .system, content: content)])
+        return [
+            HiveChatMessage(
+                id: "budget:tools",
+                role: .system,
+                content: content
+            )
+        ]
     }
 
     private static func requestMessagesWithHardTokenLimit(
         systemMessage: HiveChatMessage,
         conversationMessages: [HiveChatMessage],
+        reservedMessages: [HiveChatMessage],
         tokenLimit: Int?,
         tokenizer: any ColonyTokenizer
     ) -> [HiveChatMessage] {
@@ -431,17 +430,19 @@ public enum ColonyAgent {
         let boundedSystemMessage = trimSystemMessageToFitTokenLimit(
             systemMessage,
             tokenLimit: tokenLimit,
+            reservedMessages: reservedMessages,
             tokenizer: tokenizer
         )
         var keptConversation = conversationMessages
         var requestMessages = [boundedSystemMessage] + keptConversation
 
-        while keptConversation.isEmpty == false, tokenizer.countTokens(requestMessages) > tokenLimit {
+        while keptConversation.isEmpty == false,
+              tokenizer.countTokens(requestMessages + reservedMessages) > tokenLimit {
             keptConversation.removeFirst()
             requestMessages = [boundedSystemMessage] + keptConversation
         }
 
-        if tokenizer.countTokens(requestMessages) <= tokenLimit {
+        if tokenizer.countTokens(requestMessages + reservedMessages) <= tokenLimit {
             return requestMessages
         }
 
@@ -451,9 +452,10 @@ public enum ColonyAgent {
     private static func trimSystemMessageToFitTokenLimit(
         _ systemMessage: HiveChatMessage,
         tokenLimit: Int,
+        reservedMessages: [HiveChatMessage],
         tokenizer: any ColonyTokenizer
     ) -> HiveChatMessage {
-        if tokenizer.countTokens([systemMessage]) <= tokenLimit {
+        if tokenizer.countTokens([systemMessage] + reservedMessages) <= tokenLimit {
             return systemMessage
         }
 
@@ -464,7 +466,7 @@ public enum ColonyAgent {
         while low < high {
             let mid = (low + high + 1) / 2
             let candidate = systemMessageWithTrimmedContent(systemMessage, maxCharacters: mid)
-            if tokenizer.countTokens([candidate]) <= tokenLimit {
+            if tokenizer.countTokens([candidate] + reservedMessages) <= tokenLimit {
                 low = mid
             } else {
                 high = mid - 1
@@ -492,7 +494,7 @@ public enum ColonyAgent {
 
     private static func routeAfterModel(_ store: HiveStoreView<ColonySchema>) -> HiveNext {
         let calls = (try? store.get(ColonySchema.Channels.pendingToolCalls)) ?? []
-        return calls.isEmpty ? .end : .nodes([nodeTools])
+        return calls.isEmpty ? .end : .to([nodeTools])
     }
 
     private static func tools(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
@@ -538,12 +540,12 @@ public enum ColonyAgent {
             }
         }
 
-        let approvalRequiredCalls = calls.filter {
+        let approvalRequiredCalls: [HiveToolCall] = calls.filter {
             assessmentsByCallID[$0.id]?.requiresApproval == true
                 && preApprovedIDs.contains($0.id) == false
                 && preDeniedIDs.contains($0.id) == false
         }
-        let approvalRequiredIDs = Set(approvalRequiredCalls.map(\.id))
+        let approvalRequiredIDs: Set<String> = Set(approvalRequiredCalls.map { $0.id })
 
         if approvalRequiredCalls.isEmpty == false {
             if let resume = input.run.resume, case let .toolApproval(decision) = resume.payload {
@@ -560,8 +562,8 @@ public enum ColonyAgent {
                     }
                 }
 
-                let approvedCalls = calls.filter { approvedIDs.contains($0.id) }
-                let deniedCalls = calls.filter { deniedIDs.contains($0.id) }
+                let approvedCalls: [HiveToolCall] = calls.filter { approvedIDs.contains($0.id) }
+                let deniedCalls: [HiveToolCall] = calls.filter { deniedIDs.contains($0.id) }
 
                 try await recordToolAuditEvents(
                     calls: calls.filter { approvedIDs.contains($0.id) && approvalRequiredIDs.contains($0.id) == false },
@@ -611,13 +613,15 @@ public enum ColonyAgent {
             )
 
             return HiveNodeOutput(
-                next: .nodes([nodeTools]),
-                interrupt: HiveInterruptRequest(payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls))
+                next: .to([nodeTools]),
+                interrupt: HiveInterruptRequest(
+                    payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls.map(ColonyToolCall.init))
+                )
             )
         }
 
-        let approvedCalls = calls.filter { preDeniedIDs.contains($0.id) == false }
-        let deniedCalls = calls.filter { preDeniedIDs.contains($0.id) }
+        let approvedCalls: [HiveToolCall] = calls.filter { preDeniedIDs.contains($0.id) == false }
+        let deniedCalls: [HiveToolCall] = calls.filter { preDeniedIDs.contains($0.id) }
         try await recordToolAuditEvents(
             calls: approvedCalls,
             decision: .autoApproved,
@@ -681,7 +685,7 @@ public enum ColonyAgent {
         if spawn.isEmpty {
             return HiveNodeOutput(
                 writes: writes,
-                next: .nodes([nodePreModel])
+                next: .to([nodePreModel])
             )
         }
 
@@ -768,8 +772,8 @@ public enum ColonyAgent {
         return HiveNodeOutput(writes: writes)
     }
 
-    private static func builtInToolDefinitions(for context: ColonyContext) -> [HiveToolDefinition] {
-        var tools: [HiveToolDefinition] = []
+    private static func builtInToolDefinitions(for context: ColonyContext) -> [ColonyToolDefinition] {
+        var tools: [ColonyToolDefinition] = []
 
         if context.configuration.capabilities.contains(.planning) {
             tools.append(ColonyBuiltInToolDefinitions.writeTodos)
@@ -879,10 +883,10 @@ public enum ColonyAgent {
     }
 
     private static func dedupeToolsByName(
-        builtIn: [HiveToolDefinition],
-        external: [HiveToolDefinition]
-    ) -> [HiveToolDefinition] {
-        var byName: [String: HiveToolDefinition] = [:]
+        builtIn: [ColonyToolDefinition],
+        external: [ColonyToolDefinition]
+    ) -> [ColonyToolDefinition] {
+        var byName: [String: ColonyToolDefinition] = [:]
         for tool in builtIn { byName[tool.name] = tool }
         for tool in external { byName[tool.name] = tool }
         return byName.values.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }

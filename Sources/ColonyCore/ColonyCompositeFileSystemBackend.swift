@@ -267,8 +267,6 @@ extension ColonyCompositeFileSystemService {
 
 // MARK: - Deprecated Typealiases
 
-@available(*, deprecated, renamed: "ColonyCompositeFileSystemService")
 public typealias ColonyCompositeFileSystemBackend = ColonyCompositeFileSystemService
 
-@available(*, deprecated, renamed: "ColonyFileSystem.CompositeService")
 public typealias ColonyFileSystemCompositeService = ColonyCompositeFileSystemService

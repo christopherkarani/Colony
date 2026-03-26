@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import Testing
+@_spi(ColonyInternal) import Swarm
 @testable import Colony
 
 private struct HarnessNoopClock: HiveClock {

@@ -1,4 +1,4 @@
-import HiveCore
+@_spi(ColonyInternal) import Swarm
 
 /// Risk level classification for tools, ordered by increasing severity.
 ///
@@ -124,7 +124,7 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
     ///
     /// - Parameter toolCalls: The tool calls to assess
     /// - Returns: An array of safety assessments, one per tool call
-    public func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
+    public func assess(toolCalls: [ColonyToolCall]) -> [ColonyToolSafetyAssessment] {
         toolCalls.map { call in
             let riskLevel = riskLevel(for: call.name)
 
@@ -167,6 +167,12 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
                 reason: nil
             )
         }
+    }
+}
+
+package extension ColonyToolSafetyPolicyEngine {
+    func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
+        assess(toolCalls: toolCalls.map(ColonyToolCall.init))
     }
 }
 
