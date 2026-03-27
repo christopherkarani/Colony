@@ -3,25 +3,25 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
+private actor InMemoryCheckpointStore<Schema: SwarmGraphSchema>: SwarmCheckpointStore {
+    private var checkpoints: [SwarmCheckpoint<Schema>] = []
 
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+    func save(_ checkpoint: SwarmCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
     }
 
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+    func loadLatest(threadID: SwarmThreadID) async throws -> SwarmCheckpoint<Schema>? {
         checkpoints
             .filter { $0.threadID == threadID }
             .max { lhs, rhs in
@@ -35,15 +35,15 @@ private enum ToolCallValidationError: Error, Sendable {
     case danglingToolCall(toolName: String, toolCallID: String)
 }
 
-private final class ToolCallThenValidateModel: HiveModelClient, @unchecked Sendable {
+private final class ToolCallThenValidateModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -57,7 +57,7 @@ private final class ToolCallThenValidateModel: HiveModelClient, @unchecked Senda
         }
     }
 
-    private func respond(to request: HiveChatRequest) throws -> HiveChatResponse {
+    private func respond(to request: SwarmChatRequest) throws -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -66,23 +66,23 @@ private final class ToolCallThenValidateModel: HiveModelClient, @unchecked Senda
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "call-1",
                 name: "write_file",
                 argumentsJSON: #"{"path":"/note.md","content":"hello"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "writing", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "writing", toolCalls: [call])
             )
         }
 
         try validateNoDanglingToolCalls(in: request.messages)
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 
-    private func validateNoDanglingToolCalls(in messages: [HiveChatMessage]) throws {
+    private func validateNoDanglingToolCalls(in messages: [SwarmChatMessage]) throws {
         for (index, message) in messages.enumerated() where message.role == .assistant {
             for call in message.toolCalls {
                 let hasToolMessage = messages[(index + 1)...].contains { later in
@@ -109,21 +109,21 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
     let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
-    let environment = HiveEnvironment(
+    let environment = SwarmGraphEnvironment(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ToolCallThenValidateModel()),
-        checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        model: SwarmAnyModelClient(ToolCallThenValidateModel()),
+        checkpointStore: SwarmAnyCheckpointStore(checkpointStore)
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-patch-toolcalls")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-patch-toolcalls")
 
     let first = await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
     let firstOutcome = try await first.outcome.value
     guard case .interrupted = firstOutcome else {
@@ -137,7 +137,7 @@ func colonyPatchesDanglingToolCallsOnNewInput() async throws {
     let second = await runtime.run(
         threadID: threadID,
         input: "new message",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let secondOutcome = try await second.outcome.value

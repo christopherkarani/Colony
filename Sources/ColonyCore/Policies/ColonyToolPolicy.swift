@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Unified policy struct that combines approval and safety concerns for tool execution.
 /// Replaces `ColonyToolApprovalPolicy` and `ColonyToolRiskLevel` handling.
 public struct ColonyToolPolicy: Sendable {
@@ -188,12 +186,6 @@ public enum ToolPermissionPolicy: Sendable, Equatable {
     /// - Returns: `true` if any tool requires approval.
     public func requiresApproval(for toolNames: [String]) -> Bool {
         toolNames.contains(where: requiresApproval(for:))
-    }
-}
-
-package extension ColonyToolPolicy {
-    func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
-        assess(toolCalls: toolCalls.map(ColonyToolCall.init))
     }
 }
 

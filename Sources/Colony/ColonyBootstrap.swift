@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 // MARK: - ColonyBootstrap (Deprecated)
@@ -35,7 +34,7 @@ public enum ColonyBootstrap {
         let factory = ColonyAgentFactory()
         return try factory.makeRuntime(
             profile: profile,
-            threadID: (threadID ?? ColonyThreadID("colony:" + UUID().uuidString)).hiveThreadID,
+            threadID: threadID ?? ColonyThreadID("colony:" + UUID().uuidString),
             modelName: modelName
         )
     }

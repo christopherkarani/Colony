@@ -3,26 +3,26 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class ConstantModel: HiveModelClient, @unchecked Sendable {
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+private final class ConstantModel: SwarmModelClient, @unchecked Sendable {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(
-                .final(HiveChatResponse(message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")))
+                .final(SwarmChatResponse(message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")))
             )
             continuation.finish()
         }
@@ -47,15 +47,15 @@ func colonySummarizationOffloadsHistory() async throws {
     )
 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ConstantModel())
+        model: SwarmAnyModelClient(ConstantModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-summarize")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-summarize")
 
     // Build up enough history to trigger summarization.
     for i in 0..<5 {
@@ -63,14 +63,14 @@ func colonySummarizationOffloadsHistory() async throws {
         _ = try await runtime.run(
             threadID: threadID,
             input: input,
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         ).outcome.value
     }
 
     let latest = await runtime.run(
         threadID: threadID,
         input: "final",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await latest.outcome.value

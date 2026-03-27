@@ -4,41 +4,41 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct HarnessNoopClock: HiveClock {
+private struct HarnessNoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct HarnessNoopLogger: HiveLogger {
+private struct HarnessNoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class InterruptThenFinishModel: HiveModelClient, @unchecked Sendable {
+private final class InterruptThenFinishModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let index = self.nextCallIndex()
                 continuation.yield(.token("delta-\(index)"))
 
                 if index == 1 {
-                    let call = HiveToolCall(
+                    let call = SwarmToolCall(
                         id: "call-1",
                         name: "write_file",
                         argumentsJSON: #"{"path":"/note.md","content":"hello"}"#
                     )
                     continuation.yield(
                         .final(
-                            HiveChatResponse(
-                                message: HiveChatMessage(
+                            SwarmChatResponse(
+                                message: SwarmChatMessage(
                                     id: "assistant-\(index)",
                                     role: .assistant,
                                     content: "need approval",
@@ -50,8 +50,8 @@ private final class InterruptThenFinishModel: HiveModelClient, @unchecked Sendab
                 } else {
                     continuation.yield(
                         .final(
-                            HiveChatResponse(
-                                message: HiveChatMessage(
+                            SwarmChatResponse(
+                                message: SwarmChatMessage(
                                     id: "assistant-\(index)",
                                     role: .assistant,
                                     content: "done"
@@ -73,12 +73,12 @@ private final class InterruptThenFinishModel: HiveModelClient, @unchecked Sendab
     }
 }
 
-private final class SlowStreamingModel: HiveModelClient, @unchecked Sendable {
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+private final class SlowStreamingModel: SwarmModelClient, @unchecked Sendable {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 while Task.isCancelled == false {
@@ -189,9 +189,9 @@ func harnessProtocolEnvelopeContractsAreCodable() throws {
 @Test("Harness session supports start/stream/interrupted/resume with ordered versioned events")
 func harnessSessionLifecycleAndOrdering() async throws {
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-harness-lifecycle"),
+        threadID: SwarmThreadID("thread-harness-lifecycle"),
         modelName: "test-model",
-        model: AnyHiveModelClient(InterruptThenFinishModel()),
+        model: SwarmAnyModelClient(InterruptThenFinishModel()),
         clock: HarnessNoopClock(),
         logger: HarnessNoopLogger(),
         configure: { configuration in
@@ -273,9 +273,9 @@ func harnessSessionLifecycleAndOrdering() async throws {
 @Test("Harness session stop cancels active run")
 func harnessSessionStopCancelsActiveRun() async throws {
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-harness-stop"),
+        threadID: SwarmThreadID("thread-harness-stop"),
         modelName: "slow-model",
-        model: AnyHiveModelClient(SlowStreamingModel()),
+        model: SwarmAnyModelClient(SlowStreamingModel()),
         clock: HarnessNoopClock(),
         logger: HarnessNoopLogger(),
         configure: { configuration in
@@ -315,9 +315,9 @@ func harnessSessionStopCancelsActiveRun() async throws {
 @Test("Harness stream subscribes before start so initial runStarted event is not missed")
 func harnessSessionStreamDoesNotDropRunStarted() async throws {
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-harness-run-started-race"),
+        threadID: SwarmThreadID("thread-harness-run-started-race"),
         modelName: "test-model",
-        model: AnyHiveModelClient(InterruptThenFinishModel()),
+        model: SwarmAnyModelClient(InterruptThenFinishModel()),
         clock: HarnessNoopClock(),
         logger: HarnessNoopLogger(),
         configure: { configuration in

@@ -1,5 +1,5 @@
 {
-  "originHash" : "82f7ec1802c3ae12f9b9b003c8376c52bb603ee8e5dfc8a84788eecc50749ef8",
+  "originHash" : "c8ca5f228091e4d797ba990494041341f68c61fc296f4adcefcdfc64f725735d",
   "pins" : [
     {
       "identity" : "conduit",
@@ -69,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/christopherkarani/Swarm.git",
       "state" : {
-        "revision" : "7a25d4c99b9b9124f6af0266288d88a087a42071",
-        "version" : "0.4.7"
+        "revision" : "52ba95155d249af0dac24647e67ecb91a4c4840a",
+        "version" : "0.5.0"
       }
     },
     {

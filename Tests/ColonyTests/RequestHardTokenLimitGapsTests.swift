@@ -3,38 +3,38 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return requests
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         requests.append(request)
         lock.unlock()
 
-        let response = HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")
+        let response = SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")
         )
         return AsyncThrowingStream { continuation in
             continuation.yield(.final(response))
@@ -43,17 +43,17 @@ private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable 
     }
 }
 
-private struct FixedToolRegistry: HiveToolRegistry, Sendable {
-    let tools: [HiveToolDefinition]
+private struct FixedToolRegistry: SwarmToolRegistry, Sendable {
+    let tools: [SwarmToolDefinition]
 
-    func listTools() -> [HiveToolDefinition] { tools }
+    func listTools() -> [SwarmToolDefinition] { tools }
 
-    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        HiveToolResult(toolCallID: call.id, content: "ok")
+    func invoke(_ call: SwarmToolCall) async throws -> SwarmToolResult {
+        SwarmToolResult(toolCallID: call.id, content: "ok")
     }
 }
 
-private func encodeToolsAsSortedJSON(_ tools: [HiveToolDefinition]) throws -> String {
+private func encodeToolsAsSortedJSON(_ tools: [SwarmToolDefinition]) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let data = try encoder.encode(tools)
@@ -66,7 +66,7 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
     let recordingModel = RecordingRequestModel()
     let tokenizer = ColonyApproximateTokenizer()
 
-    let baseTool = HiveToolDefinition(
+    let baseTool = SwarmToolDefinition(
         name: "big_tool",
         description: "A tool with a (tiny) schema.",
         parametersJSONSchema: ""
@@ -74,7 +74,7 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
     let baseToolJSON = try encodeToolsAsSortedJSON([baseTool])
     let padding = (3 - (baseToolJSON.count % 4) + 4) % 4
 
-    let tool = HiveToolDefinition(
+    let tool = SwarmToolDefinition(
         name: "big_tool",
         description: "A tool with a (tiny) schema.",
         parametersJSONSchema: String(repeating: "a", count: padding)
@@ -83,7 +83,7 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
     #expect(toolJSON.count % 4 == 3)
 
     let toolTokenCount = tokenizer.countTokens([
-        HiveChatMessage(id: "budget:tools", role: .system, content: toolJSON)
+        SwarmChatMessage(id: "budget:tools", role: .system, content: toolJSON)
     ])
     let messageTokenLimit = 150
     let hardCap = toolTokenCount + messageTokenLimit
@@ -104,19 +104,19 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
         tokenizer: tokenizer
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel),
-        tools: AnyHiveToolRegistry(FixedToolRegistry(tools: [tool]))
+        model: SwarmAnyModelClient(recordingModel),
+        tools: SwarmAnyToolRegistry(FixedToolRegistry(tools: [tool]))
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-request-hard-cap-tools-payload"),
+        threadID: SwarmThreadID("thread-request-hard-cap-tools-payload"),
         input: "hello",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -127,7 +127,7 @@ func requestHardTokenLimit_accountsForToolDefinitionPayloadSize() async throws {
 
     let toolsPayload = try encodeToolsAsSortedJSON(request.tools)
     let combined = tokenizer.countTokens(
-        request.messages + [HiveChatMessage(id: "budget:tools", role: .system, content: toolsPayload)]
+        request.messages + [SwarmChatMessage(id: "budget:tools", role: .system, content: toolsPayload)]
     )
 
     // NOTE: This must hold for strict request-level capping; today the budget math can undercount by ~1 token.
@@ -141,7 +141,7 @@ func defaultSubagentRuntime_inheritsOnDeviceHard4kRequestCap() async throws {
     // NOTE: This initializer is the "default" path; it should be safe for on-device usage.
     let registry = ColonyDefaultSubagentRegistry(
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(recordingModel),
+        model: SwarmAnyModelClient(recordingModel),
         clock: NoopClock(),
         logger: NoopLogger(),
         filesystem: nil

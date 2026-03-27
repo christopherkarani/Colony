@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
@@ -11,25 +10,19 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         case missingFullStoreOutput
     }
 
-    private static let compiledGraphResult: Result<CompiledHiveGraph<ColonySchema>, Error> = Result {
-        try ColonyAgent.compile()
-    }
-
     private let profile: ColonyProfile
     private let modelName: String
-    private let model: AnyHiveModelClient
-    private let clock: any HiveClock
-    private let logger: any HiveLogger
+    private let model: SwarmAnyModelClient
+    private let clock: any SwarmClock
+    private let logger: any SwarmLogger
     private let filesystem: (any ColonyFileSystemBackend)?
-    private let graphProvider: @Sendable () throws -> CompiledHiveGraph<ColonySchema>
 
     public init(
         modelName: String,
-        model: AnyHiveModelClient,
-        clock: any HiveClock,
-        logger: any HiveLogger,
-        filesystem: (any ColonyFileSystemBackend)? = nil,
-        graphProvider: (@Sendable () throws -> CompiledHiveGraph<ColonySchema>)? = nil
+        model: SwarmAnyModelClient,
+        clock: any SwarmClock,
+        logger: any SwarmLogger,
+        filesystem: (any ColonyFileSystemBackend)? = nil
     ) {
         self.init(
             profile: .onDevice4k,
@@ -37,19 +30,17 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
             model: model,
             clock: clock,
             logger: logger,
-            filesystem: filesystem,
-            graphProvider: graphProvider
+            filesystem: filesystem
         )
     }
 
     public init(
         profile: ColonyProfile,
         modelName: String,
-        model: AnyHiveModelClient,
-        clock: any HiveClock,
-        logger: any HiveLogger,
-        filesystem: (any ColonyFileSystemBackend)? = nil,
-        graphProvider: (@Sendable () throws -> CompiledHiveGraph<ColonySchema>)? = nil
+        model: SwarmAnyModelClient,
+        clock: any SwarmClock,
+        logger: any SwarmLogger,
+        filesystem: (any ColonyFileSystemBackend)? = nil
     ) {
         self.profile = profile
         self.modelName = modelName
@@ -57,7 +48,6 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         self.clock = clock
         self.logger = logger
         self.filesystem = filesystem
-        self.graphProvider = graphProvider ?? { try Self.compiledGraphResult.get() }
     }
 
     public func listSubagents() -> [ColonySubagentDescriptor] {
@@ -101,31 +91,28 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
                 """
             )
         }
+        let finalizedConfiguration = configuration
 
-        let context = ColonyContext(
-            configuration: configuration,
-            filesystem: filesystem,
-            shell: nil,
-            subagents: nil
-        )
+        let runtime = try ColonyBuilder()
+            .profile(profile)
+            .threadID(ColonyThreadID("subagent:\(UUID().uuidString)"))
+            .model(name: modelName)
+            .model(model)
+            .filesystem(filesystem)
+            .clock(clock)
+            .logger(logger)
+            .configure { config in
+                config = finalizedConfiguration
+            }
+            .configureRunOptions { options in
+                options.checkpointPolicy = .disabled
+            }
+            .build()
 
-        let environment = HiveEnvironment<ColonySchema>(
-            context: context,
-            clock: clock,
-            logger: logger,
-            model: model
-        )
-        let runtime = try HiveRuntime(graph: graphProvider(), environment: environment)
-
-        let threadID = HiveThreadID("subagent:\(UUID().uuidString)")
-        let handle = await runtime.run(
-            threadID: threadID,
-            input: delegatedPrompt,
-            options: HiveRunOptions(checkpointPolicy: .disabled)
-        )
+        let handle = await runtime.sendUserMessage(delegatedPrompt)
 
         let outcome = try await handle.outcome.value
-        let store: HiveGlobalStore<ColonySchema>
+        let store: ColonyRun.Store
         switch outcome {
         case .finished(let output, _), .cancelled(let output, _), .outOfSteps(_, let output, _):
             guard case let .fullStore(fullStore) = output else {
@@ -138,7 +125,7 @@ package struct ColonyDefaultSubagentRegistry: ColonySubagentRegistry {
         }
 
         let messages = try store.get(ColonySchema.Channels.messages)
-        let toolMessages = messages.filter { $0.role == HiveChatRole.tool }
+        let toolMessages = messages.filter { $0.role == .tool }
         if let toolError = toolMessages.first(where: { $0.content.hasPrefix("Error:") }) {
             return ColonySubagentResult(content: toolError.content)
         }

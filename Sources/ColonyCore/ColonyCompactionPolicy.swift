@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Policy controlling when and how conversation history is compacted.
 ///
 /// `ColonyCompactionPolicy` determines when older messages should be removed
@@ -40,14 +38,5 @@ public enum ColonyCompactionPolicy: Sendable {
             }
             return kept
         }
-    }
-}
-
-package extension ColonyCompactionPolicy {
-    func compact(
-        _ messages: [HiveChatMessage],
-        tokenizer: any ColonyTokenizer
-    ) -> [HiveChatMessage]? {
-        compact(messages.map(ColonyMessage.init), tokenizer: tokenizer)?.map(\.hiveChatMessage)
     }
 }

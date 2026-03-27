@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// Errors that can occur during provider routing.
@@ -159,7 +158,7 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
     }
 
     public func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
-        let response = try await complete(request: request.hiveChatRequest, hints: nil)
+        let response = try await complete(request: request.swarmChatRequest, hints: nil)
         return ColonyInferenceResponse(response)
     }
 
@@ -184,13 +183,13 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
         }
     }
 
-    package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
-        AnyHiveModelClient(ColonyProviderRoutingClient(router: self, hints: hints))
+    package func route(_ request: SwarmChatRequest, hints: SwarmInferenceHints?) -> SwarmAnyModelClient {
+        SwarmAnyModelClient(ColonyProviderRoutingClient(router: self, hints: hints))
     }
 
     // MARK: - Private
 
-    fileprivate func complete(request: HiveChatRequest, hints: HiveInferenceHints?) async throws -> HiveChatResponse {
+    fileprivate func complete(request: SwarmChatRequest, hints: SwarmInferenceHints?) async throws -> SwarmChatResponse {
         _ = hints
         guard providers.isEmpty == false else {
             throw ProviderRoutingError.noProvidersConfigured
@@ -228,8 +227,8 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
         case .fail:
             throw ProviderRoutingError.noEligibleProvider(reasons: failures)
         case .syntheticResponse(let message):
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return SwarmChatResponse(
+                message: SwarmChatMessage(
                     id: "degraded-" + UUID().uuidString.lowercased(),
                     role: .assistant,
                     content: message
@@ -238,7 +237,7 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
         }
     }
 
-    private func attemptProvider(_ provider: Provider, request: HiveChatRequest) async throws -> HiveChatResponse {
+    private func attemptProvider(_ provider: Provider, request: SwarmChatRequest) async throws -> SwarmChatResponse {
         let maxAttempts = policy.maxAttemptsPerProvider
         var currentBackoff = policy.initialBackoffNanoseconds
         var lastError: Error?
@@ -257,7 +256,7 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
         throw lastError ?? ProviderRoutingError.noEligibleProvider(reasons: [provider.id + ":unknown failure"])
     }
 
-    private func estimatedRequestCostUSD(for request: HiveChatRequest, provider: Provider) -> Double {
+    private func estimatedRequestCostUSD(for request: SwarmChatRequest, provider: Provider) -> Double {
         guard let usdPer1KTokens = provider.usdPer1KTokens else { return 0 }
 
         let tokenizer = ColonyApproximateTokenizer()
@@ -266,7 +265,7 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
             .map { "\($0.name)\n\($0.description)\n\($0.parametersJSONSchema)" }
             .joined(separator: "\n")
         let toolTokens = tokenizer.countTokens([
-            HiveChatMessage(id: "budget-tools", role: .system, content: toolDefinitionPayload),
+            SwarmChatMessage(id: "budget-tools", role: .system, content: toolDefinitionPayload),
         ])
 
         let inputTokens = messageTokens + toolTokens
@@ -281,15 +280,15 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
     private let state: ColonyProviderBudgetState
 }
 
-private struct ColonyProviderRoutingClient: HiveModelClient, Sendable {
+private struct ColonyProviderRoutingClient: SwarmModelClient, Sendable {
     let router: ColonyProviderRouter
-    let hints: HiveInferenceHints?
+    let hints: SwarmInferenceHints?
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await router.complete(request: request, hints: hints)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {

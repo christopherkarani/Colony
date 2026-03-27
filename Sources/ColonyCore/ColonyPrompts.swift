@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Namespace for system prompt construction in Colony.
 ///
 /// `ColonyPrompts` provides factory methods for constructing system prompts

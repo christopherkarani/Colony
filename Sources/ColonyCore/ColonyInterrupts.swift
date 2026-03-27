@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Payload attached to an interrupt when the runtime pauses for human input.
 ///
 /// `ColonyInterruptPayload` describes why the runtime interrupted its execution

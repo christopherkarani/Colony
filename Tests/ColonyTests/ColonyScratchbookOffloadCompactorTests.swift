@@ -3,26 +3,26 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class ConstantModel: HiveModelClient, @unchecked Sendable {
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+private final class ConstantModel: SwarmModelClient, @unchecked Sendable {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(
-                .final(HiveChatResponse(message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")))
+                .final(SwarmChatResponse(message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")))
             )
             continuation.finish()
         }
@@ -82,7 +82,7 @@ private func scratchbookContainsNextActions(_ json: String) -> Bool {
 }
 
 private func runOffloadScenario(
-    threadID: HiveThreadID,
+    threadID: SwarmThreadID,
     filesystem: ColonyInMemoryFileSystemBackend,
     configuration: ColonyConfiguration,
     subagents: (any ColonySubagentRegistry)?
@@ -95,34 +95,34 @@ private func runOffloadScenario(
         subagents: subagents
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ConstantModel())
+        model: SwarmAnyModelClient(ConstantModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     for i in 0..<5 {
         let input = "message-\(i): " + String(repeating: "x", count: 80)
         _ = try await runtime.run(
             threadID: threadID,
             input: input,
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         ).outcome.value
     }
 
     _ = try await runtime.run(
         threadID: threadID,
         input: "final",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     ).outcome.value
 }
 
 @Test("History offload updates Scratchbook (deterministic fallback when subagents unavailable)")
 func offload_updatesScratchbook_withDeterministicFallbackWhenSubagentsUnavailable() async throws {
-    let threadID = HiveThreadID("thread-scratchbook-offload-fallback")
+    let threadID = SwarmThreadID("thread-scratchbook-offload-fallback")
     let historyPath = try ColonyVirtualPath("/conversation_history/\(threadID.rawValue).md")
     let scratchbookPath = try ColonyVirtualPath("/scratchbook/\(threadID.rawValue).json")
 
@@ -169,7 +169,7 @@ func offload_updatesScratchbook_withDeterministicFallbackWhenSubagentsUnavailabl
 
 @Test("History offload prefers compactor subagent for Scratchbook update when available")
 func offload_prefersCompactorSubagentForScratchbookUpdate_whenAvailable() async throws {
-    let threadID = HiveThreadID("thread-scratchbook-offload-compactor")
+    let threadID = SwarmThreadID("thread-scratchbook-offload-compactor")
     let historyPath = try ColonyVirtualPath("/conversation_history/\(threadID.rawValue).md")
     let scratchbookPath = try ColonyVirtualPath("/scratchbook/\(threadID.rawValue).json")
 

@@ -3,38 +3,38 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return requests
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         requests.append(request)
         lock.unlock()
 
-        let response = HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")
+        let response = SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")
         )
         return AsyncThrowingStream { continuation in
             continuation.yield(.final(response))
@@ -43,7 +43,7 @@ private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable 
     }
 }
 
-private func systemPromptString(from request: HiveChatRequest) -> String? {
+private func systemPromptString(from request: SwarmChatRequest) -> String? {
     request.messages.first(where: { $0.role == .system })?.content
 }
 
@@ -56,7 +56,7 @@ private func extractSection(named header: String, from systemPrompt: String) -> 
     return String(remainder[..<end])
 }
 
-private func scratchbookFilePath(prefix: ColonyVirtualPath, threadID: HiveThreadID) throws -> ColonyVirtualPath {
+private func scratchbookFilePath(prefix: ColonyVirtualPath, threadID: SwarmThreadID) throws -> ColonyVirtualPath {
     let policy = ColonyScratchbookPolicy(pathPrefix: prefix)
     return try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
 }
@@ -75,7 +75,7 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    let threadID = HiveThreadID("thread-scratchbook-inject")
+    let threadID = SwarmThreadID("thread-scratchbook-inject")
     let prefix = try ColonyVirtualPath("/scratchbook")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
@@ -109,17 +109,17 @@ func systemPrompt_injectsScratchbookView_whenEnabledAndFilesystemExists() async 
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     guard let request = recordingModel.recordedRequests().last,
@@ -138,7 +138,7 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    let threadID = HiveThreadID("thread/scratch\\path:injection")
+    let threadID = SwarmThreadID("thread/scratch\\path:injection")
     let prefix = try ColonyVirtualPath("/scratchbook")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
@@ -177,17 +177,17 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     guard let request = recordingModel.recordedRequests().last,
@@ -203,7 +203,7 @@ func systemPrompt_injectsScratchbookView_fromSanitizedPath() async throws {
 @Test("System prompt does not inject Scratchbook view when filesystem backend is missing")
 func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
     let graph = try ColonyAgent.compile()
-    let threadID = HiveThreadID("thread-scratchbook-no-fs")
+    let threadID = SwarmThreadID("thread-scratchbook-no-fs")
 
     var configuration = ColonyConfiguration(
         capabilities: [.scratchbook],
@@ -221,17 +221,17 @@ func systemPrompt_omitsScratchbookView_whenFilesystemMissing() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: nil)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     guard let request = recordingModel.recordedRequests().last,
@@ -248,7 +248,7 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    let threadID = HiveThreadID("thread-scratchbook-max-items")
+    let threadID = SwarmThreadID("thread-scratchbook-max-items")
     let prefix = try ColonyVirtualPath("/scratchbook")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
@@ -282,17 +282,17 @@ func scratchbookInjection_respectsMaxRenderedItems() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     guard let request = recordingModel.recordedRequests().last,
@@ -312,7 +312,7 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    let threadID = HiveThreadID("thread-scratchbook-token-limit")
+    let threadID = SwarmThreadID("thread-scratchbook-token-limit")
     let prefix = try ColonyVirtualPath("/scratchbook")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
@@ -348,17 +348,17 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     _ = try await (await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     guard let request = recordingModel.recordedRequests().last,
@@ -370,7 +370,7 @@ func scratchbookInjection_respectsViewTokenLimit() async throws {
 
     let tokenizer = ColonyApproximateTokenizer()
     let tokens = tokenizer.countTokens([
-        HiveChatMessage(id: "budget:scratchbook-view", role: .system, content: scratchbookView)
+        SwarmChatMessage(id: "budget:scratchbook-view", role: .system, content: scratchbookView)
     ])
     #expect(tokens <= viewTokenLimit)
 }
@@ -380,7 +380,7 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
     let graph = try ColonyAgent.compile()
     let fs = ColonyInMemoryFileSystemBackend()
 
-    func run(includeToolsInPrompt: Bool) async throws -> HiveChatRequest {
+    func run(includeToolsInPrompt: Bool) async throws -> SwarmChatRequest {
         var configuration = ColonyConfiguration(
             capabilities: [.filesystem],
             modelName: "test-model",
@@ -391,17 +391,17 @@ func includeToolListInSystemPrompt_togglesToolsSection() async throws {
 
         let recordingModel = RecordingRequestModel()
         let context = ColonyContext(configuration: configuration, filesystem: fs)
-        let environment = HiveEnvironment<ColonySchema>(
+        let environment = SwarmGraphEnvironment<ColonySchema>(
             context: context,
             clock: NoopClock(),
             logger: NoopLogger(),
-            model: AnyHiveModelClient(recordingModel)
+            model: SwarmAnyModelClient(recordingModel)
         )
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
         _ = try await (await runtime.run(
-            threadID: HiveThreadID("thread-tools-section-\(includeToolsInPrompt)"),
+            threadID: SwarmThreadID("thread-tools-section-\(includeToolsInPrompt)"),
             input: "hi",
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         )).outcome.value
 
         guard let request = recordingModel.recordedRequests().last else {

@@ -3,25 +3,25 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct SafetyNoopClock: HiveClock {
+private struct SafetyNoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 42 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct SafetyNoopLogger: HiveLogger {
+private struct SafetyNoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private actor SafetyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
+private actor SafetyInMemoryCheckpointStore<Schema: SwarmGraphSchema>: SwarmCheckpointStore {
+    private var checkpoints: [SwarmCheckpoint<Schema>] = []
 
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+    func save(_ checkpoint: SwarmCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
     }
 
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+    func loadLatest(threadID: SwarmThreadID) async throws -> SwarmCheckpoint<Schema>? {
         checkpoints
             .filter { $0.threadID == threadID }
             .max { lhs, rhs in
@@ -31,15 +31,15 @@ private actor SafetyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointS
     }
 }
 
-private final class SingleMutatingCallModel: HiveModelClient, @unchecked Sendable {
+private final class SingleMutatingCallModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -49,7 +49,7 @@ private final class SingleMutatingCallModel: HiveModelClient, @unchecked Sendabl
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let index: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -58,31 +58,31 @@ private final class SingleMutatingCallModel: HiveModelClient, @unchecked Sendabl
         }()
 
         if index == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "write-1",
                 name: "write_file",
                 argumentsJSON: #"{"path":"/approved.md","content":"ok"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant-1", role: .assistant, content: "write", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant-1", role: .assistant, content: "write", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant-2", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant-2", role: .assistant, content: "done")
         )
     }
 }
 
-private final class DualMutatingCallsModel: HiveModelClient, @unchecked Sendable {
+private final class DualMutatingCallsModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -92,7 +92,7 @@ private final class DualMutatingCallsModel: HiveModelClient, @unchecked Sendable
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let index: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -101,23 +101,23 @@ private final class DualMutatingCallsModel: HiveModelClient, @unchecked Sendable
         }()
 
         if index == 1 {
-            let callA = HiveToolCall(
+            let callA = SwarmToolCall(
                 id: "write-a",
                 name: "write_file",
                 argumentsJSON: #"{"path":"/a.md","content":"A"}"#
             )
-            let callB = HiveToolCall(
+            let callB = SwarmToolCall(
                 id: "write-b",
                 name: "write_file",
                 argumentsJSON: #"{"path":"/b.md","content":"B"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant-1", role: .assistant, content: "write", toolCalls: [callA, callB])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant-1", role: .assistant, content: "write", toolCalls: [callA, callB])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant-2", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant-2", role: .assistant, content: "done")
         )
     }
 }
@@ -133,19 +133,19 @@ func mutatingToolsStillRequireApprovalWhenPolicyNever() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment(
+    let environment = SwarmGraphEnvironment(
         context: context,
         clock: SafetyNoopClock(),
         logger: SafetyNoopLogger(),
-        model: AnyHiveModelClient(SingleMutatingCallModel()),
-        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+        model: SwarmAnyModelClient(SingleMutatingCallModel()),
+        checkpointStore: SwarmAnyCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("tool-safety-never"),
+        threadID: SwarmThreadID("tool-safety-never"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let outcome = try await handle.outcome.value
@@ -175,20 +175,20 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment(
+    let environment = SwarmGraphEnvironment(
         context: context,
         clock: SafetyNoopClock(),
         logger: SafetyNoopLogger(),
-        model: AnyHiveModelClient(DualMutatingCallsModel()),
-        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+        model: SwarmAnyModelClient(DualMutatingCallsModel()),
+        checkpointStore: SwarmAnyCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("tool-safety-partial")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("tool-safety-partial")
 
     let handle = await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
     let outcome = try await handle.outcome.value
     guard case let .interrupted(interruption) = outcome else {
@@ -200,7 +200,7 @@ func perToolApprovalSupportsPartialAllowAndDeny() async throws {
         threadID: threadID,
         interruptID: interruption.interrupt.id,
         payload: .toolApproval(decision: .perTool([.init(toolCallID: "write-a", decision: .approved)])),
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let resumedOutcome = try await resumed.outcome.value
@@ -356,20 +356,20 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment(
+    let environment = SwarmGraphEnvironment(
         context: context,
         clock: SafetyNoopClock(),
         logger: SafetyNoopLogger(),
-        model: AnyHiveModelClient(SingleMutatingCallModel()),
-        checkpointStore: AnyHiveCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
+        model: SwarmAnyModelClient(SingleMutatingCallModel()),
+        checkpointStore: SwarmAnyCheckpointStore(SafetyInMemoryCheckpointStore<ColonySchema>())
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("tool-audit-runtime")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("tool-audit-runtime")
 
     let handle = await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let outcome = try await handle.outcome.value
@@ -386,7 +386,7 @@ func runtimeWritesAuditRecordsForToolApprovalFlow() async throws {
         threadID: threadID,
         interruptID: interruption.interrupt.id,
         payload: .toolApproval(decision: .rejected),
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
     _ = try await resumed.outcome.value
 

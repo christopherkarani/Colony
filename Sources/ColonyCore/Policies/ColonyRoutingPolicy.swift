@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 // MARK: - RetryPolicy
 

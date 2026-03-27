@@ -1,4 +1,68 @@
+# Current Execution: Colony on Public Swarm 0.5.0 Only
+
+- [x] Audit `Colony` and `Swarm` git state, dependency pins, and interrupted local changes.
+- [x] Confirm `Colony` stays pinned to published `Swarm 0.5.0` and declares no direct `Hive` package dependency.
+- [x] Reject the earlier local-`Swarm` SPI bridge approach as the wrong end state for this task.
+- [x] Start migrating `ColonyCore` request/message/tool bridges onto public `Swarm` provider types (`InferenceMessage`, `InferenceResponse`, `ToolSchema`, `TokenUsage`, `SendableValue`).
+- [x] Finish `ColonyCore` cleanup and remove all remaining non-public `Swarm*` runtime/type references from `Sources/ColonyCore`.
+- [x] Rework provider-facing `Colony` model clients and routers to use `ColonyInferenceRequest` / `ColonyInferenceResponse` plus public `Swarm` provider protocols only.
+- [x] Replace graph-runtime-centric `Colony` execution APIs with Colony-owned session/turn/interruption/checkpoint types built on public `Swarm` APIs only.
+- [x] Preserve approval, denial, interruption, durable checkpoint, and resume semantics inside Colony without relying on Swarm graph runtime internals.
+- [x] Update harness and persistence integrations to the Colony-owned runtime model.
+- [x] Migrate tests from removed `Hive*` / non-public `Swarm*` symbols to the new Colony-owned or public-Swarm types.
+- [x] Verify `swift package resolve`, `swift build`, and `swift test` in remote mode with `COLONY_USE_LOCAL_SWARM_PATH=0 AISTACK_USE_LOCAL_DEPS=0 CONDUIT_SKIP_MLX_DEPS=1`.
+- [x] Grep final build and test logs for compiler `warning:` / `error:` noise and clear them.
+- [x] Re-run dependency and API leakage audits to confirm no direct `Hive` dependency and no new public Hive leakage.
+
+### Review Notes for Current Execution
+
+- Published `Swarm 0.5.0` exposes provider/session/agent APIs, but not the graph runtime/checkpoint/interruption types Colony had been depending on.
+- The production fix is therefore a Colony-owned runtime rewrite on top of public `Swarm`, not another internal `Swarm` bridge.
+- Local `Swarm` modifications are intentionally out of scope for this execution path.
+- The remaining multi-turn regressions were fixed by persisting Colony-owned thread snapshots across runs inside `ColonyRuntimeEngine`, which restored summarization/history offload and strict recency trimming behavior.
+- Final remote-oriented verification passed against published `Swarm 0.5.0`: `swift package resolve`, `swift build`, and `swift test` all succeeded with no `warning:` or `error:` matches in the final logs.
+- Final audits passed: no direct `Hive` package dependency in `Colony`, no `Hive*` or `AnyHive*` source references in `Colony`, no public Hive leakage across `Swarm` and `Colony`, and no remaining `@_spi(ColonyInternal) import Swarm` in `Colony` production sources.
+
 # Colony Production Readiness Plan
+
+## Current Execution: Colony -> Swarm 0.5.0 Runtime Migration
+
+- [ ] Audit current `Colony` and `Swarm` state, including dirty files and the untracked `Swarm/Sources/Swarm/ColonyInternalSupport.swift` partial change.
+- [ ] Replace this plan section with the final review once implementation and verification finish.
+- [ ] Inventory every remaining `Hive*` / `AnyHive*` dependency in `Colony` sources and tests.
+- [ ] Confirm `Colony/Package.swift` stays pinned to `Swarm 0.5.0` and does not declare a direct `Hive` package dependency.
+- [ ] Determine whether `Colony` can migrate to existing `Swarm 0.5.0` public APIs only, or whether a minimal Swarm-owned SPI is required for Colony's durable graph runtime.
+- [ ] If Swarm support is required, replace the interrupted partial file with a minimal Swarm-owned SPI surface that hides Hive from public API/source checks.
+- [ ] Migrate `ColonyCore` inference/message/ID bridges off direct `Hive*` types onto Swarm-owned types.
+- [ ] Migrate `Colony` runtime, run control, builder/bootstrap, model router, and graph agent internals off direct `Hive*` usage onto Swarm-owned types.
+- [ ] Migrate `Colony` tests off direct `Hive*` imports/usages where the Swarm-owned replacement exists.
+- [ ] Remove any temporary or redundant compatibility layer that would preserve public/publicly-visible Hive leakage.
+- [ ] Verify local `Swarm` build/test if the Swarm package changed.
+- [ ] Verify remote-oriented `Colony` resolve/build/test with `COLONY_USE_LOCAL_SWARM_PATH=0 AISTACK_USE_LOCAL_DEPS=0 CONDUIT_SKIP_MLX_DEPS=1`.
+- [ ] Grep final verification logs for `warning:` and `error:`.
+- [ ] Re-run Hive leakage audits across `Swarm` and `Colony` and confirm no new public Hive leakage remains.
+
+### Review Notes for Current Execution
+
+- Audit findings before implementation:
+- `Colony` is already pinned to `Swarm 0.5.0`, but source and tests still reference dozens of removed Hive-shaped runtime symbols directly.
+- `Colony` has local uncommitted changes in `Package.swift`, `Package.resolved`, and this file; those must be preserved while applying the migration.
+- `Swarm` has an untracked `Sources/Swarm/ColonyInternalSupport.swift` partial change. It currently looks like a broad SPI typealias dump and must be validated or replaced rather than assumed correct.
+- The required verification bar is zero direct `Hive` package dependency in `Colony`, green build/test, zero compiler warnings, and no new public Hive leakage in either framework.
+
+## Current Execution: Swarm 0.5.0 Compatibility Check
+
+- [ ] Repoint `Colony` from `Swarm 0.4.7` to `Swarm 0.5.0`.
+- [ ] Refresh `Package.resolved` in remote-only mode.
+- [ ] Run remote-only `swift build` and fix any API or dependency breakage.
+- [ ] Run remote-only `swift test` and fix any regressions until green.
+- [ ] Confirm final verification logs contain no compiler warnings.
+
+### Review Notes for Current Execution
+
+- Triggered on 2026-03-27 after `Swarm 0.5.0` was published.
+- Goal for this pass: prove `Colony` still compiles and tests cleanly against the new released Swarm tag.
+- Scope is compatibility verification and any required fixes inside `Colony`; no unrelated refactors.
 
 ## Current Execution: Production Dependency Policy
 

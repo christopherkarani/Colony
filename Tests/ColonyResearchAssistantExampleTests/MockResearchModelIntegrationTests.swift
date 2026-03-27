@@ -41,7 +41,7 @@ func mockResearchModelCompletesTaskLoop() async throws {
 
     let messages = try store.get(ColonySchema.Channels.messages)
     guard let assistantTaskMessage = messages.first(where: { message in
-        message.role == HiveChatRole.assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })
+        message.role == SwarmChatRole.assistant && message.toolCalls.contains(where: { $0.name == ColonyBuiltInToolDefinitions.taskName })
     }) else {
         #expect(Bool(false))
         return
@@ -53,7 +53,7 @@ func mockResearchModelCompletesTaskLoop() async throws {
     }
 
     let matchingToolMessage = messages.first(where: { message in
-        message.role == HiveChatRole.tool && message.toolCallID == taskCallID
+        message.role == SwarmChatRole.tool && message.toolCallID == taskCallID
     })
     #expect(matchingToolMessage != nil)
 }

@@ -1,16 +1,15 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
-package struct ColonyModelClientBridge: HiveModelClient, Sendable {
+package struct ColonyModelClientBridge: SwarmModelClient, Sendable {
     let client: any ColonyModelClient
 
-    package func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    package func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         let response = try await client.generate(ColonyInferenceRequest(request))
-        return response.hiveChatResponse
+        return response.swarmChatResponse
     }
 
-    package func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    package func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         let stream = client.stream(ColonyInferenceRequest(request))
         return AsyncThrowingStream { continuation in
             Task {
@@ -20,7 +19,7 @@ package struct ColonyModelClientBridge: HiveModelClient, Sendable {
                         case .token(let token):
                             continuation.yield(.token(token))
                         case .final(let response):
-                            continuation.yield(.final(response.hiveChatResponse))
+                            continuation.yield(.final(response.swarmChatResponse))
                         }
                     }
                     continuation.finish()

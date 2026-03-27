@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 // MARK: - Phantom Type Domain Markers
 
@@ -105,92 +104,6 @@ public typealias ColonySubagentType = ColonyID<ColonyIDDomain.Subagent>
 
 /// Type alias for artifact identifiers.
 public typealias ColonyArtifactID = ColonyID<ColonyIDDomain.Artifact>
-
-// MARK: - Hive Compatibility Extensions
-
-extension ColonyID where Domain == ColonyIDDomain.Thread {
-    /// Converts this ColonyThreadID to a HiveThreadID.
-    package var hiveThreadID: HiveThreadID {
-        HiveThreadID(rawValue)
-    }
-
-    /// Creates a ColonyThreadID from a HiveThreadID.
-    package init(hiveThreadID: HiveThreadID) {
-        self.rawValue = hiveThreadID.rawValue
-    }
-}
-
-extension ColonyID where Domain == ColonyIDDomain.Run {
-    /// Converts this ColonyRunID to a HiveRunID.
-    package var hiveRunID: HiveRunID {
-        HiveRunID(UUID(uuidString: rawValue) ?? UUID())
-    }
-
-    /// Creates a ColonyRunID from a HiveRunID.
-    package init(hiveRunID: HiveRunID) {
-        self.rawValue = hiveRunID.rawValue.uuidString
-    }
-}
-
-extension ColonyID where Domain == ColonyIDDomain.Attempt {
-    /// Converts this ColonyRunAttemptID to a HiveRunAttemptID.
-    package var hiveAttemptID: HiveRunAttemptID {
-        HiveRunAttemptID(UUID(uuidString: rawValue) ?? UUID())
-    }
-
-    /// Creates a ColonyRunAttemptID from a HiveRunAttemptID.
-    package init(hiveAttemptID: HiveRunAttemptID) {
-        self.rawValue = hiveAttemptID.rawValue.uuidString
-    }
-}
-
-extension ColonyID where Domain == ColonyIDDomain.Checkpoint {
-    /// Converts this ColonyCheckpointID to a HiveCheckpointID.
-    package var hiveCheckpointID: HiveCheckpointID {
-        HiveCheckpointID(rawValue)
-    }
-
-    /// Creates a ColonyCheckpointID from a HiveCheckpointID.
-    package init(hiveCheckpointID: HiveCheckpointID) {
-        self.rawValue = hiveCheckpointID.rawValue
-    }
-}
-
-extension ColonyID where Domain == ColonyIDDomain.Interrupt {
-    /// Converts this ColonyInterruptID to a HiveInterruptID.
-    package var hiveInterruptID: HiveInterruptID {
-        HiveInterruptID(rawValue)
-    }
-
-    /// Creates a ColonyInterruptID from a HiveInterruptID.
-    package init(hiveInterruptID: HiveInterruptID) {
-        self.rawValue = hiveInterruptID.rawValue
-    }
-}
-
-extension ColonyID where Domain == ColonyIDDomain.Channel {
-    /// Converts this ColonyChannelID to a HiveChannelID.
-    package var hiveChannelID: HiveChannelID {
-        HiveChannelID(rawValue)
-    }
-
-    /// Creates a ColonyChannelID from a HiveChannelID.
-    package init(hiveChannelID: HiveChannelID) {
-        self.rawValue = hiveChannelID.rawValue
-    }
-}
-
-extension ColonyID where Domain == ColonyIDDomain.Node {
-    /// Converts this ColonyNodeID to a HiveNodeID.
-    package var hiveNodeID: HiveNodeID {
-        HiveNodeID(rawValue)
-    }
-
-    /// Creates a ColonyNodeID from a HiveNodeID.
-    package init(hiveNodeID: HiveNodeID) {
-        self.rawValue = hiveNodeID.rawValue
-    }
-}
 
 // MARK: - Convenience Factory Methods
 

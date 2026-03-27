@@ -3,26 +3,26 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct LaneMemoryNoopClock: HiveClock {
+private struct LaneMemoryNoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct LaneMemoryNoopLogger: HiveLogger {
+private struct LaneMemoryNoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class LaneMemoryToolListModel: HiveModelClient, @unchecked Sendable {
+private final class LaneMemoryToolListModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 self.lock.withLock {
@@ -31,8 +31,8 @@ private final class LaneMemoryToolListModel: HiveModelClient, @unchecked Sendabl
 
                 continuation.yield(
                     .final(
-                        HiveChatResponse(
-                            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+                        SwarmChatResponse(
+                            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
                         )
                     )
                 )
@@ -41,20 +41,20 @@ private final class LaneMemoryToolListModel: HiveModelClient, @unchecked Sendabl
         }
     }
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.withLock { requests }
     }
 }
 
-private final class MemoryToolChainModel: HiveModelClient, @unchecked Sendable {
+private final class MemoryToolChainModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -64,7 +64,7 @@ private final class MemoryToolChainModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -73,13 +73,13 @@ private final class MemoryToolChainModel: HiveModelClient, @unchecked Sendable {
         }()
 
         if currentCall == 1 {
-            let rememberCall = HiveToolCall(
+            let rememberCall = SwarmToolCall(
                 id: "wax-remember-1",
                 name: ColonyBuiltInToolDefinitions.memoryRemember.name,
                 argumentsJSON: #"{"content":"Use Swift concurrency and value types first.","tags":["swift","style"],"metadata":{"source":"user"}}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return SwarmChatResponse(
+                message: SwarmChatMessage(
                     id: "assistant-1",
                     role: .assistant,
                     content: "remembering",
@@ -89,13 +89,13 @@ private final class MemoryToolChainModel: HiveModelClient, @unchecked Sendable {
         }
 
         if currentCall == 2 {
-            let recallCall = HiveToolCall(
+            let recallCall = SwarmToolCall(
                 id: "wax-recall-1",
                 name: ColonyBuiltInToolDefinitions.memoryRecall.name,
                 argumentsJSON: #"{"query":"swift concurrency","limit":5}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(
+            return SwarmChatResponse(
+                message: SwarmChatMessage(
                     id: "assistant-2",
                     role: .assistant,
                     content: "recalling",
@@ -104,8 +104,8 @@ private final class MemoryToolChainModel: HiveModelClient, @unchecked Sendable {
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant-3", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant-3", role: .assistant, content: "done")
         )
     }
 }
@@ -146,18 +146,18 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
         filesystem: nil,
         memory: ColonyInMemoryMemoryBackend()
     )
-    let envWithBackend = HiveEnvironment<ColonySchema>(
+    let envWithBackend = SwarmGraphEnvironment<ColonySchema>(
         context: contextWithBackend,
         clock: LaneMemoryNoopClock(),
         logger: LaneMemoryNoopLogger(),
-        model: AnyHiveModelClient(modelWithBackend)
+        model: SwarmAnyModelClient(modelWithBackend)
     )
-    let runtimeWithBackend = try HiveRuntime(graph: graph, environment: envWithBackend)
+    let runtimeWithBackend = try SwarmGraphRuntime(graph: graph, environment: envWithBackend)
     _ = try await runtimeWithBackend
         .run(
-            threadID: HiveThreadID("thread-memory-tools-with-backend"),
+            threadID: SwarmThreadID("thread-memory-tools-with-backend"),
             input: "hi",
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         )
         .outcome
         .value
@@ -175,18 +175,18 @@ func memoryToolsAdvertisedOnlyWithCapabilityAndBackend() async throws {
         ),
         filesystem: nil
     )
-    let envWithoutBackend = HiveEnvironment<ColonySchema>(
+    let envWithoutBackend = SwarmGraphEnvironment<ColonySchema>(
         context: contextWithoutBackend,
         clock: LaneMemoryNoopClock(),
         logger: LaneMemoryNoopLogger(),
-        model: AnyHiveModelClient(modelWithoutBackend)
+        model: SwarmAnyModelClient(modelWithoutBackend)
     )
-    let runtimeWithoutBackend = try HiveRuntime(graph: graph, environment: envWithoutBackend)
+    let runtimeWithoutBackend = try SwarmGraphRuntime(graph: graph, environment: envWithoutBackend)
     _ = try await runtimeWithoutBackend
         .run(
-            threadID: HiveThreadID("thread-memory-tools-without-backend"),
+            threadID: SwarmThreadID("thread-memory-tools-without-backend"),
             input: "hi",
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         )
         .outcome
         .value
@@ -212,19 +212,19 @@ func memoryToolsDispatchAndPersist() async throws {
         filesystem: nil,
         memory: memory
     )
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: LaneMemoryNoopClock(),
         logger: LaneMemoryNoopLogger(),
-        model: AnyHiveModelClient(MemoryToolChainModel())
+        model: SwarmAnyModelClient(MemoryToolChainModel())
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let outcome = try await runtime
         .run(
-            threadID: HiveThreadID("thread-memory-dispatch"),
+            threadID: SwarmThreadID("thread-memory-dispatch"),
             input: "store and recall memory",
-            options: HiveRunOptions(maxSteps: 50, checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(maxSteps: 50, checkpointPolicy: .disabled)
         )
         .outcome
         .value

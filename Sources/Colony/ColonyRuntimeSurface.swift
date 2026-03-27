@@ -1,5 +1,30 @@
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
+import Foundation
+
+package struct ColonyStoreSnapshot: Sendable, Codable, Equatable {
+    package var messages: [SwarmChatMessage]
+    package var llmInputMessages: [SwarmChatMessage]?
+    package var pendingToolCalls: [SwarmToolCall]
+    package var finalAnswer: String?
+    package var todos: [ColonyTodo]
+    package var currentToolCall: SwarmToolCall?
+
+    package init(
+        messages: [SwarmChatMessage] = [],
+        llmInputMessages: [SwarmChatMessage]? = nil,
+        pendingToolCalls: [SwarmToolCall] = [],
+        finalAnswer: String? = nil,
+        todos: [ColonyTodo] = [],
+        currentToolCall: SwarmToolCall? = nil
+    ) {
+        self.messages = messages
+        self.llmInputMessages = llmInputMessages
+        self.pendingToolCalls = pendingToolCalls
+        self.finalAnswer = finalAnswer
+        self.todos = todos
+        self.currentToolCall = currentToolCall
+    }
+}
 
 public enum ColonyRun {
     public enum CheckpointPolicy: Sendable, Equatable {
@@ -17,13 +42,13 @@ public enum ColonyRun {
     }
 
     public struct Options: Sendable, Equatable {
-        public let maxSteps: Int
-        public let maxConcurrentTasks: Int
-        public let checkpointPolicy: CheckpointPolicy
-        public let debugPayloads: Bool
-        public let deterministicTokenStreaming: Bool
-        public let eventBufferCapacity: Int
-        public let streamingMode: StreamingMode
+        public var maxSteps: Int
+        public var maxConcurrentTasks: Int
+        public var checkpointPolicy: CheckpointPolicy
+        public var debugPayloads: Bool
+        public var deterministicTokenStreaming: Bool
+        public var eventBufferCapacity: Int
+        public var streamingMode: StreamingMode
 
         public init(
             maxSteps: Int = 100,
@@ -50,6 +75,20 @@ public enum ColonyRun {
         public let eventIndex: UInt64
         public let stepIndex: Int?
         public let taskOrdinal: Int?
+
+        public init(
+            runID: ColonyRunID,
+            attemptID: ColonyRunAttemptID,
+            eventIndex: UInt64,
+            stepIndex: Int? = nil,
+            taskOrdinal: Int? = nil
+        ) {
+            self.runID = runID
+            self.attemptID = attemptID
+            self.eventIndex = eventIndex
+            self.stepIndex = stepIndex
+            self.taskOrdinal = taskOrdinal
+        }
     }
 
     public enum CancellationCause: String, Sendable, Codable, Equatable {
@@ -61,6 +100,11 @@ public enum ColonyRun {
     public struct SnapshotValue: Sendable, Equatable {
         public let channelID: ColonyChannelID
         public let payloadHash: String
+
+        public init(channelID: ColonyChannelID, payloadHash: String) {
+            self.channelID = channelID
+            self.payloadHash = payloadHash
+        }
     }
 
     public enum EventKind: Sendable, Equatable {
@@ -92,22 +136,58 @@ public enum ColonyRun {
         public let id: EventID
         public let kind: EventKind
         public let metadata: [String: String]
+
+        public init(id: EventID, kind: EventKind, metadata: [String: String] = [:]) {
+            self.id = id
+            self.kind = kind
+            self.metadata = metadata
+        }
     }
 
     public struct ProjectedChannelValue: Sendable {
         public let channelID: ColonyChannelID
         public let value: any Sendable
+
+        public init(channelID: ColonyChannelID, value: any Sendable) {
+            self.channelID = channelID
+            self.value = value
+        }
     }
 
     public struct Store: Sendable {
-        package let hiveStore: HiveGlobalStore<ColonySchema>
+        private let snapshot: ColonyStoreSnapshot
 
-        package init(_ hiveStore: HiveGlobalStore<ColonySchema>) {
-            self.hiveStore = hiveStore
+        package init(_ snapshot: ColonyStoreSnapshot) {
+            self.snapshot = snapshot
         }
 
-        package func get<Value: Sendable>(_ key: HiveChannelKey<ColonySchema, Value>) throws -> Value {
-            try hiveStore.get(key)
+        package func get<Value: Sendable>(_ key: ColonySchema.ChannelKey<Value>) throws -> Value {
+            switch key.id.rawValue {
+            case ColonySchema.Channels.messages.id.rawValue:
+                return try cast(snapshot.messages, for: key)
+            case ColonySchema.Channels.llmInputMessages.id.rawValue:
+                return try cast(snapshot.llmInputMessages, for: key)
+            case ColonySchema.Channels.pendingToolCalls.id.rawValue:
+                return try cast(snapshot.pendingToolCalls, for: key)
+            case ColonySchema.Channels.finalAnswer.id.rawValue:
+                return try cast(snapshot.finalAnswer, for: key)
+            case ColonySchema.Channels.todos.id.rawValue:
+                return try cast(snapshot.todos, for: key)
+            case ColonySchema.Channels.currentToolCall.id.rawValue:
+                return try cast(snapshot.currentToolCall ?? SwarmToolCall(id: "", name: "", argumentsJSON: "{}"), for: key)
+            default:
+                throw ColonyStoreError.missingChannel(key.id)
+            }
+        }
+
+        private func cast<Value: Sendable>(
+            _ value: some Sendable,
+            for key: ColonySchema.ChannelKey<Value>
+        ) throws -> Value {
+            guard let typed = value as? Value else {
+                throw ColonyStoreError.typeMismatch(channelID: key.id)
+            }
+            return typed
         }
     }
 
@@ -120,6 +200,16 @@ public enum ColonyRun {
         public let interruptID: ColonyInterruptID
         public let payload: ColonyInterruptPayload
         public let checkpointID: ColonyCheckpointID
+
+        public init(
+            interruptID: ColonyInterruptID,
+            payload: ColonyInterruptPayload,
+            checkpointID: ColonyCheckpointID
+        ) {
+            self.interruptID = interruptID
+            self.payload = payload
+            self.checkpointID = checkpointID
+        }
     }
 
     public enum Outcome: Sendable {
@@ -140,248 +230,49 @@ public enum ColonyRun {
     }
 
     public struct Handle: Sendable {
-        package let hiveHandle: HiveRunHandle<ColonySchema>
+        public struct OutcomeFuture: Sendable {
+            private let task: Task<Outcome, Error>
 
-        public var runID: ColonyRunID {
-            ColonyRunID(hiveRunID: hiveHandle.runID)
-        }
+            fileprivate init(task: Task<Outcome, Error>) {
+                self.task = task
+            }
 
-        public var attemptID: ColonyRunAttemptID {
-            ColonyRunAttemptID(hiveAttemptID: hiveHandle.attemptID)
-        }
-
-        public var events: AsyncThrowingStream<Event, Error> {
-            AsyncThrowingStream { continuation in
-                Task {
-                    do {
-                        for try await event in hiveHandle.events {
-                            continuation.yield(Event(event))
-                        }
-                        continuation.finish()
-                    } catch {
-                        continuation.finish(throwing: error)
-                    }
+            public var value: Outcome {
+                get async throws {
+                    try await task.value
                 }
             }
-        }
 
-        public var outcome: Task<Outcome, Error> {
-            Task {
-                try await Outcome(hiveHandle: hiveHandle)
+            package func cancel() {
+                task.cancel()
             }
         }
 
-        package init(wrapping hiveHandle: HiveRunHandle<ColonySchema>) {
-            self.hiveHandle = hiveHandle
+        public let runID: ColonyRunID
+        public let attemptID: ColonyRunAttemptID
+        public let events: AsyncThrowingStream<Event, Error>
+
+        private let outcomeTask: Task<Outcome, Error>
+
+        public var outcome: OutcomeFuture {
+            OutcomeFuture(task: outcomeTask)
+        }
+
+        package init(
+            runID: ColonyRunID,
+            attemptID: ColonyRunAttemptID,
+            events: AsyncThrowingStream<Event, Error>,
+            outcome: Task<Outcome, Error>
+        ) {
+            self.runID = runID
+            self.attemptID = attemptID
+            self.events = events
+            self.outcomeTask = outcome
         }
     }
 }
 
-package extension ColonyRun.Options {
-    init(_ hive: HiveRunOptions) {
-        let checkpointPolicy: ColonyRun.CheckpointPolicy
-        switch hive.checkpointPolicy {
-        case .disabled:
-            checkpointPolicy = .disabled
-        case .everyStep:
-            checkpointPolicy = .everyStep
-        case .every(let steps):
-            checkpointPolicy = .every(steps: steps)
-        case .onInterrupt:
-            checkpointPolicy = .onInterrupt
-        }
-
-        let streamingMode: ColonyRun.StreamingMode
-        switch hive.streamingMode {
-        case .events:
-            streamingMode = .events
-        case .values:
-            streamingMode = .values
-        case .updates:
-            streamingMode = .updates
-        case .combined:
-            streamingMode = .combined
-        }
-
-        self.init(
-            maxSteps: hive.maxSteps,
-            maxConcurrentTasks: hive.maxConcurrentTasks,
-            checkpointPolicy: checkpointPolicy,
-            debugPayloads: hive.debugPayloads,
-            deterministicTokenStreaming: hive.deterministicTokenStreaming,
-            eventBufferCapacity: hive.eventBufferCapacity,
-            streamingMode: streamingMode
-        )
-    }
-
-    var hiveRunOptions: HiveRunOptions {
-        let resolvedCheckpointPolicy: HiveCheckpointPolicy
-        switch self.checkpointPolicy {
-        case .disabled:
-            resolvedCheckpointPolicy = .disabled
-        case .everyStep:
-            resolvedCheckpointPolicy = .everyStep
-        case .every(let steps):
-            resolvedCheckpointPolicy = .every(steps: steps)
-        case .onInterrupt:
-            resolvedCheckpointPolicy = .onInterrupt
-        }
-
-        let resolvedStreamingMode: HiveStreamingMode
-        switch self.streamingMode {
-        case .events:
-            resolvedStreamingMode = .events
-        case .values:
-            resolvedStreamingMode = .values
-        case .updates:
-            resolvedStreamingMode = .updates
-        case .combined:
-            resolvedStreamingMode = .combined
-        }
-
-        return HiveRunOptions(
-            maxSteps: maxSteps,
-            maxConcurrentTasks: maxConcurrentTasks,
-            checkpointPolicy: resolvedCheckpointPolicy,
-            debugPayloads: debugPayloads,
-            deterministicTokenStreaming: deterministicTokenStreaming,
-            eventBufferCapacity: eventBufferCapacity,
-            outputProjectionOverride: nil,
-            streamingMode: resolvedStreamingMode
-        )
-    }
-}
-
-private extension ColonyRun.Event {
-    init(_ hive: HiveEvent) {
-        self.init(
-            id: .init(
-                runID: ColonyRunID(hiveRunID: hive.id.runID),
-                attemptID: ColonyRunAttemptID(hiveAttemptID: hive.id.attemptID),
-                eventIndex: hive.id.eventIndex,
-                stepIndex: hive.id.stepIndex,
-                taskOrdinal: hive.id.taskOrdinal
-            ),
-            kind: ColonyRun.EventKind(hive.kind),
-            metadata: hive.metadata
-        )
-    }
-}
-
-private extension ColonyRun.SnapshotValue {
-    init(_ hive: HiveSnapshotValue) {
-        self.init(
-            channelID: ColonyChannelID(hiveChannelID: hive.channelID),
-            payloadHash: hive.payloadHash
-        )
-    }
-}
-
-private extension ColonyRun.ProjectedChannelValue {
-    init(_ hive: HiveProjectedChannelValue) {
-        self.init(
-            channelID: ColonyChannelID(hiveChannelID: hive.id),
-            value: hive.value
-        )
-    }
-}
-
-private extension ColonyRun.Output {
-    init(_ hive: HiveRunOutput<ColonySchema>) {
-        switch hive {
-        case .fullStore(let store):
-            self = .fullStore(.init(store))
-        case .channels(let values):
-            self = .channels(values.map(ColonyRun.ProjectedChannelValue.init))
-        }
-    }
-}
-
-private extension ColonyRun.CancellationCause {
-    init(_ hive: HiveRunCancellationCause) {
-        self = ColonyRun.CancellationCause(rawValue: hive.rawValue) ?? .executionObserved
-    }
-}
-
-private extension ColonyRun.EventKind {
-    init(_ hive: HiveEventKind) {
-        switch hive {
-        case .runStarted(let threadID):
-            self = .runStarted(threadID: ColonyThreadID(hiveThreadID: threadID))
-        case .runFinished:
-            self = .runFinished
-        case .runInterrupted(let interruptID):
-            self = .runInterrupted(interruptID: ColonyInterruptID(hiveInterruptID: interruptID))
-        case .runResumed(let interruptID):
-            self = .runResumed(interruptID: ColonyInterruptID(hiveInterruptID: interruptID))
-        case .runCancelled(let cause):
-            self = .runCancelled(cause: .init(cause))
-        case .stepStarted(let stepIndex, let frontierCount):
-            self = .stepStarted(stepIndex: stepIndex, frontierCount: frontierCount)
-        case .stepFinished(let stepIndex, let nextFrontierCount):
-            self = .stepFinished(stepIndex: stepIndex, nextFrontierCount: nextFrontierCount)
-        case .taskStarted(let node, let taskID):
-            self = .taskStarted(nodeID: ColonyNodeID(hiveNodeID: node), taskID: taskID.rawValue)
-        case .taskFinished(let node, let taskID):
-            self = .taskFinished(nodeID: ColonyNodeID(hiveNodeID: node), taskID: taskID.rawValue)
-        case .taskFailed(let node, let taskID, let errorDescription):
-            self = .taskFailed(nodeID: ColonyNodeID(hiveNodeID: node), taskID: taskID.rawValue, errorDescription: errorDescription)
-        case .writeApplied(let channelID, let payloadHash):
-            self = .writeApplied(channelID: ColonyChannelID(hiveChannelID: channelID), payloadHash: payloadHash)
-        case .checkpointSaved(let checkpointID):
-            self = .checkpointSaved(checkpointID: ColonyCheckpointID(hiveCheckpointID: checkpointID))
-        case .checkpointLoaded(let checkpointID):
-            self = .checkpointLoaded(checkpointID: ColonyCheckpointID(hiveCheckpointID: checkpointID))
-        case .storeSnapshot(let channelValues):
-            self = .storeSnapshot(channelValues: channelValues.map(ColonyRun.SnapshotValue.init))
-        case .channelUpdates(let channelValues):
-            self = .channelUpdates(channelValues: channelValues.map(ColonyRun.SnapshotValue.init))
-        case .modelInvocationStarted(let model):
-            self = .modelInvocationStarted(model: model)
-        case .modelToken(let text):
-            self = .modelToken(text: text)
-        case .modelInvocationFinished:
-            self = .modelInvocationFinished
-        case .toolInvocationStarted(let name):
-            self = .toolInvocationStarted(name: name)
-        case .toolInvocationFinished(let name, let success):
-            self = .toolInvocationFinished(name: name, success: success)
-        case .streamBackpressure(let droppedModelTokenEvents, let droppedDebugEvents):
-            self = .streamBackpressure(droppedModelTokenEvents: droppedModelTokenEvents, droppedDebugEvents: droppedDebugEvents)
-        case .customDebug(let name):
-            self = .customDebug(name: name)
-        case .forkStarted, .forkCompleted, .forkFailed:
-            self = .customDebug(name: "fork")
-        }
-    }
-}
-
-private extension ColonyRun.Outcome {
-    init(hiveHandle: HiveRunHandle<ColonySchema>) async throws {
-        let hiveOutcome = try await hiveHandle.outcome.value
-        switch hiveOutcome {
-        case .finished(let output, let checkpointID):
-            self = .finished(
-                output: ColonyRun.Output(output),
-                checkpointID: checkpointID.map(ColonyCheckpointID.init(hiveCheckpointID:))
-            )
-        case .interrupted(let interruption):
-            self = .interrupted(.init(
-                interruptID: ColonyInterruptID(hiveInterruptID: interruption.interrupt.id),
-                payload: interruption.interrupt.payload,
-                checkpointID: ColonyCheckpointID(hiveCheckpointID: interruption.checkpointID)
-            ))
-        case .cancelled(let output, let checkpointID):
-            self = .cancelled(
-                output: ColonyRun.Output(output),
-                checkpointID: checkpointID.map(ColonyCheckpointID.init(hiveCheckpointID:))
-            )
-        case .outOfSteps(let maxSteps, let output, let checkpointID):
-            self = .outOfSteps(
-                maxSteps: maxSteps,
-                output: ColonyRun.Output(output),
-                checkpointID: checkpointID.map(ColonyCheckpointID.init(hiveCheckpointID:))
-            )
-        }
-    }
+enum ColonyStoreError: Error, Sendable, Equatable {
+    case missingChannel(ColonyChannelID)
+    case typeMismatch(channelID: ColonyChannelID)
 }

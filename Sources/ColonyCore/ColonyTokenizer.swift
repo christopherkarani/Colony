@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Protocol for tokenizing chat messages.
 ///
 /// Implement this protocol to provide custom tokenization logic for message
@@ -33,11 +31,5 @@ public struct ColonyApproximateTokenizer: ColonyTokenizer, Sendable {
             }
         }
         return max(1, chars / 4)
-    }
-}
-
-package extension ColonyTokenizer {
-    func countTokens(_ messages: [HiveChatMessage]) -> Int {
-        countTokens(messages.map(ColonyMessage.init))
     }
 }

@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// Represents the current phase of a Colony run.
@@ -117,7 +116,7 @@ public actor ColonyDurableRunStateStore {
         let priorState = try await loadRunState(runID: envelope.runID)
         let nextPhase = phase(for: envelope.eventType, fallback: priorState?.phase ?? .running)
         let snapshot = ColonyRunStateSnapshot(
-            runID: ColonyRunID(hiveRunID: HiveRunID(envelope.runID)),
+            runID: ColonyRunID(rawValue: envelope.runID.uuidString),
             sessionID: envelope.sessionID,
             threadID: threadID,
             phase: nextPhase,
@@ -134,7 +133,7 @@ public actor ColonyDurableRunStateStore {
     /// - Parameter runID: The run identifier.
     /// - Returns: The run state snapshot, or nil if not found.
     public func loadRunState(runID: UUID) async throws -> ColonyRunStateSnapshot? {
-        let colonyRunID = ColonyRunID(hiveRunID: HiveRunID(runID))
+        let colonyRunID = ColonyRunID(rawValue: runID.uuidString)
         let runDirectory = runDirectoryURL(runID: runID)
         let stateURL = runDirectory.appendingPathComponent("state.json", isDirectory: false)
         guard fileManager.fileExists(atPath: stateURL.path) else {

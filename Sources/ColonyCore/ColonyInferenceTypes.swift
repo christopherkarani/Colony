@@ -1,5 +1,5 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
+import Swarm
 
 public protocol ColonyModelClient: Sendable {
     func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse
@@ -135,108 +135,348 @@ public enum ColonyInferenceStreamChunk: Sendable, Equatable {
 }
 
 package extension ColonyToolDefinition {
-    init(_ hive: HiveToolDefinition) {
+    init(_ schema: ToolSchema) {
         self.init(
-            name: hive.name,
-            description: hive.description,
-            parametersJSONSchema: hive.parametersJSONSchema
+            name: schema.name,
+            description: schema.description,
+            parametersJSONSchema: ColonyInferenceBridge.encodeJSONSchema(parameters: schema.parameters)
         )
     }
 
-    var hiveToolDefinition: HiveToolDefinition {
-        HiveToolDefinition(
+    var toolSchema: ToolSchema {
+        ToolSchema(
             name: name,
             description: description,
-            parametersJSONSchema: parametersJSONSchema
+            parameters: ColonyInferenceBridge.decodeJSONSchema(parametersJSONSchema)
         )
     }
 }
 
 package extension ColonyToolCall {
-    init(_ hive: HiveToolCall) {
-        self.init(id: hive.id, name: hive.name, argumentsJSON: hive.argumentsJSON)
+    init(_ toolCall: InferenceResponse.ParsedToolCall) {
+        self.init(
+            id: toolCall.id ?? UUID().uuidString,
+            name: toolCall.name,
+            argumentsJSON: ColonyInferenceBridge.encodeArguments(toolCall.arguments)
+        )
     }
 
-    var hiveToolCall: HiveToolCall {
-        HiveToolCall(id: id, name: name, argumentsJSON: argumentsJSON)
+    var inferenceToolCall: InferenceResponse.ParsedToolCall {
+        InferenceResponse.ParsedToolCall(
+            id: id,
+            name: name,
+            arguments: ColonyInferenceBridge.decodeArguments(argumentsJSON)
+        )
+    }
+
+    var inferenceMessageToolCall: InferenceMessage.ToolCall {
+        InferenceMessage.ToolCall(
+            id: id,
+            name: name,
+            arguments: ColonyInferenceBridge.decodeArguments(argumentsJSON)
+        )
     }
 }
 
 package extension ColonyMessageRole {
-    init(_ hive: HiveChatRole) {
-        self = ColonyMessageRole(rawValue: hive.rawValue) ?? .assistant
+    init(_ role: InferenceMessage.Role) {
+        self = ColonyMessageRole(rawValue: role.rawValue) ?? .assistant
     }
 
-    var hiveChatRole: HiveChatRole {
-        HiveChatRole(rawValue: rawValue) ?? .assistant
-    }
-}
-
-package extension ColonyMessageOp {
-    init(_ hive: HiveChatMessageOp) {
-        self = ColonyMessageOp(rawValue: hive.rawValue) ?? .remove
-    }
-
-    var hiveChatMessageOp: HiveChatMessageOp {
-        HiveChatMessageOp(rawValue: rawValue) ?? .remove
+    var inferenceRole: InferenceMessage.Role {
+        InferenceMessage.Role(rawValue: rawValue) ?? .assistant
     }
 }
 
 package extension ColonyMessage {
-    init(_ hive: HiveChatMessage) {
+    init(_ message: InferenceMessage, id: String = UUID().uuidString) {
         self.init(
-            id: hive.id,
-            role: ColonyMessageRole(hive.role),
-            content: hive.content,
-            name: hive.name,
-            toolCallID: hive.toolCallID,
-            toolCalls: hive.toolCalls.map(ColonyToolCall.init),
-            op: hive.op.map(ColonyMessageOp.init)
+            id: id,
+            role: ColonyMessageRole(message.role),
+            content: message.content,
+            name: message.name,
+            toolCallID: message.toolCallID,
+            toolCalls: message.toolCalls.map { ColonyToolCall(id: $0.id ?? UUID().uuidString, name: $0.name, argumentsJSON: ColonyInferenceBridge.encodeArguments($0.arguments)) },
+            op: nil
         )
     }
 
-    var hiveChatMessage: HiveChatMessage {
-        HiveChatMessage(
-            id: id,
-            role: role.hiveChatRole,
+    var inferenceMessage: InferenceMessage {
+        InferenceMessage(
+            role: role.inferenceRole,
             content: content,
             name: name,
             toolCallID: toolCallID,
-            toolCalls: toolCalls.map(\.hiveToolCall),
-            op: op?.hiveChatMessageOp
+            toolCalls: toolCalls.map(\.inferenceMessageToolCall)
         )
     }
 }
 
 package extension ColonyInferenceRequest {
-    init(_ hive: HiveChatRequest, complexity: Complexity = .automatic) {
+    init(
+        messages: [InferenceMessage],
+        tools: [ToolSchema],
+        complexity: Complexity = .automatic,
+        modelName: String? = nil
+    ) {
         self.init(
-            messages: hive.messages.map(ColonyMessage.init),
-            tools: hive.tools.map(ColonyToolDefinition.init),
+            messages: messages.map { ColonyMessage($0) },
+            tools: tools.map { ColonyToolDefinition($0) },
             complexity: complexity,
-            modelName: hive.model.isEmpty ? nil : hive.model
+            modelName: modelName
         )
     }
 
-    var hiveChatRequest: HiveChatRequest {
-        HiveChatRequest(
-            model: modelName ?? "",
-            messages: messages.map(\.hiveChatMessage),
-            tools: tools.map(\.hiveToolDefinition)
-        )
+    var inferenceMessages: [InferenceMessage] {
+        messages.map(\.inferenceMessage)
+    }
+
+    var toolSchemas: [ToolSchema] {
+        tools.map(\.toolSchema)
     }
 }
 
 package extension ColonyInferenceResponse {
-    init(_ hive: HiveChatResponse, usage: Usage? = nil, providerID: String? = nil) {
+    init(_ response: InferenceResponse, providerID: String? = nil, messageID: String = UUID().uuidString) {
         self.init(
-            message: ColonyMessage(hive.message),
-            usage: usage,
+            message: ColonyMessage(
+                id: messageID,
+                role: .assistant,
+                content: response.content ?? "",
+                toolCalls: response.toolCalls.map(ColonyToolCall.init)
+            ),
+            usage: response.usage.map(Usage.init),
             providerID: providerID
         )
     }
 
-    var hiveChatResponse: HiveChatResponse {
-        HiveChatResponse(message: message.hiveChatMessage)
+    var inferenceResponse: InferenceResponse {
+        InferenceResponse(
+            content: message.content.isEmpty ? nil : message.content,
+            toolCalls: message.toolCalls.map(\.inferenceToolCall),
+            finishReason: message.toolCalls.isEmpty ? .completed : .toolCall,
+            usage: usage.map(\.tokenUsage)
+        )
+    }
+}
+
+package extension ColonyInferenceResponse.Usage {
+    init(_ usage: TokenUsage) {
+        self.init(
+            promptTokens: usage.inputTokens,
+            completionTokens: usage.outputTokens
+        )
+    }
+
+    var tokenUsage: TokenUsage {
+        TokenUsage(
+            inputTokens: promptTokens,
+            outputTokens: completionTokens
+        )
+    }
+}
+
+private enum ColonyInferenceBridge {
+    static func encodeArguments(_ arguments: [String: SendableValue]) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(arguments),
+              let string = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+        return string
+    }
+
+    static func decodeArguments(_ argumentsJSON: String) -> [String: SendableValue] {
+        guard let data = argumentsJSON.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: SendableValue].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    static func decodeJSONSchema(_ parametersJSONSchema: String) -> [ToolParameter] {
+        guard let data = parametersJSONSchema.data(using: .utf8),
+              let schema = try? JSONDecoder().decode([String: SendableValue].self, from: data),
+              let properties = schema["properties"]?.dictionaryValue
+        else {
+            return []
+        }
+
+        let required = Set(
+            schema["required"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        )
+
+        return properties.keys.sorted().compactMap { name in
+            guard let definition = properties[name]?.dictionaryValue else {
+                return nil
+            }
+            return decodeParameter(
+                name: name,
+                definition: definition,
+                required: required.contains(name)
+            )
+        }
+    }
+
+    static func encodeJSONSchema(parameters: [ToolParameter]) -> String {
+        let properties = parameters.reduce(into: [String: SendableValue]()) { partial, parameter in
+            partial[parameter.name] = encodeParameter(parameter)
+        }
+
+        var schema: [String: SendableValue] = [
+            "type": "object",
+            "properties": .dictionary(properties),
+        ]
+
+        let required = parameters
+            .filter(\.isRequired)
+            .map(\.name)
+            .map { SendableValue($0) }
+
+        if required.isEmpty == false {
+            schema["required"] = .array(required)
+        }
+
+        return encodeArguments(schema)
+    }
+
+    private static func decodeParameter(
+        name: String,
+        definition: [String: SendableValue],
+        required: Bool
+    ) -> ToolParameter {
+        let description = definition["description"]?.stringValue ?? ""
+        let defaultValue = definition["default"]
+        let type = decodeParameterType(definition)
+
+        return ToolParameter(
+            name: name,
+            description: description,
+            type: type,
+            isRequired: required,
+            defaultValue: defaultValue
+        )
+    }
+
+    private static func decodeParameterType(_ definition: [String: SendableValue]) -> ToolParameter.ParameterType {
+        if let enumValues = definition["enum"]?.arrayValue?.compactMap(\.stringValue),
+           enumValues.isEmpty == false
+        {
+            return .oneOf(enumValues)
+        }
+
+        switch definition["type"]?.stringValue {
+        case "string":
+            return .string
+        case "integer":
+            return .int
+        case "number":
+            return .double
+        case "boolean":
+            return .bool
+        case "array":
+            let element = definition["items"]?.dictionaryValue ?? [:]
+            return .array(elementType: decodeParameterType(element))
+        case "object":
+            let properties = definition["properties"]?.dictionaryValue ?? [:]
+            let required = Set(definition["required"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+            let nested: [ToolParameter] = properties.keys.sorted().compactMap { key in
+                guard let nestedDefinition = properties[key]?.dictionaryValue else {
+                    return nil
+                }
+                return decodeParameter(
+                    name: key,
+                    definition: nestedDefinition,
+                    required: required.contains(key)
+                )
+            }
+            return .object(properties: nested)
+        default:
+            return .any
+        }
+    }
+
+    private static func encodeParameter(_ parameter: ToolParameter) -> SendableValue {
+        var payload: [String: SendableValue] = [
+            "description": .string(parameter.description),
+        ]
+
+        switch parameter.type {
+        case .string:
+            payload["type"] = "string"
+        case .int:
+            payload["type"] = "integer"
+        case .double:
+            payload["type"] = "number"
+        case .bool:
+            payload["type"] = "boolean"
+        case .array(let elementType):
+            payload["type"] = "array"
+            payload["items"] = encodeParameterType(elementType)
+        case .object(let properties):
+            payload["type"] = "object"
+            payload["properties"] = .dictionary(
+                properties.reduce(into: [String: SendableValue]()) { partial, nested in
+                    partial[nested.name] = encodeParameter(nested)
+                }
+            )
+            let required = properties.filter(\.isRequired).map(\.name).map { SendableValue($0) }
+            if required.isEmpty == false {
+                payload["required"] = .array(required)
+            }
+        case .oneOf(let options):
+            payload["type"] = "string"
+            payload["enum"] = .array(options.map { SendableValue($0) })
+        case .any:
+            break
+        }
+
+        if let defaultValue = parameter.defaultValue {
+            payload["default"] = defaultValue
+        }
+
+        return .dictionary(payload)
+    }
+
+    private static func encodeParameterType(_ type: ToolParameter.ParameterType) -> SendableValue {
+        switch type {
+        case .string:
+            return ["type": "string"]
+        case .int:
+            return ["type": "integer"]
+        case .double:
+            return ["type": "number"]
+        case .bool:
+            return ["type": "boolean"]
+        case .array(let elementType):
+            return [
+                "type": "array",
+                "items": encodeParameterType(elementType),
+            ]
+        case .object(let properties):
+            var payload: [String: SendableValue] = [
+                "type": "object",
+                "properties": .dictionary(
+                    properties.reduce(into: [String: SendableValue]()) { partial, nested in
+                        partial[nested.name] = encodeParameter(nested)
+                    }
+                ),
+            ]
+            let required = properties.filter(\.isRequired).map(\.name).map { SendableValue($0) }
+            if required.isEmpty == false {
+                payload["required"] = .array(required)
+            }
+            return .dictionary(payload)
+        case .oneOf(let options):
+            return [
+                "type": "string",
+                "enum": .array(options.map { SendableValue($0) }),
+            ]
+        case .any:
+            return [:]
+        }
     }
 }

@@ -1,129 +1,6 @@
 import CryptoKit
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
-
-/// The HiveSchema definition for Colony agents.
-///
-/// This schema defines the channel structure, message types, and input handling
-/// for the Colony runtime loop. It specifies how messages, tool calls, todos,
-/// and final answers flow through the agent graph.
-///
-/// The schema defines these channels:
-/// - `messages` - All chat messages in the conversation
-/// - `llmInputMessages` - Messages being sent to the LLM
-/// - `pendingToolCalls` - Tool calls awaiting execution
-/// - `finalAnswer` - The final response from the agent
-/// - `todos` - Task tracking todos
-/// - `currentToolCall` - The currently executing tool call
-package enum ColonySchema: HiveSchema {
-    package typealias Context = ColonyContext
-    package typealias Input = String
-    package typealias InterruptPayload = ColonyInterruptPayload
-    package typealias ResumePayload = ColonyResumePayload
-
-    package enum Channels {
-        package static let messages = HiveChannelKey<ColonySchema, [HiveChatMessage]>(HiveChannelID("messages"))
-        package static let llmInputMessages = HiveChannelKey<ColonySchema, [HiveChatMessage]?>(HiveChannelID("llmInputMessages"))
-        package static let pendingToolCalls = HiveChannelKey<ColonySchema, [HiveToolCall]>(HiveChannelID("pendingToolCalls"))
-        package static let finalAnswer = HiveChannelKey<ColonySchema, String?>(HiveChannelID("finalAnswer"))
-        package static let todos = HiveChannelKey<ColonySchema, [ColonyTodo]>(HiveChannelID("todos"))
-
-        package static let currentToolCall = HiveChannelKey<ColonySchema, HiveToolCall>(HiveChannelID("currentToolCall"))
-    }
-
-    package static let removeAllMessagesID = "__remove_all__"
-
-    package static var channelSpecs: [AnyHiveChannelSpec<ColonySchema>] {
-        let messagesCodec = HiveAnyCodec(HiveJSONCodec<[HiveChatMessage]>(id: "colony.messages.v1"))
-        let toolCallsCodec = HiveAnyCodec(HiveJSONCodec<[HiveToolCall]>(id: "colony.pending-tool-calls.v1"))
-        let currentToolCallCodec = HiveAnyCodec(HiveJSONCodec<HiveToolCall>(id: "colony.current-tool-call.v1"))
-        let todosCodec = HiveAnyCodec(HiveJSONCodec<[ColonyTodo]>(id: "colony.todos.v1"))
-
-        return [
-            AnyHiveChannelSpec(
-                HiveChannelSpec(
-                    key: Channels.messages,
-                    scope: .global,
-                    reducer: ColonyReducers.messages(),
-                    updatePolicy: .multi,
-                    initial: { [] },
-                    codec: messagesCodec,
-                    persistence: .checkpointed
-                )
-            ),
-            AnyHiveChannelSpec(
-                HiveChannelSpec(
-                    key: Channels.llmInputMessages,
-                    scope: .global,
-                    reducer: .lastWriteWins(),
-                    updatePolicy: .single,
-                    initial: { nil },
-                    persistence: .untracked
-                )
-            ),
-            AnyHiveChannelSpec(
-                HiveChannelSpec(
-                    key: Channels.pendingToolCalls,
-                    scope: .global,
-                    reducer: .lastWriteWins(),
-                    updatePolicy: .single,
-                    initial: { [] },
-                    codec: toolCallsCodec,
-                    persistence: .checkpointed
-                )
-            ),
-            AnyHiveChannelSpec(
-                HiveChannelSpec(
-                    key: Channels.finalAnswer,
-                    scope: .global,
-                    reducer: .lastWriteWins(),
-                    updatePolicy: .single,
-                    initial: { nil },
-                    codec: HiveAnyCodec(HiveJSONCodec<String?>(id: "colony.final-answer.v1")),
-                    persistence: .checkpointed
-                )
-            ),
-            AnyHiveChannelSpec(
-                HiveChannelSpec(
-                    key: Channels.todos,
-                    scope: .global,
-                    reducer: .lastWriteWins(),
-                    updatePolicy: .single,
-                    initial: { [] },
-                    codec: todosCodec,
-                    persistence: .checkpointed
-                )
-            ),
-            AnyHiveChannelSpec(
-                HiveChannelSpec(
-                    key: Channels.currentToolCall,
-                    scope: .taskLocal,
-                    reducer: .lastWriteWins(),
-                    updatePolicy: .single,
-                    initial: { HiveToolCall(id: "", name: "", argumentsJSON: "{}") },
-                    codec: currentToolCallCodec,
-                    persistence: .checkpointed
-                )
-            ),
-        ]
-    }
-
-    package static func inputWrites(
-        _ input: String,
-        inputContext: HiveInputContext
-    ) throws -> [AnyHiveWrite<ColonySchema>] {
-        let message = HiveChatMessage(
-            id: ColonyMessageID.userMessageID(runID: inputContext.runID, stepIndex: inputContext.stepIndex),
-            role: .user,
-            content: input
-        )
-        return [
-            AnyHiveWrite(Channels.messages, [message]),
-            AnyHiveWrite(Channels.finalAnswer, nil),
-        ]
-    }
-}
 
 /// The runtime context passed to the agent graph nodes.
 ///
@@ -188,31 +65,28 @@ public struct ColonyContext: Sendable {
 /// 4. `nodeTools` - Tool selection
 /// 5. `nodeToolExecute` - Tool execution
 package enum ColonyAgent {
-    package static let nodePreModel = HiveNodeID("preModel")
-    package static let nodeModel = HiveNodeID("model")
-    package static let nodeRouteAfterModel = HiveNodeID("routeAfterModel")
-    package static let nodeTools = HiveNodeID("tools")
-    package static let nodeToolExecute = HiveNodeID("toolExecute")
+    package static let nodePreModel = SwarmNodeID("preModel")
+    package static let nodeModel = SwarmNodeID("model")
+    package static let nodeRouteAfterModel = SwarmNodeID("routeAfterModel")
+    package static let nodeTools = SwarmNodeID("tools")
+    package static let nodeToolExecute = SwarmNodeID("toolExecute")
 
-    package static func compile(graphVersionOverride: String? = nil) throws -> CompiledHiveGraph<ColonySchema> {
-        var builder = HiveGraphBuilder<ColonySchema>(start: [nodePreModel])
-
-        builder.addNode(nodePreModel, preModel)
-        builder.addNode(nodeModel, model)
-        builder.addNode(nodeRouteAfterModel) { _ in HiveNodeOutput() }
-        builder.addRouter(from: nodeRouteAfterModel, routeAfterModel)
-        builder.addNode(nodeTools, tools)
-        builder.addNode(nodeToolExecute, toolExecute)
-
-        builder.addEdge(from: nodePreModel, to: nodeModel)
-        builder.addEdge(from: nodeModel, to: nodeRouteAfterModel)
-        builder.addEdge(from: nodeRouteAfterModel, to: nodeTools)
-        builder.addEdge(from: nodeToolExecute, to: nodePreModel)
-
-        return try builder.compile(graphVersionOverride: graphVersionOverride)
+    package static func inputWrites(
+        _ input: String,
+        inputContext: SwarmInputContext
+    ) throws -> [SwarmAnyWrite<ColonySchema>] {
+        let message = SwarmChatMessage(
+            id: ColonyMessageID.userMessageID(runID: inputContext.runID, stepIndex: inputContext.stepIndex),
+            role: .user,
+            content: input
+        )
+        return [
+            SwarmAnyWrite(ColonySchema.Channels.messages, [message]),
+            SwarmAnyWrite(ColonySchema.Channels.finalAnswer, nil),
+        ]
     }
 
-    private static func preModel(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
+    package static func preModel(_ input: SwarmGraphInput<ColonySchema>) async throws -> SwarmGraphOutput<ColonySchema> {
         let messages = try input.store.get(ColonySchema.Channels.messages)
         var updatedMessages = messages
         var rewritesMessages: Bool = false
@@ -242,26 +116,26 @@ package enum ColonyAgent {
             }
         }
 
-        var writes: [AnyHiveWrite<ColonySchema>] = []
+        var writes: [SwarmAnyWrite<ColonySchema>] = []
         writes.reserveCapacity(2)
 
         if rewritesMessages {
-            let removeAll = HiveChatMessage(
+            let removeAll = SwarmChatMessage(
                 id: ColonySchema.removeAllMessagesID,
                 role: .system,
                 content: "",
                 op: .removeAll
             )
-            writes.append(AnyHiveWrite(ColonySchema.Channels.messages, [removeAll] + updatedMessages))
+            writes.append(SwarmAnyWrite(ColonySchema.Channels.messages, [removeAll] + updatedMessages))
         }
 
         let compacted = input.context.configuration.compactionPolicy.compact(updatedMessages, tokenizer: input.context.tokenizer)
-        writes.append(AnyHiveWrite(ColonySchema.Channels.llmInputMessages, compacted))
+        writes.append(SwarmAnyWrite(ColonySchema.Channels.llmInputMessages, compacted))
 
-        return HiveNodeOutput(writes: writes)
+        return SwarmGraphOutput(writes: writes)
     }
 
-    private static func model(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
+    package static func model(_ input: SwarmGraphInput<ColonySchema>) async throws -> SwarmGraphOutput<ColonySchema> {
         let messages = try input.store.get(ColonySchema.Channels.messages)
         let llmInputMessages = try input.store.get(ColonySchema.Channels.llmInputMessages)
         let externalTools = input.context.plugins?.listTools() ?? []
@@ -306,7 +180,7 @@ package enum ColonyAgent {
             scratchbook: scratchbook,
             availableTools: toolsForPrompt
         )
-        let systemMessage = HiveChatMessage(
+        let systemMessage = SwarmChatMessage(
             id: "system:colony",
             role: .system,
             content: systemPrompt
@@ -314,7 +188,7 @@ package enum ColonyAgent {
 
         let inputMessages = (llmInputMessages ?? messages)
 
-        let hiveTools = tools.map(\.hiveToolDefinition)
+        let hiveTools = tools
         let toolBudgetMessages = toolDefinitionBudgetMessages(hiveTools)
 
         if let hardLimit = input.context.configuration.requestHardTokenLimit {
@@ -335,42 +209,42 @@ package enum ColonyAgent {
             tokenLimit: input.context.configuration.requestHardTokenLimit,
             tokenizer: input.context.tokenizer
         )
-        let request = HiveChatRequest(
+        let request = SwarmChatRequest(
             model: input.context.configuration.modelName,
             messages: requestMessages,
             tools: hiveTools
         )
 
-        let modelClient: AnyHiveModelClient
+        let modelClient: SwarmAnyModelClient
         if let router = input.environment.modelRouter {
             modelClient = router.route(request, hints: input.environment.inferenceHints)
         } else if let direct = input.environment.model {
             modelClient = direct
         } else {
-            throw HiveRuntimeError.modelClientMissing
+            throw SwarmRuntimeError.modelClientMissing
         }
 
         input.emitStream(.modelInvocationStarted(model: request.model), [:])
         defer { input.emitStream(.modelInvocationFinished, [:]) }
 
-        var finalResponse: HiveChatResponse?
+        var finalResponse: SwarmChatResponse?
         for try await chunk in modelClient.stream(request) {
             switch chunk {
             case .token(let token):
                 if finalResponse != nil {
-                    throw HiveRuntimeError.modelStreamInvalid("Received token after final chunk.")
+                    throw SwarmRuntimeError.modelStreamInvalid("Received token after final chunk.")
                 }
                 input.emitStream(.modelToken(text: token), [:])
             case .final(let response):
                 if finalResponse != nil {
-                    throw HiveRuntimeError.modelStreamInvalid("Received multiple final chunks.")
+                    throw SwarmRuntimeError.modelStreamInvalid("Received multiple final chunks.")
                 }
                 finalResponse = response
             }
         }
 
         guard let response = finalResponse else {
-            throw HiveRuntimeError.modelStreamInvalid("Missing final chunk.")
+            throw SwarmRuntimeError.modelStreamInvalid("Missing final chunk.")
         }
 
         let assistantMessage = ColonyMessages.makeDeterministicAssistantMessage(
@@ -378,20 +252,20 @@ package enum ColonyAgent {
             taskID: input.run.taskID
         )
 
-        var writes: [AnyHiveWrite<ColonySchema>] = [
-            AnyHiveWrite(ColonySchema.Channels.messages, [assistantMessage]),
-            AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, assistantMessage.toolCalls),
-            AnyHiveWrite(ColonySchema.Channels.llmInputMessages, nil),
+        var writes: [SwarmAnyWrite<ColonySchema>] = [
+            SwarmAnyWrite(ColonySchema.Channels.messages, [assistantMessage]),
+            SwarmAnyWrite(ColonySchema.Channels.pendingToolCalls, assistantMessage.toolCalls),
+            SwarmAnyWrite(ColonySchema.Channels.llmInputMessages, nil),
         ]
 
         if assistantMessage.toolCalls.isEmpty {
-            writes.append(AnyHiveWrite(ColonySchema.Channels.finalAnswer, assistantMessage.content))
+            writes.append(SwarmAnyWrite(ColonySchema.Channels.finalAnswer, assistantMessage.content))
         }
 
-        return HiveNodeOutput(writes: writes)
+        return SwarmGraphOutput(writes: writes)
     }
 
-    private static func toolDefinitionBudgetMessages(_ tools: [HiveToolDefinition]) -> [HiveChatMessage] {
+    private static func toolDefinitionBudgetMessages(_ tools: [SwarmToolDefinition]) -> [SwarmChatMessage] {
         let content: String = {
             do {
                 let encoder = JSONEncoder()
@@ -409,7 +283,7 @@ package enum ColonyAgent {
         }()
 
         return [
-            HiveChatMessage(
+            SwarmChatMessage(
                 id: "budget:tools",
                 role: .system,
                 content: content
@@ -418,12 +292,12 @@ package enum ColonyAgent {
     }
 
     private static func requestMessagesWithHardTokenLimit(
-        systemMessage: HiveChatMessage,
-        conversationMessages: [HiveChatMessage],
-        reservedMessages: [HiveChatMessage],
+        systemMessage: SwarmChatMessage,
+        conversationMessages: [SwarmChatMessage],
+        reservedMessages: [SwarmChatMessage],
         tokenLimit: Int?,
         tokenizer: any ColonyTokenizer
-    ) -> [HiveChatMessage] {
+    ) -> [SwarmChatMessage] {
         guard let tokenLimit else { return [systemMessage] + conversationMessages }
         guard tokenLimit > 0 else { return [systemMessage] }
 
@@ -450,11 +324,11 @@ package enum ColonyAgent {
     }
 
     private static func trimSystemMessageToFitTokenLimit(
-        _ systemMessage: HiveChatMessage,
+        _ systemMessage: SwarmChatMessage,
         tokenLimit: Int,
-        reservedMessages: [HiveChatMessage],
+        reservedMessages: [SwarmChatMessage],
         tokenizer: any ColonyTokenizer
-    ) -> HiveChatMessage {
+    ) -> SwarmChatMessage {
         if tokenizer.countTokens([systemMessage] + reservedMessages) <= tokenLimit {
             return systemMessage
         }
@@ -477,11 +351,11 @@ package enum ColonyAgent {
     }
 
     private static func systemMessageWithTrimmedContent(
-        _ systemMessage: HiveChatMessage,
+        _ systemMessage: SwarmChatMessage,
         maxCharacters: Int
-    ) -> HiveChatMessage {
+    ) -> SwarmChatMessage {
         let trimmedContent = String(systemMessage.content.prefix(maxCharacters))
-        return HiveChatMessage(
+        return SwarmChatMessage(
             id: systemMessage.id,
             role: systemMessage.role,
             content: trimmedContent,
@@ -492,12 +366,12 @@ package enum ColonyAgent {
         )
     }
 
-    private static func routeAfterModel(_ store: HiveStoreView<ColonySchema>) -> HiveNext {
+    package static func routeAfterModel(_ store: SwarmStoreView<ColonySchema>) -> SwarmGraphNext {
         let calls = (try? store.get(ColonySchema.Channels.pendingToolCalls)) ?? []
         return calls.isEmpty ? .end : .to([nodeTools])
     }
 
-    private static func tools(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
+    package static func tools(_ input: SwarmGraphInput<ColonySchema>) async throws -> SwarmGraphOutput<ColonySchema> {
         let pending = try input.store.get(ColonySchema.Channels.pendingToolCalls)
         let calls = pending.sorted { lhs, rhs in
             if lhs.name == rhs.name { return lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8) }
@@ -540,7 +414,7 @@ package enum ColonyAgent {
             }
         }
 
-        let approvalRequiredCalls: [HiveToolCall] = calls.filter {
+        let approvalRequiredCalls: [SwarmToolCall] = calls.filter {
             assessmentsByCallID[$0.id]?.requiresApproval == true
                 && preApprovedIDs.contains($0.id) == false
                 && preDeniedIDs.contains($0.id) == false
@@ -562,8 +436,8 @@ package enum ColonyAgent {
                     }
                 }
 
-                let approvedCalls: [HiveToolCall] = calls.filter { approvedIDs.contains($0.id) }
-                let deniedCalls: [HiveToolCall] = calls.filter { deniedIDs.contains($0.id) }
+                let approvedCalls: [SwarmToolCall] = calls.filter { approvedIDs.contains($0.id) }
+                let deniedCalls: [SwarmToolCall] = calls.filter { deniedIDs.contains($0.id) }
 
                 try await recordToolAuditEvents(
                     calls: calls.filter { approvedIDs.contains($0.id) && approvalRequiredIDs.contains($0.id) == false },
@@ -612,16 +486,19 @@ package enum ColonyAgent {
                 input: input
             )
 
-            return HiveNodeOutput(
+            let interruptRequest = SwarmInterruptRequest<ColonyInterruptPayload>(
+                payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls.map { call in
+                    ColonyToolCall(id: call.id, name: call.name, argumentsJSON: call.argumentsJSON)
+                })
+            )
+            return SwarmGraphOutput<ColonySchema>(
                 next: .to([nodeTools]),
-                interrupt: HiveInterruptRequest(
-                    payload: .toolApprovalRequired(toolCalls: approvalRequiredCalls.map(ColonyToolCall.init))
-                )
+                interrupt: interruptRequest
             )
         }
 
-        let approvedCalls: [HiveToolCall] = calls.filter { preDeniedIDs.contains($0.id) == false }
-        let deniedCalls: [HiveToolCall] = calls.filter { preDeniedIDs.contains($0.id) }
+        let approvedCalls: [SwarmToolCall] = calls.filter { preDeniedIDs.contains($0.id) == false }
+        let deniedCalls: [SwarmToolCall] = calls.filter { preDeniedIDs.contains($0.id) }
         try await recordToolAuditEvents(
             calls: approvedCalls,
             decision: .autoApproved,
@@ -643,33 +520,33 @@ package enum ColonyAgent {
     }
 
     private static func toolDispatchPath(
-        input: HiveNodeInput<ColonySchema>,
-        approvedCalls: [HiveToolCall],
-        deniedCalls: [HiveToolCall],
-        taskID: HiveTaskID
-    ) throws -> HiveNodeOutput<ColonySchema> {
-        var spawn: [HiveTaskSeed<ColonySchema>] = []
+        input: SwarmGraphInput<ColonySchema>,
+        approvedCalls: [SwarmToolCall],
+        deniedCalls: [SwarmToolCall],
+        taskID: SwarmTaskID
+    ) throws -> SwarmGraphOutput<ColonySchema> {
+        var spawn: [SwarmTaskSeed<ColonySchema>] = []
         spawn.reserveCapacity(approvedCalls.count)
         for call in approvedCalls {
-            var local = HiveTaskLocalStore<ColonySchema>.empty
+            var local = SwarmTaskLocalStore<ColonySchema>.empty
             try local.set(ColonySchema.Channels.currentToolCall, call)
-            spawn.append(HiveTaskSeed(nodeID: nodeToolExecute, local: local))
+            spawn.append(SwarmTaskSeed(nodeID: nodeToolExecute, local: local))
         }
 
-        var writes: [AnyHiveWrite<ColonySchema>] = [
-            AnyHiveWrite(ColonySchema.Channels.pendingToolCalls, []),
+        var writes: [SwarmAnyWrite<ColonySchema>] = [
+            SwarmAnyWrite(ColonySchema.Channels.pendingToolCalls, []),
         ]
 
         if deniedCalls.isEmpty == false {
             let messageID = ColonyMessageID.systemMessageID(taskID: taskID)
-            let system = HiveChatMessage(
+            let system = SwarmChatMessage(
                 id: messageID,
                 role: .system,
                 content: "Tool execution rejected by user."
             )
 
             let cancellations = deniedCalls.map { call in
-                HiveChatMessage(
+                SwarmChatMessage(
                     id: "tool:" + call.id,
                     role: .tool,
                     content: "Tool call \(call.name) with id \(call.id) was cancelled - tool execution was rejected by the user.",
@@ -678,29 +555,29 @@ package enum ColonyAgent {
                 )
             }
             writes.append(
-                AnyHiveWrite(ColonySchema.Channels.messages, [system] + cancellations)
+                SwarmAnyWrite(ColonySchema.Channels.messages, [system] + cancellations)
             )
         }
 
         if spawn.isEmpty {
-            return HiveNodeOutput(
+            return SwarmGraphOutput(
                 writes: writes,
                 next: .to([nodePreModel])
             )
         }
 
-        return HiveNodeOutput(
+        return SwarmGraphOutput(
             writes: writes,
-            spawn: spawn,
-            next: .end
+            next: .end,
+            spawn: spawn
         )
     }
 
     private static func recordToolAuditEvents(
-        calls: [HiveToolCall],
+        calls: [SwarmToolCall],
         decision: ColonyToolAuditDecisionKind,
         assessmentsByCallID: [String: ColonyToolSafetyAssessment],
-        input: HiveNodeInput<ColonySchema>
+        input: SwarmGraphInput<ColonySchema>
     ) async throws {
         guard calls.isEmpty == false else { return }
         guard let recorder = input.context.configuration.toolAuditRecorder else { return }
@@ -722,7 +599,7 @@ package enum ColonyAgent {
     }
 
     private static func resolvePersistedRuleDecisions(
-        calls: [HiveToolCall],
+        calls: [SwarmToolCall],
         assessmentsByCallID: [String: ColonyToolSafetyAssessment],
         store: (any ColonyToolApprovalRuleStore)?
     ) async throws -> [String: ColonyToolApprovalRuleDecision] {
@@ -742,7 +619,7 @@ package enum ColonyAgent {
         return decisions
     }
 
-    private static func toolExecute(_ input: HiveNodeInput<ColonySchema>) async throws -> HiveNodeOutput<ColonySchema> {
+    package static func toolExecute(_ input: SwarmGraphInput<ColonySchema>) async throws -> SwarmGraphOutput<ColonySchema> {
         let call = try input.store.get(ColonySchema.Channels.currentToolCall)
         input.emitStream(.toolInvocationStarted(name: call.name), ["toolCallID": call.id])
 
@@ -756,7 +633,7 @@ package enum ColonyAgent {
             tokenLimit: input.context.configuration.toolResultEvictionTokenLimit
         )
 
-        let toolMessage = HiveChatMessage(
+        let toolMessage = SwarmChatMessage(
             id: "tool:" + call.id,
             role: .tool,
             content: toolContent,
@@ -764,12 +641,12 @@ package enum ColonyAgent {
             toolCallID: call.id
         )
 
-        var writes: [AnyHiveWrite<ColonySchema>] = [
-            AnyHiveWrite(ColonySchema.Channels.messages, [toolMessage]),
+        var writes: [SwarmAnyWrite<ColonySchema>] = [
+            SwarmAnyWrite(ColonySchema.Channels.messages, [toolMessage]),
         ]
         writes.append(contentsOf: outcome.writes)
 
-        return HiveNodeOutput(writes: writes)
+        return SwarmGraphOutput(writes: writes)
     }
 
     private static func builtInToolDefinitions(for context: ColonyContext) -> [ColonyToolDefinition] {
@@ -921,11 +798,11 @@ package enum ColonyAgent {
     }
 
     private static func patchDanglingToolCalls(
-        in messages: [HiveChatMessage]
-    ) -> (messages: [HiveChatMessage], didPatch: Bool) {
+        in messages: [SwarmChatMessage]
+    ) -> (messages: [SwarmChatMessage], didPatch: Bool) {
         guard messages.isEmpty == false else { return (messages, false) }
 
-        var patched: [HiveChatMessage] = []
+        var patched: [SwarmChatMessage] = []
         patched.reserveCapacity(messages.count)
         var didPatch = false
 
@@ -942,7 +819,7 @@ package enum ColonyAgent {
 
                 didPatch = true
                 patched.append(
-                    HiveChatMessage(
+                    SwarmChatMessage(
                         id: "tool:" + call.id,
                         role: .tool,
                         content: "Tool call \(call.name) with id \(call.id) was cancelled - another message came in before it could be completed.",
@@ -957,7 +834,7 @@ package enum ColonyAgent {
     }
 
     private static func maybeSummarize(
-        messages: [HiveChatMessage],
+        messages: [SwarmChatMessage],
         policy: ColonySummarizationPolicy,
         scratchbookEnabled: Bool,
         scratchbookPolicy: ColonyScratchbookPolicy,
@@ -965,8 +842,8 @@ package enum ColonyAgent {
         subagents: (any ColonySubagentRegistry)?,
         tokenizer: any ColonyTokenizer,
         filesystem: any ColonyFileSystemBackend,
-        threadID: HiveThreadID
-    ) async throws -> [HiveChatMessage]? {
+        threadID: SwarmThreadID
+    ) async throws -> [SwarmChatMessage]? {
         guard messages.isEmpty == false else { return nil }
         guard tokenizer.countTokens(messages) > policy.triggerTokens else { return nil }
 
@@ -1026,7 +903,7 @@ package enum ColonyAgent {
             }
         }
 
-        let summaryMessage = HiveChatMessage(
+        let summaryMessage = SwarmChatMessage(
             id: "system:summary:" + threadSlug,
             role: .system,
             content: "Conversation summarized. Full prior history is available at \(historyPath.rawValue)."
@@ -1040,7 +917,7 @@ package enum ColonyAgent {
 
     private static func updateScratchbookForHistoryOffload(
         filesystem: any ColonyFileSystemBackend,
-        threadID: HiveThreadID,
+        threadID: SwarmThreadID,
         policy: ColonyScratchbookPolicy,
         historyPath: ColonyVirtualPath
     ) async throws {
@@ -1164,7 +1041,7 @@ package enum ColonyAgent {
     private static func loadScratchbookView(
         policy: ColonyScratchbookPolicy,
         filesystem: any ColonyFileSystemBackend,
-        threadID: HiveThreadID
+        threadID: SwarmThreadID
     ) async throws -> String? {
         let scratchbook = try await ColonyScratchbookStore.load(
             filesystem: filesystem,
@@ -1212,7 +1089,7 @@ package enum ColonyAgent {
     }
 
     private static func maybeEvictLargeToolResult(
-        toolCall: HiveToolCall,
+        toolCall: SwarmToolCall,
         content: String,
         filesystem: (any ColonyFileSystemBackend)?,
         tokenLimit: Int?
@@ -1339,7 +1216,7 @@ Preview:
         }
     }
 
-    private static func renderConversationHistoryMarkdown(_ messages: [HiveChatMessage]) -> String {
+    private static func renderConversationHistoryMarkdown(_ messages: [SwarmChatMessage]) -> String {
         var lines: [String] = []
         lines.reserveCapacity(messages.count * 3)
 
@@ -1355,25 +1232,17 @@ Preview:
 
 // MARK: - Messages
 
-enum ColonyReducers {
-    static func messages() -> HiveReducer<[HiveChatMessage]> {
-        HiveReducer<[HiveChatMessage]> { left, right in
-            try ColonyMessages.reduceMessages(left: left, right: right)
-        }
-    }
-}
-
 enum ColonyMessages {
     static func reduceMessages(
-        left initialLeft: [HiveChatMessage],
-        right initialRight: [HiveChatMessage]
-    ) throws -> [HiveChatMessage] {
+        left initialLeft: [SwarmChatMessage],
+        right initialRight: [SwarmChatMessage]
+    ) throws -> [SwarmChatMessage] {
         var left = initialLeft
         var right = initialRight
 
         for message in right where message.op == .removeAll {
             guard message.id == ColonySchema.removeAllMessagesID else {
-                throw HiveRuntimeError.invalidMessagesUpdate
+                throw SwarmRuntimeError.invalidMessagesUpdate
             }
         }
 
@@ -1401,12 +1270,12 @@ enum ColonyMessages {
                 continue
             case .some(.remove):
                 guard indexByID[message.id] != nil else {
-                    throw HiveRuntimeError.invalidMessagesUpdate
+                    throw SwarmRuntimeError.invalidMessagesUpdate
                 }
                 idsToDelete.insert(message.id)
             case .none:
                 if let existingIndex = indexByID[message.id] {
-                    merged[existingIndex] = HiveChatMessage(
+                    merged[existingIndex] = SwarmChatMessage(
                         id: message.id,
                         role: message.role,
                         content: message.content,
@@ -1417,7 +1286,7 @@ enum ColonyMessages {
                     )
                     idsToDelete.remove(message.id)
                 } else {
-                    let normalized = HiveChatMessage(
+                    let normalized = SwarmChatMessage(
                         id: message.id,
                         role: message.role,
                         content: message.content,
@@ -1437,7 +1306,7 @@ enum ColonyMessages {
         }
 
         return merged.map { message in
-            HiveChatMessage(
+            SwarmChatMessage(
                 id: message.id,
                 role: message.role,
                 content: message.content,
@@ -1450,10 +1319,10 @@ enum ColonyMessages {
     }
 
     static func makeDeterministicAssistantMessage(
-        from message: HiveChatMessage,
-        taskID: HiveTaskID
-    ) -> HiveChatMessage {
-        HiveChatMessage(
+        from message: SwarmChatMessage,
+        taskID: SwarmTaskID
+    ) -> SwarmChatMessage {
+        SwarmChatMessage(
             id: ColonyMessageID.assistantMessageID(taskID: taskID),
             role: .assistant,
             content: message.content,
@@ -1463,7 +1332,7 @@ enum ColonyMessages {
 }
 
 enum ColonyMessageID {
-    static func userMessageID(runID: HiveRunID, stepIndex: Int) -> String {
+    static func userMessageID(runID: SwarmRunID, stepIndex: Int) -> String {
         var bytes = Data()
         bytes.append(contentsOf: "HMSG1".utf8)
         bytes.append(contentsOf: uuidBytes(runID.rawValue))
@@ -1473,7 +1342,7 @@ enum ColonyMessageID {
         return "msg:" + sha256HexLower(bytes)
     }
 
-    static func assistantMessageID(taskID: HiveTaskID) -> String {
+    static func assistantMessageID(taskID: SwarmTaskID) -> String {
         var bytes = Data()
         bytes.append(contentsOf: "HMSG1".utf8)
         bytes.append(contentsOf: Data(taskID.rawValue.utf8))
@@ -1483,7 +1352,7 @@ enum ColonyMessageID {
         return "msg:" + sha256HexLower(bytes)
     }
 
-    static func systemMessageID(taskID: HiveTaskID) -> String {
+    static func systemMessageID(taskID: SwarmTaskID) -> String {
         var bytes = Data()
         bytes.append(contentsOf: "HMSG1".utf8)
         bytes.append(contentsOf: Data(taskID.rawValue.utf8))
@@ -1510,16 +1379,16 @@ enum ColonyMessageID {
 
 // MARK: - Tools
 
-struct ColonyToolOutcome<Schema: HiveSchema>: Sendable {
+struct ColonyToolOutcome<Schema>: Sendable {
     var success: Bool
     var content: String
-    var writes: [AnyHiveWrite<Schema>]
+    var writes: [SwarmAnyWrite<Schema>]
 }
 
 enum ColonyTools {
     static func execute(
-        call: HiveToolCall,
-        input: HiveNodeInput<ColonySchema>
+        call: SwarmToolCall,
+        input: SwarmGraphInput<ColonySchema>
     ) async -> ColonyToolOutcome<ColonySchema> {
         do {
             if let builtIn = try await executeBuiltIn(call: call, input: input) {
@@ -1542,8 +1411,8 @@ enum ColonyTools {
     }
 
     private static func executeBuiltIn(
-        call: HiveToolCall,
-        input: HiveNodeInput<ColonySchema>
+        call: SwarmToolCall,
+        input: SwarmGraphInput<ColonySchema>
     ) async throws -> ColonyToolOutcome<ColonySchema>? {
         switch call.name {
         case ColonyBuiltInToolDefinitions.writeTodos.name:
@@ -1552,7 +1421,7 @@ enum ColonyTools {
             return ColonyToolOutcome(
                 success: true,
                 content: renderTodos(todos),
-                writes: [AnyHiveWrite(ColonySchema.Channels.todos, todos)]
+                writes: [SwarmAnyWrite(ColonySchema.Channels.todos, todos)]
             )
 
         case ColonyBuiltInToolDefinitions.readTodos.name:

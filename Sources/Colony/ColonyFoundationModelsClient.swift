@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -91,11 +90,11 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
     // MARK: - ColonyModelClient
 
     public func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
-        ColonyInferenceResponse(try await complete(request.hiveChatRequest))
+        ColonyInferenceResponse(try await complete(request.swarmChatRequest))
     }
 
     public func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
-        let stream = stream(request.hiveChatRequest)
+        let stream = stream(request.swarmChatRequest)
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -117,8 +116,8 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
 
     // MARK: - Hive Bridge
 
-    package func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
-        var finalResponse: HiveChatResponse?
+    package func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
+        var finalResponse: SwarmChatResponse?
         for try await chunk in stream(request) {
             if case .final(let response) = chunk {
                 finalResponse = response
@@ -130,7 +129,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
         return finalResponse
     }
 
-    package func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    package func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
             return streamAvailable(request)
@@ -149,7 +148,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
     private static let toolCallOpenTag = "<tool_call>"
     private static let toolCallCloseTag = "</tool_call>"
 
-    private func streamUnavailable() -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    private func streamUnavailable() -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish(throwing: OnDeviceModelError.foundationModelsUnavailable)
         }
@@ -175,21 +174,21 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
     private func makeResponse(
         rawModelText: String,
         toolsAllowed: Set<String>
-    ) throws -> HiveChatResponse {
+    ) throws -> SwarmChatResponse {
         let parsed = try parseFinalAssistantOutput(
             raw: rawModelText,
             toolsAllowed: toolsAllowed
         )
-        let message = HiveChatMessage(
+        let message = SwarmChatMessage(
             id: messageID(),
             role: .assistant,
             content: parsed.visibleText,
             toolCalls: parsed.toolCalls
         )
-        return HiveChatResponse(message: message)
+        return SwarmChatResponse(message: message)
     }
 
-    private func makePrompt(from request: HiveChatRequest) -> (instructions: String?, prompt: String, toolsAllowed: Set<String>) {
+    private func makePrompt(from request: SwarmChatRequest) -> (instructions: String?, prompt: String, toolsAllowed: Set<String>) {
         var systemParts: [String] = []
         var promptLines: [String] = []
 
@@ -243,7 +242,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
         return (instructions: instructions, prompt: prompt, toolsAllowed: toolsAllowed)
     }
 
-    func makeToolInstructions(tools: [HiveToolDefinition]) -> String? {
+    func makeToolInstructions(tools: [SwarmToolDefinition]) -> String? {
         guard tools.isEmpty == false else { return nil }
 
         switch configuration.toolInstructionVerbosity {
@@ -314,7 +313,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
         return summary
     }
 
-    private func renderToolCallMarkup(from call: HiveToolCall) -> String {
+    private func renderToolCallMarkup(from call: SwarmToolCall) -> String {
         "\(Self.toolCallOpenTag){\"id\":\"\(jsonEscaped(call.id))\",\"name\":\"\(jsonEscaped(call.name))\",\"arguments\":\(call.argumentsJSON)}\(Self.toolCallCloseTag)"
     }
 
@@ -343,7 +342,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
 
     private struct ParsedAssistantOutput: Sendable {
         let visibleText: String
-        let toolCalls: [HiveToolCall]
+        let toolCalls: [SwarmToolCall]
     }
 
     private func parseFinalAssistantOutput(
@@ -352,7 +351,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
     ) throws -> ParsedAssistantOutput {
         let parsed = parseToolCallBlocks(raw: raw, requireClosedTags: true)
 
-        var toolCalls: [HiveToolCall] = []
+        var toolCalls: [SwarmToolCall] = []
         toolCalls.reserveCapacity(parsed.blocks.count)
 
         for (index, innerJSON) in parsed.blocks.enumerated() {
@@ -413,7 +412,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
         _ innerJSON: String,
         index: Int,
         toolsAllowed: Set<String>
-    ) throws -> HiveToolCall {
+    ) throws -> SwarmToolCall {
         if innerJSON == "__UNTERMINATED__" {
             throw OnDeviceModelError.invalidToolCallFormat("Unterminated \(Self.toolCallOpenTag) block.")
         }
@@ -463,7 +462,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
             }
         }
 
-        return HiveToolCall(
+        return SwarmToolCall(
             id: id ?? toolCallID(name: name, argumentsJSON: argumentsJSON, index: index),
             name: name,
             argumentsJSON: argumentsJSON
@@ -482,7 +481,7 @@ public struct ColonyFoundationModelsClient: ColonyModelClient, Sendable {
 
     #if canImport(FoundationModels)
     @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
-    private func streamAvailable(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    private func streamAvailable(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {

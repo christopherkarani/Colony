@@ -3,23 +3,23 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private struct LargeOutputToolRegistry: HiveToolRegistry, Sendable {
+private struct LargeOutputToolRegistry: SwarmToolRegistry, Sendable {
     let output: String
 
-    func listTools() -> [HiveToolDefinition] {
+    func listTools() -> [SwarmToolDefinition] {
         [
-            HiveToolDefinition(
+            SwarmToolDefinition(
                 name: "big_tool",
                 description: "Returns a very large tool result.",
                 parametersJSONSchema: #"{"type":"object","properties":{}}"#
@@ -27,20 +27,20 @@ private struct LargeOutputToolRegistry: HiveToolRegistry, Sendable {
         ]
     }
 
-    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        HiveToolResult(toolCallID: call.id, content: output)
+    func invoke(_ call: SwarmToolCall) async throws -> SwarmToolResult {
+        SwarmToolResult(toolCallID: call.id, content: output)
     }
 }
 
-private final class BigToolModel: HiveModelClient, @unchecked Sendable {
+private final class BigToolModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -50,7 +50,7 @@ private final class BigToolModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -59,18 +59,18 @@ private final class BigToolModel: HiveModelClient, @unchecked Sendable {
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "evict-1",
                 name: "big_tool",
                 argumentsJSON: #"{}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "running big tool", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "running big tool", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
@@ -95,19 +95,19 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(BigToolModel()),
-        tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
+        model: SwarmAnyModelClient(BigToolModel()),
+        tools: SwarmAnyToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-evict"),
+        threadID: SwarmThreadID("thread-evict"),
         input: "trigger",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -122,7 +122,7 @@ func colonyEvictsLargeToolResultsToFilesystem() async throws {
     #expect(persisted == largeOutput)
 
     let messages = try store.get(ColonySchema.Channels.messages)
-    let toolMessage = messages.first { $0.role == HiveChatRole.tool && $0.toolCallID == "evict-1" }
+    let toolMessage = messages.first { $0.role == SwarmChatRole.tool && $0.toolCallID == "evict-1" }
     #expect(toolMessage != nil)
     #expect(toolMessage?.content.contains("/large_tool_results/evict-1") == true)
     #expect(toolMessage?.content.localizedCaseInsensitiveContains("result too large") == true)
@@ -149,19 +149,19 @@ func colonyCapsToolEvictionPreviewByBudget() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(BigToolModel()),
-        tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
+        model: SwarmAnyModelClient(BigToolModel()),
+        tools: SwarmAnyToolRegistry(LargeOutputToolRegistry(output: largeOutput))
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-evict-preview-budget"),
+        threadID: SwarmThreadID("thread-evict-preview-budget"),
         input: "trigger",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -204,19 +204,19 @@ func colonyToolEvictionPreviewTrimming_isDeterministic() async throws {
         )
         let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-        let environment = HiveEnvironment<ColonySchema>(
+        let environment = SwarmGraphEnvironment<ColonySchema>(
             context: context,
             clock: NoopClock(),
             logger: NoopLogger(),
-            model: AnyHiveModelClient(BigToolModel()),
-            tools: AnyHiveToolRegistry(LargeOutputToolRegistry(output: largeOutput))
+            model: SwarmAnyModelClient(BigToolModel()),
+            tools: SwarmAnyToolRegistry(LargeOutputToolRegistry(output: largeOutput))
         )
 
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
+        let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
         let handle = await runtime.run(
-            threadID: HiveThreadID(threadID),
+            threadID: SwarmThreadID(threadID),
             input: "trigger",
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         )
 
         let outcome = try await handle.outcome.value

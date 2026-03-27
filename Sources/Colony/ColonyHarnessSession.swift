@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 /// Errors that can occur during harness session operations.
@@ -192,7 +191,7 @@ public actor ColonyHarnessSession {
 
     private var activeAttemptID: ColonyRunAttemptID?
     private var activeRunID: ColonyRunID?
-    private var activeOutcomeTask: Task<ColonyRun.Outcome, Error>?
+    private var activeOutcomeTask: ColonyRun.Handle.OutcomeFuture?
     private var eventPumpTask: Task<Void, Never>?
     private var outcomeMonitorTask: Task<Void, Never>?
 
@@ -326,7 +325,7 @@ public actor ColonyHarnessSession {
             eventType: eventType,
             sequence: sequenceCounter,
             timestamp: Date(),
-            runID: runID.hiveRunID.rawValue,
+            runID: UUID(uuidString: runID.rawValue) ?? UUID(),
             sessionID: sessionID,
             payload: payload
         )

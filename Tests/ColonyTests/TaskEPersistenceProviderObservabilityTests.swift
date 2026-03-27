@@ -20,7 +20,7 @@ private actor RequestCounter {
     }
 }
 
-private final class AlwaysFailModelClient: HiveModelClient, @unchecked Sendable {
+private final class AlwaysFailModelClient: SwarmModelClient, @unchecked Sendable {
     private let counter = RequestCounter()
     private let message: String
 
@@ -28,7 +28,7 @@ private final class AlwaysFailModelClient: HiveModelClient, @unchecked Sendable 
         self.message = message
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         await counter.increment()
         throw TaskETestError.scriptedFailure(message)
     }
@@ -37,7 +37,7 @@ private final class AlwaysFailModelClient: HiveModelClient, @unchecked Sendable 
         await counter.value()
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -51,7 +51,7 @@ private final class AlwaysFailModelClient: HiveModelClient, @unchecked Sendable 
     }
 }
 
-private final class FixedModelClient: HiveModelClient, @unchecked Sendable {
+private final class FixedModelClient: SwarmModelClient, @unchecked Sendable {
     private let counter = RequestCounter()
     private let content: String
     private let token: String?
@@ -61,30 +61,30 @@ private final class FixedModelClient: HiveModelClient, @unchecked Sendable {
         self.token = token
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         await counter.increment()
-        return HiveChatResponse(message: HiveChatMessage(id: UUID().uuidString, role: .assistant, content: content))
+        return SwarmChatResponse(message: SwarmChatMessage(id: UUID().uuidString, role: .assistant, content: content))
     }
 
     func snapshotRequestCount() async -> Int {
         await counter.value()
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 await self.counter.increment()
                 if let token {
                     continuation.yield(.token(token))
                 }
-                continuation.yield(.final(HiveChatResponse(message: HiveChatMessage(id: UUID().uuidString, role: .assistant, content: self.content))))
+                continuation.yield(.final(SwarmChatResponse(message: SwarmChatMessage(id: UUID().uuidString, role: .assistant, content: self.content))))
                 continuation.finish()
             }
         }
     }
 }
 
-private final class DelayedFixedModelClient: HiveModelClient, @unchecked Sendable {
+private final class DelayedFixedModelClient: SwarmModelClient, @unchecked Sendable {
     private let counter = RequestCounter()
     private let content: String
     private let delayNanoseconds: UInt64
@@ -94,17 +94,17 @@ private final class DelayedFixedModelClient: HiveModelClient, @unchecked Sendabl
         self.delayNanoseconds = delayNanoseconds
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         await counter.increment()
         try await Task.sleep(nanoseconds: delayNanoseconds)
-        return HiveChatResponse(message: HiveChatMessage(id: UUID().uuidString, role: .assistant, content: content))
+        return SwarmChatResponse(message: SwarmChatMessage(id: UUID().uuidString, role: .assistant, content: content))
     }
 
     func snapshotRequestCount() async -> Int {
         await counter.value()
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -120,10 +120,10 @@ private final class DelayedFixedModelClient: HiveModelClient, @unchecked Sendabl
 }
 
 private struct TestColonyModelClientBridge: ColonyModelClient, Sendable {
-    let client: AnyHiveModelClient
+    let client: SwarmAnyModelClient
 
-    init(_ client: some HiveModelClient) {
-        self.client = AnyHiveModelClient(client)
+    init(_ client: some SwarmModelClient) {
+        self.client = SwarmAnyModelClient(client)
     }
 
     func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
@@ -152,22 +152,22 @@ private struct TestColonyModelClientBridge: ColonyModelClient, Sendable {
     }
 }
 
-private final class InterruptingOnceModelClient: HiveModelClient, @unchecked Sendable {
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+private final class InterruptingOnceModelClient: SwarmModelClient, @unchecked Sendable {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "approval-1",
                 name: "write_file",
                 argumentsJSON: #"{"path":"/checkpoint.md","content":"checkpoint"}"#
             )
             continuation.yield(
                 .final(
-                    HiveChatResponse(
-                        message: HiveChatMessage(
+                    SwarmChatResponse(
+                        message: SwarmChatMessage(
                             id: "assistant-approval",
                             role: .assistant,
                             content: "needs approval",
@@ -181,6 +181,54 @@ private final class InterruptingOnceModelClient: HiveModelClient, @unchecked Sen
     }
 }
 
+private final class InterruptThenFinishModelClient: SwarmModelClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var invocations = 0
+
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
+        nextResponse()
+    }
+
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
+        let response = nextResponse()
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.final(response))
+            continuation.finish()
+        }
+    }
+
+    private func nextResponse() -> SwarmChatResponse {
+        lock.lock()
+        invocations += 1
+        let invocation = invocations
+        lock.unlock()
+
+        if invocation == 1 {
+            let call = SwarmToolCall(
+                id: "approval-1",
+                name: "write_file",
+                argumentsJSON: #"{"path":"/checkpoint.md","content":"checkpoint"}"#
+            )
+            return SwarmChatResponse(
+                message: SwarmChatMessage(
+                    id: "assistant-interrupt",
+                    role: .assistant,
+                    content: "needs approval",
+                    toolCalls: [call]
+                )
+            )
+        }
+
+        return SwarmChatResponse(
+            message: SwarmChatMessage(
+                id: "assistant-finished-\(invocation)",
+                role: .assistant,
+                content: "done"
+            )
+        )
+    }
+}
+
 private func temporaryDirectory(_ suffix: String) throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("colony-task-e-tests", isDirectory: true)
@@ -189,9 +237,9 @@ private func temporaryDirectory(_ suffix: String) throws -> URL {
     return url
 }
 
-private func makeCheckpoint(stepIndex: Int, threadID: HiveThreadID, runID: HiveRunID, id: String) -> HiveCheckpoint<ColonySchema> {
-    HiveCheckpoint(
-        id: HiveCheckpointID(id),
+private func makeCheckpoint(stepIndex: Int, threadID: SwarmThreadID, runID: SwarmRunID, id: String) -> ColonyCheckpointSnapshot {
+    ColonyCheckpointSnapshot(
+        id: SwarmCheckpointID(id),
         threadID: threadID,
         runID: runID,
         stepIndex: stepIndex,
@@ -245,22 +293,22 @@ func taskE_durableCheckpointStorePersistsAndQueries() async throws {
     let directory = try temporaryDirectory("checkpoints")
     defer { try? FileManager.default.removeItem(at: directory) }
 
-    let threadID = HiveThreadID("thread-task-e-checkpoint")
-    let runID = HiveRunID(UUID(uuidString: "D39A7E4F-3355-43AF-AC72-3097F7706E57")!)
+    let threadID = SwarmThreadID("thread-task-e-checkpoint")
+    let runID = SwarmRunID(UUID(uuidString: "D39A7E4F-3355-43AF-AC72-3097F7706E57")!)
 
-    let store = try ColonyDurableCheckpointStore<ColonySchema>(baseURL: directory)
+    let store = try ColonyDurableCheckpointStore(baseURL: directory)
     try await store.save(makeCheckpoint(stepIndex: 1, threadID: threadID, runID: runID, id: "cp-1"))
     try await store.save(makeCheckpoint(stepIndex: 2, threadID: threadID, runID: runID, id: "cp-2"))
 
-    let reopened = try ColonyDurableCheckpointStore<ColonySchema>(baseURL: directory)
-    let latest = try await reopened.loadLatest(threadID: threadID)
-    #expect(latest?.id == HiveCheckpointID("cp-2"))
+    let reopened = try ColonyDurableCheckpointStore(baseURL: directory)
+    let latest = try await reopened.loadLatest(threadID: ColonyThreadID(threadID.rawValue))
+    #expect(latest?.id == SwarmCheckpointID("cp-2"))
 
-    let summaries = try await reopened.listCheckpoints(threadID: threadID, limit: nil)
+    let summaries = try await reopened.listCheckpoints(threadID: ColonyThreadID(threadID.rawValue), limit: nil)
     #expect(summaries.count == 2)
-    #expect(summaries.first?.id == HiveCheckpointID("cp-2"))
+    #expect(summaries.first?.id == SwarmCheckpointID("cp-2"))
 
-    let loaded = try await reopened.loadCheckpoint(threadID: threadID, id: HiveCheckpointID("cp-1"))
+    let loaded = try await reopened.loadCheckpoint(threadID: ColonyThreadID(threadID.rawValue), id: SwarmCheckpointID("cp-1"))
     #expect(loaded?.stepIndex == 1)
 }
 
@@ -269,11 +317,11 @@ func taskE_durableCheckpointStoreIntegratesWithFactory() async throws {
     let directory = try temporaryDirectory("factory-checkpoints")
     defer { try? FileManager.default.removeItem(at: directory) }
 
-    let threadID = HiveThreadID("thread-task-e-factory-checkpoint")
+    let threadID = SwarmThreadID("thread-task-e-factory-checkpoint")
     let runtime = try ColonyAgentFactory().makeRuntime(
         threadID: threadID,
         modelName: "checkpoint-runtime",
-        model: AnyHiveModelClient(InterruptingOnceModelClient()),
+        model: SwarmAnyModelClient(InterruptingOnceModelClient()),
         durableCheckpointDirectoryURL: directory,
         configure: { configuration in
             configuration.toolApprovalPolicy = .always
@@ -288,8 +336,8 @@ func taskE_durableCheckpointStoreIntegratesWithFactory() async throws {
         return
     }
 
-    let store = try ColonyDurableCheckpointStore<ColonySchema>(baseURL: directory)
-    let latest = try await store.loadLatest(threadID: threadID)
+    let store = try ColonyDurableCheckpointStore(baseURL: directory)
+    let latest = try await store.loadLatest(threadID: ColonyThreadID(threadID.rawValue))
     #expect(latest != nil)
 }
 
@@ -335,7 +383,61 @@ func taskE_durableRunStateStorePersistsAndRestarts() async throws {
     #expect(events.map(\.eventType) == [.runStarted, .runInterrupted])
 
     let latestInterrupted = try await reopened.latestInterruptedRun(sessionID: sessionID)
-    #expect(latestInterrupted?.runID.hiveRunID.rawValue == runID)
+    #expect(latestInterrupted?.runID.rawValue == runID.uuidString)
+}
+
+@Test("Task E durable run-state store clears interrupted lookup after resumed completion under the same run ID")
+func taskE_durableRunStateStoreClearsInterruptedStateAfterResume() async throws {
+    let temp = try temporaryDirectory("run-state-resume")
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let sessionID = ColonyHarnessSessionID(rawValue: "session-task-e-resume")
+    let runStateStore = try ColonyDurableRunStateStore(baseURL: temp.appendingPathComponent("run-state", isDirectory: true))
+
+    let runtime = try ColonyAgentFactory().makeRuntime(
+        threadID: SwarmThreadID("thread-task-e-resume"),
+        modelName: "resume-test-model",
+        model: SwarmAnyModelClient(InterruptThenFinishModelClient()),
+        configure: { configuration in
+            configuration.toolApprovalPolicy = .always
+            configuration.capabilities = [.filesystem]
+        }
+    )
+
+    let session = ColonyHarnessSession.create(
+        runtime: runtime,
+        sessionID: sessionID,
+        runStateStore: runStateStore
+    )
+    let stream = await session.stream()
+    let consume = Task {
+        for try await _ in stream {}
+    }
+
+    try await session.start(input: "start")
+
+    let interruptedObserved = await waitUntil {
+        let current = try? await runStateStore.latestInterruptedRun(sessionID: sessionID)
+        return current != nil
+    }
+    #expect(interruptedObserved)
+
+    let interruptedState = try #require(try await runStateStore.latestInterruptedRun(sessionID: sessionID))
+
+    try await session.resume(decision: .approved)
+
+    let finishedObserved = await waitUntil {
+        let current = try? await runStateStore.latestRunState(sessionID: sessionID)
+        return current?.phase == .finished
+    }
+    #expect(finishedObserved)
+
+    let latestState = try #require(try await runStateStore.latestRunState(sessionID: sessionID))
+    #expect(latestState.runID == interruptedState.runID)
+    #expect(try await runStateStore.latestInterruptedRun(sessionID: sessionID) == nil)
+
+    await session.stop()
+    consume.cancel()
 }
 
 @Test("Task E artifact store applies retention and redaction")
@@ -349,7 +451,7 @@ func taskE_artifactStoreRetentionAndRedaction() async throws {
     )
 
     let threadID = ColonyThreadID("thread-task-e-artifact")
-    let runID = ColonyRunID(hiveRunID: HiveRunID(UUID(uuidString: "6511EC8B-1CA8-4D0E-83A4-7537CA6E76C8")!))
+    let runID = ColonyRunID(rawValue: "6511EC8B-1CA8-4D0E-83A4-7537CA6E76C8")
     let base = Date(timeIntervalSince1970: 1_700_000_500)
 
     let first = try await store.put(
@@ -434,9 +536,9 @@ func taskE_providerRouterFallbackBudgetingAndCeilings() async throws {
         sleep: { _ in }
     )
 
-    let request = HiveChatRequest(
+    let request = SwarmChatRequest(
         model: "router-model",
-        messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
+        messages: [SwarmChatMessage(id: "m1", role: .user, content: "hello")],
         tools: []
     )
 
@@ -505,9 +607,9 @@ func taskE_providerRouterConcurrentRateCeilingReservation() async throws {
         sleep: { _ in }
     )
 
-    let request = HiveChatRequest(
+    let request = SwarmChatRequest(
         model: "router-model",
-        messages: [HiveChatMessage(id: "m1", role: .user, content: "hello")],
+        messages: [SwarmChatMessage(id: "m1", role: .user, content: "hello")],
         tools: []
     )
     let routedRequest = ColonyInferenceRequest(request)
@@ -572,9 +674,9 @@ func taskE_observabilityRedactionAndHarnessIntegration() async throws {
     defer { try? FileManager.default.removeItem(at: temp) }
 
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-task-e-observability"),
+        threadID: SwarmThreadID("thread-task-e-observability"),
         modelName: "streaming-test-model",
-        model: AnyHiveModelClient(FixedModelClient(content: "done", token: "api_key=top_secret")),
+        model: SwarmAnyModelClient(FixedModelClient(content: "done", token: "api_key=top_secret")),
         configure: { configuration in
             configuration.toolApprovalPolicy = .never
         }

@@ -285,7 +285,7 @@ func scratchbookStorage_persistsPerThread_withSortedKeysEncoding() async throws 
         autoCompact: false
     )
 
-    let threadID = HiveThreadID("thread/with\\slashes")
+    let threadID = SwarmThreadID("thread/with\\slashes")
     let expectedPath = try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
 
     let scratchbook = ColonyScratchbook(
@@ -330,7 +330,7 @@ func scratchbookStorage_loadMissing_returnsEmptyScratchbook() async throws {
 
     let scratchbook = try await ColonyScratchbookStore.load(
         filesystem: filesystem,
-        threadID: HiveThreadID("missing-thread").rawValue,
+        threadID: SwarmThreadID("missing-thread").rawValue,
         policy: policy
     )
     #expect(scratchbook.items.isEmpty == true)

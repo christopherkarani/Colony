@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Risk level classification for tools, ordered by increasing severity.
 ///
 /// `ColonyToolRiskLevel` classifies tools based on their potential impact:
@@ -167,12 +165,6 @@ public struct ColonyToolSafetyPolicyEngine: Sendable {
                 reason: nil
             )
         }
-    }
-}
-
-package extension ColonyToolSafetyPolicyEngine {
-    func assess(toolCalls: [HiveToolCall]) -> [ColonyToolSafetyAssessment] {
-        assess(toolCalls: toolCalls.map(ColonyToolCall.init))
     }
 }
 

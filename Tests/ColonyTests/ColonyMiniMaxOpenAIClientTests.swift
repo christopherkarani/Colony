@@ -47,14 +47,14 @@ struct ColonyMiniMaxOpenAIClientTests {
         )
 
         let response = try await client.complete(
-            HiveChatRequest(
+            SwarmChatRequest(
                 model: "MiniMax-M2.7",
                 messages: [
-                    HiveChatMessage(id: "system-1", role: .system, content: "You are a coding agent."),
-                    HiveChatMessage(id: "user-1", role: .user, content: "Inspect the game state.")
+                    SwarmChatMessage(id: "system-1", role: .system, content: "You are a coding agent."),
+                    SwarmChatMessage(id: "user-1", role: .user, content: "Inspect the game state.")
                 ],
                 tools: [
-                    HiveToolDefinition(
+                    SwarmToolDefinition(
                         name: "read_observation",
                         description: "Read game state.",
                         parametersJSONSchema: #"{"type":"object","properties":{}}"#
@@ -111,19 +111,19 @@ struct ColonyMiniMaxOpenAIClientTests {
         )
 
         _ = try await client.complete(
-            HiveChatRequest(
+            SwarmChatRequest(
                 model: "MiniMax-M2.7",
                 messages: [
-                    HiveChatMessage(id: "user-1", role: .user, content: "Start"),
-                    HiveChatMessage(
+                    SwarmChatMessage(id: "user-1", role: .user, content: "Start"),
+                    SwarmChatMessage(
                         id: "assistant-1",
                         role: .assistant,
                         content: "<think>Need state.</think>",
                         toolCalls: [
-                            HiveToolCall(id: "call-1", name: "read_observation", argumentsJSON: "{}")
+                            SwarmToolCall(id: "call-1", name: "read_observation", argumentsJSON: "{}")
                         ]
                     ),
-                    HiveChatMessage(
+                    SwarmChatMessage(
                         id: "tool-1",
                         role: .tool,
                         content: #"{"scene":"titleMenu"}"#,
@@ -181,26 +181,26 @@ struct ColonyMiniMaxOpenAIClientTests {
         )
 
         _ = try await client.complete(
-            HiveChatRequest(
+            SwarmChatRequest(
                 model: "MiniMax-M2.7",
                 messages: [
-                    HiveChatMessage(id: "user-1", role: .user, content: "Start"),
-                    HiveChatMessage(
+                    SwarmChatMessage(id: "user-1", role: .user, content: "Start"),
+                    SwarmChatMessage(
                         id: "assistant-1",
                         role: .assistant,
                         content: "",
                         toolCalls: [
-                            HiveToolCall(id: "call-1", name: "read_observation", argumentsJSON: "{}")
+                            SwarmToolCall(id: "call-1", name: "read_observation", argumentsJSON: "{}")
                         ]
                     ),
-                    HiveChatMessage(
+                    SwarmChatMessage(
                         id: "tool-1",
                         role: .tool,
                         content: #"{"scene":"titleMenu"}"#,
                         name: "read_observation",
                         toolCallID: "call-1"
                     ),
-                    HiveChatMessage(
+                    SwarmChatMessage(
                         id: "tool-2",
                         role: .tool,
                         content: #"{"scene":"orphan"}"#,
@@ -256,9 +256,9 @@ struct ColonyMiniMaxOpenAIClientTests {
         )
 
         let response = try await client.complete(
-            HiveChatRequest(
+            SwarmChatRequest(
                 model: "MiniMax-M2.7",
-                messages: [HiveChatMessage(id: "user-1", role: .user, content: "Retry")],
+                messages: [SwarmChatMessage(id: "user-1", role: .user, content: "Retry")],
                 tools: []
             )
         )
@@ -288,9 +288,9 @@ struct ColonyMiniMaxOpenAIClientTests {
         let threwExpectedError: Bool
         do {
             _ = try await client.complete(
-                HiveChatRequest(
+                SwarmChatRequest(
                     model: "MiniMax-M2.7",
-                    messages: [HiveChatMessage(id: "user-1", role: .user, content: "Retry")],
+                    messages: [SwarmChatMessage(id: "user-1", role: .user, content: "Retry")],
                     tools: []
                 )
             )

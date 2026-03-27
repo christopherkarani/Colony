@@ -3,15 +3,15 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private final class RepeatingWriteModel: HiveModelClient, @unchecked Sendable {
+private final class RepeatingWriteModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var invocationCount = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.nextResponse()
@@ -21,7 +21,7 @@ private final class RepeatingWriteModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func nextResponse() -> HiveChatResponse {
+    private func nextResponse() -> SwarmChatResponse {
         let count: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -30,19 +30,19 @@ private final class RepeatingWriteModel: HiveModelClient, @unchecked Sendable {
         }()
 
         if count.isMultiple(of: 2) {
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant-\(count)", role: .assistant, content: "done")
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant-\(count)", role: .assistant, content: "done")
             )
         }
 
         let fileIndex = (count + 1) / 2
-        let call = HiveToolCall(
+        let call = SwarmToolCall(
             id: "write-\(fileIndex)",
             name: "write_file",
             argumentsJSON: #"{"path":"/file-\#(fileIndex).md","content":"ok-\#(fileIndex)"}"#
         )
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant-\(count)", role: .assistant, content: "write", toolCalls: [call])
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant-\(count)", role: .assistant, content: "write", toolCalls: [call])
         )
     }
 }
@@ -80,9 +80,9 @@ func persistedAllowAlwaysRuleAutoApprovesMutatingTool() async throws {
     )
 
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-rule-allow-always"),
+        threadID: SwarmThreadID("thread-rule-allow-always"),
         modelName: "test-model",
-        model: AnyHiveModelClient(RepeatingWriteModel()),
+        model: SwarmAnyModelClient(RepeatingWriteModel()),
         filesystem: fs,
         configure: { configuration in
             configuration.capabilities = [.filesystem]
@@ -117,9 +117,9 @@ func persistedRejectAlwaysRuleDeniesMutatingTool() async throws {
     )
 
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-rule-reject-always"),
+        threadID: SwarmThreadID("thread-rule-reject-always"),
         modelName: "test-model",
-        model: AnyHiveModelClient(RepeatingWriteModel()),
+        model: SwarmAnyModelClient(RepeatingWriteModel()),
         filesystem: fs,
         configure: { configuration in
             configuration.capabilities = [.filesystem]
@@ -156,9 +156,9 @@ func persistedAllowOnceRuleIsConsumedAfterOneRun() async throws {
     )
 
     let runtime = try ColonyAgentFactory().makeRuntime(
-        threadID: HiveThreadID("thread-rule-allow-once"),
+        threadID: SwarmThreadID("thread-rule-allow-once"),
         modelName: "test-model",
-        model: AnyHiveModelClient(RepeatingWriteModel()),
+        model: SwarmAnyModelClient(RepeatingWriteModel()),
         filesystem: fs,
         configure: { configuration in
             configuration.capabilities = [.filesystem]

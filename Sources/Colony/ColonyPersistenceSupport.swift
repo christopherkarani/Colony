@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 /// Policy for redacting sensitive information from logs and artifacts.
 ///
@@ -171,7 +170,7 @@ enum ColonyPersistenceIO {
         return output.isEmpty ? "value" : output
     }
 
-    static func stableThreadDirectoryName(threadID: HiveThreadID) -> String {
+    static func stableThreadDirectoryName(threadID: ColonyThreadID) -> String {
         let base64 = Data(threadID.rawValue.utf8)
             .base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")

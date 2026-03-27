@@ -10,7 +10,7 @@ struct ColonyBuilderTests {
         let original = ColonyBuilder()
         let modified = original
             .model(name: "modified-model")
-            .model(AnyHiveModelClient(FixedResponseModel(content: "done")))
+            .model(SwarmAnyModelClient(FixedResponseModel(content: "done")))
 
         #expect(throws: ColonyBuilderError.self) {
             try original.build()
@@ -34,7 +34,7 @@ struct ColonyBuilderTests {
     func builderPreservesConfiguration() async throws {
         let runtime = try ColonyBuilder()
             .model(name: "test-model")
-            .model(AnyHiveModelClient(ToolCallingModel()))
+            .model(SwarmAnyModelClient(ToolCallingModel()))
             .configure { configuration in
                 configuration.toolApprovalPolicy = .never
                 configuration.mandatoryApprovalRiskLevels = []
@@ -80,7 +80,7 @@ struct ColonyBuilderTests {
         let runtime = try ColonyBuilder()
             .profile(.cloud)
             .model(name: "test-model")
-            .model(AnyHiveModelClient(ToolCallingModel()))
+            .model(SwarmAnyModelClient(ToolCallingModel()))
             .configure { configuration in
                 configuration.additionalSystemPrompt = "cloud-profile"
                 configuration.mandatoryApprovalRiskLevels = []
@@ -111,7 +111,7 @@ struct ColonyBuilderTests {
     }
 }
 
-private final class FixedResponseModel: HiveModelClient, ColonyModelClient, @unchecked Sendable {
+private final class FixedResponseModel: SwarmModelClient, ColonyModelClient, @unchecked Sendable {
     private let content: String
 
     init(content: String) {
@@ -145,16 +145,16 @@ private final class FixedResponseModel: HiveModelClient, ColonyModelClient, @unc
         }
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         return try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         return AsyncThrowingStream { continuation in
             continuation.yield(
                 .final(
-                    HiveChatResponse(
-                        message: HiveChatMessage(
+                    SwarmChatResponse(
+                        message: SwarmChatMessage(
                             id: UUID().uuidString,
                             role: .assistant,
                             content: self.content
@@ -167,28 +167,28 @@ private final class FixedResponseModel: HiveModelClient, ColonyModelClient, @unc
     }
 }
 
-private final class ToolCallingModel: HiveModelClient, @unchecked Sendable {
+private final class ToolCallingModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            let response: HiveChatResponse = {
+            let response: SwarmChatResponse = {
                 self.lock.lock()
                 defer { self.lock.unlock() }
                 self.callCount += 1
                 if self.callCount == 1 {
-                    let call = HiveToolCall(
+                    let call = SwarmToolCall(
                         id: "call-1",
                         name: "write_file",
                         argumentsJSON: #"{"path":"/note.md","content":"hello"}"#
                     )
-                    return HiveChatResponse(
-                        message: HiveChatMessage(
+                    return SwarmChatResponse(
+                        message: SwarmChatMessage(
                             id: "assistant-1",
                             role: .assistant,
                             content: "writing",
@@ -197,8 +197,8 @@ private final class ToolCallingModel: HiveModelClient, @unchecked Sendable {
                     )
                 }
 
-                return HiveChatResponse(
-                    message: HiveChatMessage(id: "assistant-2", role: .assistant, content: "done")
+                return SwarmChatResponse(
+                    message: SwarmChatMessage(id: "assistant-2", role: .assistant, content: "done")
                 )
             }()
             continuation.yield(.final(response))

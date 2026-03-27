@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 /// Errors that can occur during on-device routing.
 public enum OnDeviceRoutingError: Error, Sendable, CustomStringConvertible {
@@ -52,8 +51,8 @@ public struct ColonyOnDeviceModelRouter: ColonyModelClient, Sendable {
         policy: Policy = Policy(),
         isOnDeviceAvailable: @escaping @Sendable () -> Bool = { true }
     ) {
-        self.onDevice = onDevice.map { AnyHiveModelClient(ColonyModelClientBridge(client: $0)) }
-        self.fallback = AnyHiveModelClient(ColonyModelClientBridge(client: fallback))
+        self.onDevice = onDevice.map { SwarmAnyModelClient(ColonyModelClientBridge(client: $0)) }
+        self.fallback = SwarmAnyModelClient(ColonyModelClientBridge(client: fallback))
         self.policy = policy
         self.isOnDeviceAvailable = isOnDeviceAvailable
     }
@@ -84,12 +83,12 @@ public struct ColonyOnDeviceModelRouter: ColonyModelClient, Sendable {
     ///   - hints: Inference hints for routing decisions.
     /// - Returns: Appropriate model client.
     public func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
-        let response = try await selectedClient(for: request).complete(request.hiveChatRequest)
+        let response = try await selectedClient(for: request).complete(request.swarmChatRequest)
         return ColonyInferenceResponse(response)
     }
 
     public func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
-        let stream = selectedClient(for: request).stream(request.hiveChatRequest)
+        let stream = selectedClient(for: request).stream(request.swarmChatRequest)
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -110,8 +109,8 @@ public struct ColonyOnDeviceModelRouter: ColonyModelClient, Sendable {
     }
 
     package init(
-        onDevice: AnyHiveModelClient?,
-        fallback: AnyHiveModelClient,
+        onDevice: SwarmAnyModelClient?,
+        fallback: SwarmAnyModelClient,
         policy: Policy = Policy(),
         isOnDeviceAvailable: @escaping @Sendable () -> Bool = { true }
     ) {
@@ -121,7 +120,7 @@ public struct ColonyOnDeviceModelRouter: ColonyModelClient, Sendable {
         self.isOnDeviceAvailable = isOnDeviceAvailable
     }
 
-    package func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+    package func route(_ request: SwarmChatRequest, hints: SwarmInferenceHints?) -> SwarmAnyModelClient {
         guard let hints else { return fallback }
 
         let wantsOnDevice: Bool = {
@@ -148,7 +147,7 @@ public struct ColonyOnDeviceModelRouter: ColonyModelClient, Sendable {
         }
 
         if hints.privacyRequired, policy.privacyBehavior == .requireOnDevice {
-            return AnyHiveModelClient(ColonyFailingModelClient(error: .onDeviceRequiredButUnavailable))
+            return SwarmAnyModelClient(ColonyFailingModelClient(error: .onDeviceRequiredButUnavailable))
         }
 
         return fallback
@@ -156,31 +155,31 @@ public struct ColonyOnDeviceModelRouter: ColonyModelClient, Sendable {
 
     // MARK: - Private
 
-    private func selectedClient(for request: ColonyInferenceRequest) -> AnyHiveModelClient {
+    private func selectedClient(for request: ColonyInferenceRequest) -> SwarmAnyModelClient {
         if let onDevice, isOnDeviceAvailable(), request.complexity != .complex {
             return onDevice
         }
         if policy.privacyBehavior == .requireOnDevice, onDevice == nil || isOnDeviceAvailable() == false {
-            return AnyHiveModelClient(ColonyFailingModelClient(error: .onDeviceRequiredButUnavailable))
+            return SwarmAnyModelClient(ColonyFailingModelClient(error: .onDeviceRequiredButUnavailable))
         }
         return fallback
     }
 
-    private let onDevice: AnyHiveModelClient?
-    private let fallback: AnyHiveModelClient
+    private let onDevice: SwarmAnyModelClient?
+    private let fallback: SwarmAnyModelClient
     private let policy: Policy
     private let isOnDeviceAvailable: @Sendable () -> Bool
 }
 
 /// A model client that always fails with a specific error.
-private struct ColonyFailingModelClient: HiveModelClient, Sendable {
+private struct ColonyFailingModelClient: SwarmModelClient, Sendable {
     let error: OnDeviceRoutingError
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         throw error
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish(throwing: error)
         }

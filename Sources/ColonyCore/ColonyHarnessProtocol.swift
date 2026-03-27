@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 /// Stable identifier for a harness session.
 public struct ColonyHarnessSessionID: Hashable, Codable, Sendable {

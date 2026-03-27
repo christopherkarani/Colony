@@ -3,38 +3,38 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return requests
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         requests.append(request)
         lock.unlock()
 
-        let response = HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")
+        let response = SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")
         )
         return AsyncThrowingStream { continuation in
             continuation.yield(.final(response))
@@ -43,13 +43,13 @@ private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable 
     }
 }
 
-private struct FixedToolRegistry: HiveToolRegistry, Sendable {
-    var tools: [HiveToolDefinition]
+private struct FixedToolRegistry: SwarmToolRegistry, Sendable {
+    var tools: [SwarmToolDefinition]
 
-    func listTools() -> [HiveToolDefinition] { tools }
+    func listTools() -> [SwarmToolDefinition] { tools }
 
-    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        HiveToolResult(toolCallID: call.id, content: "ok")
+    func invoke(_ call: SwarmToolCall) async throws -> SwarmToolResult {
+        SwarmToolResult(toolCallID: call.id, content: "ok")
     }
 }
 
@@ -68,21 +68,21 @@ func contextBudget_enforcesStrictRequestLevelCap() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-context-budget-hard-cap")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-context-budget-hard-cap")
 
     for turn in 0..<6 {
         let input = "turn-\(turn): " + String(repeating: "a", count: 64)
         let handle = await runtime.run(
             threadID: threadID,
             input: input,
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         )
         _ = try await handle.outcome.value
     }
@@ -113,18 +113,18 @@ func contextBudget_trimsOversizedSystemPromptToFitHardCap() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-context-budget-system-overflow"),
+        threadID: SwarmThreadID("thread-context-budget-system-overflow"),
         input: "hello",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -152,10 +152,10 @@ func contextBudget_includesToolDefinitionPayloadInHardCap() async throws {
     let recordingModel = RecordingRequestModel()
     let hardCap = 200
 
-    let externalTools = AnyHiveToolRegistry(
+    let externalTools = SwarmAnyToolRegistry(
         FixedToolRegistry(
             tools: [
-                HiveToolDefinition(
+                SwarmToolDefinition(
                     name: "big_tool",
                     description: String(repeating: "d", count: 256),
                     parametersJSONSchema: String(repeating: "s", count: 256)
@@ -173,19 +173,19 @@ func contextBudget_includesToolDefinitionPayloadInHardCap() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel),
+        model: SwarmAnyModelClient(recordingModel),
         tools: externalTools
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-context-budget-tools"),
+        threadID: SwarmThreadID("thread-context-budget-tools"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -214,14 +214,14 @@ func contextBudget_trimsOldestFirstAndPreservesNewestMessages() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-context-budget-recency")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-context-budget-recency")
 
     for turn in 0..<10 {
         let marker = String(format: "turn-%02d", turn)
@@ -229,7 +229,7 @@ func contextBudget_trimsOldestFirstAndPreservesNewestMessages() async throws {
         let handle = await runtime.run(
             threadID: threadID,
             input: input,
-            options: HiveRunOptions(checkpointPolicy: .disabled)
+            options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
         )
         _ = try await handle.outcome.value
     }
@@ -257,9 +257,9 @@ func contextBudget_onDeviceProfileDefaultsToHard4kRequestBudget() async throws {
 
     let runtime = try factory.makeRuntime(
         profile: .onDevice4k,
-        threadID: HiveThreadID("thread-context-budget-on-device-4k"),
+        threadID: SwarmThreadID("thread-context-budget-on-device-4k"),
         modelName: "test-model",
-        model: AnyHiveModelClient(recordingModel),
+        model: SwarmAnyModelClient(recordingModel),
         configure: { configuration in
             configuration.toolApprovalPolicy = .never
             configuration.additionalSystemPrompt = String(repeating: "m", count: 8_000)
@@ -287,7 +287,7 @@ func contextBudget_cloudProfileDefaultsToUnboundedRequestBudget() {
     #expect(cloudConfiguration.requestHardTokenLimit == nil)
 }
 
-private func approximateToolTokens(_ tools: [HiveToolDefinition]) -> Int {
+private func approximateToolTokens(_ tools: [SwarmToolDefinition]) -> Int {
     guard tools.isEmpty == false else { return 0 }
     let chars = tools.reduce(into: 0) { partial, tool in
         partial += tool.name.count

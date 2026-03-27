@@ -1,6 +1,5 @@
 import Dispatch
 import Foundation
-@_spi(ColonyInternal) import Swarm
 import ColonyCore
 
 // MARK: - Builder Error
@@ -83,7 +82,7 @@ public struct ColonyLaneConfigurationPreset: Sendable {
 /// System clock implementation using DispatchTime.
 ///
 /// This clock provides monotonic time for runtime coordination.
-package struct ColonySystemClock: HiveClock, Sendable {
+package struct ColonySystemClock: SwarmClock, Sendable {
     public init() {}
 
     public func nowNanoseconds() -> UInt64 {
@@ -99,35 +98,11 @@ package struct ColonySystemClock: HiveClock, Sendable {
 ///
 /// Use this logger when logging is not needed or when running in production
 /// with logging handled by external systems.
-package struct ColonyNoopLogger: HiveLogger, Sendable {
+package struct ColonyNoopLogger: SwarmLogger, Sendable {
     public init() {}
     public func debug(_ message: String, metadata: [String: String]) {}
     public func info(_ message: String, metadata: [String: String]) {}
     public func error(_ message: String, metadata: [String: String]) {}
-}
-
-/// An in-memory checkpoint store for development and testing.
-///
-/// This store keeps all checkpoints in memory and does not persist
-/// them across application restarts. Use `ColonyDurableCheckpointStore`
-/// for production persistence.
-package actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
-
-    package init() {}
-
-    package func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
-        checkpoints.append(checkpoint)
-    }
-
-    package func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
-        checkpoints
-            .filter { $0.threadID == threadID }
-            .max { lhs, rhs in
-                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
-                return lhs.stepIndex < rhs.stepIndex
-            }
-    }
 }
 
 // MARK: - ColonyBuilder
@@ -151,11 +126,11 @@ package actor ColonyInMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointS
 public struct ColonyBuilder: Sendable {
     private var configuration: ColonyConfiguration
     private var profile: ColonyProfile
-    private var threadID: HiveThreadID
-    private var model: AnyHiveModelClient?
-    private var modelRouter: (any HiveModelRouter)?
-    private var inferenceHints: HiveInferenceHints?
-    private var tools: AnyHiveToolRegistry?
+    private var threadID: ColonyThreadID
+    private var model: SwarmAnyModelClient?
+    private var modelRouter: (any SwarmModelRouter)?
+    private var inferenceHints: SwarmInferenceHints?
+    private var tools: SwarmAnyToolRegistry?
     private var filesystem: (any ColonyFileSystemBackend)?
     private var shell: (any ColonyShellBackend)?
     private var git: (any ColonyGitService)?
@@ -167,16 +142,16 @@ public struct ColonyBuilder: Sendable {
     private var memory: (any ColonyMemoryBackend)?
     private var plugins: (any ColonyPluginToolRegistry)?
     private var subagents: (any ColonySubagentRegistry)?
-    private var checkpointStore: AnyHiveCheckpointStore<ColonySchema>?
+    private var checkpointStore: (any ColonyCheckpointStore)?
     private var durableCheckpointDirectoryURL: URL?
-    private var clock: any HiveClock
-    private var logger: any HiveLogger
-    private var configureRunOptions: @Sendable (inout HiveRunOptions) -> Void
+    private var clock: any SwarmClock
+    private var logger: any SwarmLogger
+    private var configureRunOptions: @Sendable (inout ColonyRun.Options) -> Void
 
     public init() {
         self.configuration = ColonyConfiguration(modelName: "")
         self.profile = .device
-        self.threadID = HiveThreadID("colony:" + UUID().uuidString)
+        self.threadID = .generate()
         self.model = nil
         self.modelRouter = nil
         self.inferenceHints = nil
@@ -202,11 +177,11 @@ public struct ColonyBuilder: Sendable {
     private func copy(
         configuration: ColonyConfiguration? = nil,
         profile: ColonyProfile? = nil,
-        threadID: HiveThreadID? = nil,
-        model: AnyHiveModelClient?? = nil,
-        modelRouter: ((any HiveModelRouter)?)? = nil,
-        inferenceHints: HiveInferenceHints?? = nil,
-        tools: AnyHiveToolRegistry?? = nil,
+        threadID: ColonyThreadID? = nil,
+        model: SwarmAnyModelClient?? = nil,
+        modelRouter: ((any SwarmModelRouter)?)? = nil,
+        inferenceHints: SwarmInferenceHints?? = nil,
+        tools: SwarmAnyToolRegistry?? = nil,
         filesystem: ((any ColonyFileSystemBackend)?)? = nil,
         shell: ((any ColonyShellBackend)?)? = nil,
         git: ((any ColonyGitBackend)?)? = nil,
@@ -218,11 +193,11 @@ public struct ColonyBuilder: Sendable {
         memory: ((any ColonyMemoryBackend)?)? = nil,
         plugins: ((any ColonyPluginToolRegistry)?)? = nil,
         subagents: ((any ColonySubagentRegistry)?)? = nil,
-        checkpointStore: AnyHiveCheckpointStore<ColonySchema>?? = nil,
+        checkpointStore: ((any ColonyCheckpointStore)?)? = nil,
         durableCheckpointDirectoryURL: URL?? = nil,
-        clock: (any HiveClock)? = nil,
-        logger: (any HiveLogger)? = nil,
-        configureRunOptions: (@Sendable (inout HiveRunOptions) -> Void)? = nil
+        clock: (any SwarmClock)? = nil,
+        logger: (any SwarmLogger)? = nil,
+        configureRunOptions: (@Sendable (inout ColonyRun.Options) -> Void)? = nil
     ) -> ColonyBuilder {
         ColonyBuilder(
             configuration: configuration ?? self.configuration,
@@ -254,11 +229,11 @@ public struct ColonyBuilder: Sendable {
     private init(
         configuration: ColonyConfiguration,
         profile: ColonyProfile,
-        threadID: HiveThreadID,
-        model: AnyHiveModelClient?,
-        modelRouter: (any HiveModelRouter)?,
-        inferenceHints: HiveInferenceHints?,
-        tools: AnyHiveToolRegistry?,
+        threadID: ColonyThreadID,
+        model: SwarmAnyModelClient?,
+        modelRouter: (any SwarmModelRouter)?,
+        inferenceHints: SwarmInferenceHints?,
+        tools: SwarmAnyToolRegistry?,
         filesystem: (any ColonyFileSystemBackend)?,
         shell: (any ColonyShellBackend)?,
         git: (any ColonyGitBackend)?,
@@ -270,11 +245,11 @@ public struct ColonyBuilder: Sendable {
         memory: (any ColonyMemoryBackend)?,
         plugins: (any ColonyPluginToolRegistry)?,
         subagents: (any ColonySubagentRegistry)?,
-        checkpointStore: AnyHiveCheckpointStore<ColonySchema>?,
+        checkpointStore: (any ColonyCheckpointStore)?,
         durableCheckpointDirectoryURL: URL?,
-        clock: any HiveClock,
-        logger: any HiveLogger,
-        configureRunOptions: @Sendable @escaping (inout HiveRunOptions) -> Void
+        clock: any SwarmClock,
+        logger: any SwarmLogger,
+        configureRunOptions: @Sendable @escaping (inout ColonyRun.Options) -> Void
     ) {
         self.configuration = configuration
         self.profile = profile
@@ -332,18 +307,18 @@ public struct ColonyBuilder: Sendable {
     }
 
     public func threadID(_ threadID: ColonyThreadID) -> ColonyBuilder {
-        copy(threadID: threadID.hiveThreadID)
-    }
-
-    package func threadID(_ threadID: HiveThreadID) -> ColonyBuilder {
         copy(threadID: threadID)
     }
 
-    public func model(_ model: any ColonyModelClient) -> ColonyBuilder {
-        copy(model: AnyHiveModelClient(ColonyModelClientBridge(client: model)))
+    package func threadID(_ threadID: SwarmThreadID) -> ColonyBuilder {
+        copy(threadID: ColonyThreadID(threadID.rawValue))
     }
 
-    package func model(_ model: AnyHiveModelClient) -> ColonyBuilder {
+    public func model(_ model: any ColonyModelClient) -> ColonyBuilder {
+        copy(model: SwarmAnyModelClient(ColonyModelClientBridge(client: model)))
+    }
+
+    package func model(_ model: SwarmAnyModelClient) -> ColonyBuilder {
         copy(model: model)
     }
 
@@ -351,7 +326,7 @@ public struct ColonyBuilder: Sendable {
         model(modelRouter)
     }
 
-    package func modelRouter(_ modelRouter: any HiveModelRouter) -> ColonyBuilder {
+    package func modelRouter(_ modelRouter: any SwarmModelRouter) -> ColonyBuilder {
         copy(modelRouter: modelRouter)
     }
 
@@ -359,11 +334,11 @@ public struct ColonyBuilder: Sendable {
         copy(modelRouter: Self.modelRouter(policy: policy))
     }
 
-    package func inferenceHints(_ inferenceHints: HiveInferenceHints?) -> ColonyBuilder {
+    package func inferenceHints(_ inferenceHints: SwarmInferenceHints?) -> ColonyBuilder {
         copy(inferenceHints: inferenceHints)
     }
 
-    package func tools(_ tools: AnyHiveToolRegistry?) -> ColonyBuilder {
+    package func tools(_ tools: SwarmAnyToolRegistry?) -> ColonyBuilder {
         copy(tools: tools)
     }
 
@@ -411,7 +386,7 @@ public struct ColonyBuilder: Sendable {
         copy(subagents: subagents)
     }
 
-    package func checkpointStore(_ checkpointStore: AnyHiveCheckpointStore<ColonySchema>?) -> ColonyBuilder {
+    package func checkpointStore(_ checkpointStore: (any ColonyCheckpointStore)?) -> ColonyBuilder {
         copy(checkpointStore: checkpointStore)
     }
 
@@ -419,11 +394,11 @@ public struct ColonyBuilder: Sendable {
         copy(durableCheckpointDirectoryURL: url)
     }
 
-    package func clock(_ clock: any HiveClock) -> ColonyBuilder {
+    package func clock(_ clock: any SwarmClock) -> ColonyBuilder {
         copy(clock: clock)
     }
 
-    package func logger(_ logger: any HiveLogger) -> ColonyBuilder {
+    package func logger(_ logger: any SwarmLogger) -> ColonyBuilder {
         copy(logger: logger)
     }
 
@@ -433,7 +408,7 @@ public struct ColonyBuilder: Sendable {
         return copy(configuration: updated)
     }
 
-    package func configureRunOptions(_ configure: @Sendable @escaping (inout HiveRunOptions) -> Void) -> ColonyBuilder {
+    package func configureRunOptions(_ configure: @Sendable @escaping (inout ColonyRun.Options) -> Void) -> ColonyBuilder {
         copy(configureRunOptions: { options in
             self.configureRunOptions(&options)
             configure(&options)
@@ -499,14 +474,14 @@ public struct ColonyBuilder: Sendable {
     /// - Note: This method is deprecated in favor of the fluent builder pattern.
     package func makeRuntime(
         profile: ColonyProfile = .device,
-        threadID: HiveThreadID = HiveThreadID("colony:" + UUID().uuidString),
+        threadID: SwarmThreadID,
         modelName: String,
         lane: ColonyLane? = nil,
         intent: String? = nil,
-        model: AnyHiveModelClient? = nil,
-        modelRouter: (any HiveModelRouter)? = nil,
-        inferenceHints: HiveInferenceHints? = nil,
-        tools: AnyHiveToolRegistry? = nil,
+        model: SwarmAnyModelClient? = nil,
+        modelRouter: (any SwarmModelRouter)? = nil,
+        inferenceHints: SwarmInferenceHints? = nil,
+        tools: SwarmAnyToolRegistry? = nil,
         filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
         shell: (any ColonyShellBackend)? = nil,
         git: (any ColonyGitBackend)? = nil,
@@ -518,12 +493,70 @@ public struct ColonyBuilder: Sendable {
         memory: (any ColonyMemoryBackend)? = nil,
         plugins: (any ColonyPluginToolRegistry)? = nil,
         subagents: (any ColonySubagentRegistry)? = nil,
-        checkpointStore: AnyHiveCheckpointStore<ColonySchema>? = nil,
+        checkpointStore: (any ColonyCheckpointStore)? = nil,
         durableCheckpointDirectoryURL: URL? = nil,
-        clock: any HiveClock = ColonySystemClock(),
-        logger: any HiveLogger = ColonyNoopLogger(),
+        clock: any SwarmClock = ColonySystemClock(),
+        logger: any SwarmLogger = ColonyNoopLogger(),
         configure: @Sendable (inout ColonyConfiguration) -> Void = { _ in },
-        configureRunOptions: @Sendable (inout HiveRunOptions) -> Void = { _ in }
+        configureRunOptions: @Sendable (inout ColonyRun.Options) -> Void = { _ in }
+    ) throws -> ColonyRuntime {
+        try makeRuntime(
+            profile: profile,
+            threadID: ColonyThreadID(threadID.rawValue),
+            modelName: modelName,
+            lane: lane,
+            intent: intent,
+            model: model,
+            modelRouter: modelRouter,
+            inferenceHints: inferenceHints,
+            tools: tools,
+            filesystem: filesystem,
+            shell: shell,
+            git: git,
+            lsp: lsp,
+            applyPatch: applyPatch,
+            webSearch: webSearch,
+            codeSearch: codeSearch,
+            mcp: mcp,
+            memory: memory,
+            plugins: plugins,
+            subagents: subagents,
+            checkpointStore: checkpointStore,
+            durableCheckpointDirectoryURL: durableCheckpointDirectoryURL,
+            clock: clock,
+            logger: logger,
+            configure: configure,
+            configureRunOptions: configureRunOptions
+        )
+    }
+
+    package func makeRuntime(
+        profile: ColonyProfile = .device,
+        threadID: ColonyThreadID = .generate(),
+        modelName: String,
+        lane: ColonyLane? = nil,
+        intent: String? = nil,
+        model: SwarmAnyModelClient? = nil,
+        modelRouter: (any SwarmModelRouter)? = nil,
+        inferenceHints: SwarmInferenceHints? = nil,
+        tools: SwarmAnyToolRegistry? = nil,
+        filesystem: (any ColonyFileSystemBackend)? = ColonyInMemoryFileSystemBackend(),
+        shell: (any ColonyShellBackend)? = nil,
+        git: (any ColonyGitBackend)? = nil,
+        lsp: (any ColonyLSPBackend)? = nil,
+        applyPatch: (any ColonyApplyPatchBackend)? = nil,
+        webSearch: (any ColonyWebSearchBackend)? = nil,
+        codeSearch: (any ColonyCodeSearchBackend)? = nil,
+        mcp: (any ColonyMCPBackend)? = nil,
+        memory: (any ColonyMemoryBackend)? = nil,
+        plugins: (any ColonyPluginToolRegistry)? = nil,
+        subagents: (any ColonySubagentRegistry)? = nil,
+        checkpointStore: (any ColonyCheckpointStore)? = nil,
+        durableCheckpointDirectoryURL: URL? = nil,
+        clock: any SwarmClock = ColonySystemClock(),
+        logger: any SwarmLogger = ColonyNoopLogger(),
+        configure: @Sendable (inout ColonyConfiguration) -> Void = { _ in },
+        configureRunOptions: @Sendable (inout ColonyRun.Options) -> Void = { _ in }
     ) throws -> ColonyRuntime {
         var configuration = Self.configuration(profile: profile, modelName: modelName)
 
@@ -583,38 +616,37 @@ public struct ColonyBuilder: Sendable {
             subagents: resolvedSubagents
         )
 
-        let defaultCheckpointStore: AnyHiveCheckpointStore<ColonySchema>
+        let defaultCheckpointStore: any ColonyCheckpointStore
         if let checkpointStore {
             defaultCheckpointStore = checkpointStore
         } else if let durableCheckpointDirectoryURL {
-            defaultCheckpointStore = AnyHiveCheckpointStore(
-                try ColonyDurableCheckpointStore<ColonySchema>(baseURL: durableCheckpointDirectoryURL)
-            )
+            defaultCheckpointStore = try ColonyDurableCheckpointStore(baseURL: durableCheckpointDirectoryURL)
         } else {
-            defaultCheckpointStore = AnyHiveCheckpointStore(ColonyInMemoryCheckpointStore<ColonySchema>())
+            defaultCheckpointStore = ColonyInMemoryCheckpointStore()
         }
 
-        let environment = HiveEnvironment<ColonySchema>(
-            context: context,
+        let environment = SwarmExecutionEnvironment(
             clock: clock,
             logger: logger,
             model: model,
             modelRouter: modelRouter,
             inferenceHints: inferenceHints,
-            tools: tools,
+            tools: tools
+        )
+        let runtime = ColonyRuntimeEngine(
+            threadID: threadID,
+            context: context,
+            environment: environment,
             checkpointStore: defaultCheckpointStore
         )
-
-        let graph = try ColonyAgent.compile()
-        let runtime = try HiveRuntime(graph: graph, environment: environment)
 
         var options = Self.runOptions(profile: profile)
         configureRunOptions(&options)
 
         let runControl = ColonyRunControl(
-            threadID: ColonyThreadID(hiveThreadID: threadID),
-            runtime: runtime,
-            options: ColonyRun.Options(options)
+            threadID: threadID,
+            engine: runtime,
+            options: options
         )
         return ColonyRuntime(runControl: runControl)
     }
@@ -720,7 +752,7 @@ public struct ColonyBuilder: Sendable {
         return configuration
     }
 
-    private static func modelRouter(policy: ColonyRoutingPolicy) -> any HiveModelRouter {
+    private static func modelRouter(policy: ColonyRoutingPolicy) -> any SwarmModelRouter {
         BuilderRoutingPolicyAdapter(policy: policy)
     }
 
@@ -837,16 +869,16 @@ public struct ColonyBuilder: Sendable {
         }
     }
 
-    package static func runOptions(profile: ColonyProfile) -> HiveRunOptions {
+    package static func runOptions(profile: ColonyProfile) -> ColonyRun.Options {
         switch profile {
         case .device:
-            return HiveRunOptions(
+            return ColonyRun.Options(
                 maxSteps: 200,
                 maxConcurrentTasks: 4,
                 checkpointPolicy: .onInterrupt
             )
         case .cloud:
-            return HiveRunOptions(
+            return ColonyRun.Options(
                 maxSteps: 1_000,
                 maxConcurrentTasks: 8,
                 checkpointPolicy: .onInterrupt
@@ -855,26 +887,26 @@ public struct ColonyBuilder: Sendable {
     }
 }
 
-private struct BuilderRoutingPolicyAdapter: HiveModelRouter, Sendable {
+private struct BuilderRoutingPolicyAdapter: SwarmModelRouter, Sendable {
     private let policy: ColonyRoutingPolicy
 
     init(policy: ColonyRoutingPolicy) {
         self.policy = policy
     }
 
-    func route(_ request: HiveChatRequest, hints: HiveInferenceHints?) -> AnyHiveModelClient {
+    func route(_ request: SwarmChatRequest, hints: SwarmInferenceHints?) -> SwarmAnyModelClient {
         switch policy.strategy {
         case .onDevice(let onDevice, let fallback, let privacy):
             let router = ColonyOnDeviceModelRouter(
-                onDevice: onDevice.map { AnyHiveModelClient(ColonyModelClientBridge(client: $0)) },
-                fallback: AnyHiveModelClient(ColonyModelClientBridge(client: fallback)),
+                onDevice: onDevice.map { SwarmAnyModelClient(ColonyModelClientBridge(client: $0)) },
+                fallback: SwarmAnyModelClient(ColonyModelClientBridge(client: fallback)),
                 policy: .init(
                     privacyBehavior: privacy == .requireOnDevice ? .requireOnDevice : .preferOnDevice
                 )
             )
             return router.route(request, hints: hints)
         default:
-            return AnyHiveModelClient(ColonyModelClientBridge(client: ColonyModelRouter(strategy: Self.strategy(from: policy))))
+            return SwarmAnyModelClient(ColonyModelClientBridge(client: ColonyModelRouter(strategy: Self.strategy(from: policy))))
         }
     }
 

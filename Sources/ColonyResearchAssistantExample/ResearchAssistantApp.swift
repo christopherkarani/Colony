@@ -131,7 +131,7 @@ struct ResearchAssistantApp: Sendable {
         case .fullStore(let store):
             return (try? store.get(ColonySchema.Channels.finalAnswer)) ?? "(no final answer)"
         case .channels(let values):
-            let finalAnswer = values.first(where: { $0.channelID == ColonyChannelID(hiveChannelID: ColonySchema.Channels.finalAnswer.id) })?.value as? String
+            let finalAnswer = values.first(where: { $0.channelID == ColonySchema.Channels.finalAnswer.id })?.value as? String
             return finalAnswer ?? "(no final answer)"
         }
     }

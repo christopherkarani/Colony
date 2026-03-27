@@ -22,7 +22,7 @@ let package = Package(
         // Local path usage is opt-in for development only and must not be relied on for release manifests.
         useLocalSwarmPath
             ? .package(path: "../Swarm")
-            : .package(url: "https://github.com/christopherkarani/Swarm.git", exact: "0.4.7"),
+            : .package(url: "https://github.com/christopherkarani/Swarm.git", exact: "0.5.0"),
     ],
     targets: [
         .target(
@@ -54,21 +54,29 @@ let package = Package(
         ),
         .testTarget(
             name: "ColonyTests",
-            dependencies: ["Colony"],
+            dependencies: [
+                "Colony",
+            ],
             exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "ColonyExecutionHardeningTests",
-            dependencies: ["Colony"]
+            dependencies: [
+                "Colony",
+            ]
         ),
         .testTarget(
             name: "ColonyResearchAssistantExampleTests",
-            dependencies: ["ColonyResearchAssistantExample"],
+            dependencies: [
+                "ColonyResearchAssistantExample",
+            ],
             exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "ColonyControlPlaneTests",
-            dependencies: ["ColonyControlPlane"]
+            dependencies: [
+                "ColonyControlPlane",
+            ]
         ),
     ]
 )

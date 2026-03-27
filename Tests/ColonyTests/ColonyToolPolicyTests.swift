@@ -197,9 +197,9 @@ func colonyToolPolicyAssess() async throws {
     )
 
     let toolCalls = [
-        HiveToolCall(id: "call-1", name: "ls", argumentsJSON: "{}"),
-        HiveToolCall(id: "call-2", name: "write_file", argumentsJSON: "{}"),
-        HiveToolCall(id: "call-3", name: "read_file", argumentsJSON: "{}")
+        SwarmToolCall(id: "call-1", name: "ls", argumentsJSON: "{}"),
+        SwarmToolCall(id: "call-2", name: "write_file", argumentsJSON: "{}"),
+        SwarmToolCall(id: "call-3", name: "read_file", argumentsJSON: "{}")
     ]
 
     let assessments = policy.assess(toolCalls: toolCalls)
@@ -236,8 +236,8 @@ func colonyToolPolicyAssessUnrestricted() async throws {
     )
 
     let toolCalls = [
-        HiveToolCall(id: "call-1", name: "ls", argumentsJSON: "{}"),
-        HiveToolCall(id: "call-2", name: "execute", argumentsJSON: "{}")
+        SwarmToolCall(id: "call-1", name: "ls", argumentsJSON: "{}"),
+        SwarmToolCall(id: "call-2", name: "execute", argumentsJSON: "{}")
     ]
 
     let assessments = policy.assess(toolCalls: toolCalls)
@@ -255,8 +255,8 @@ func colonyToolPolicyAssessRequireApproval() async throws {
     )
 
     let toolCalls = [
-        HiveToolCall(id: "call-1", name: "ls", argumentsJSON: "{}"),
-        HiveToolCall(id: "call-2", name: "write_file", argumentsJSON: "{}")
+        SwarmToolCall(id: "call-1", name: "ls", argumentsJSON: "{}"),
+        SwarmToolCall(id: "call-2", name: "write_file", argumentsJSON: "{}")
     ]
 
     let assessments = policy.assess(toolCalls: toolCalls)

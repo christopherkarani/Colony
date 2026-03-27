@@ -1,5 +1,4 @@
 import Foundation
-@_spi(ColonyInternal) import Swarm
 
 public enum ColonyMiniMaxClientError: Error, Sendable, LocalizedError {
     case invalidResponse(body: String)
@@ -109,11 +108,11 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
     }
 
     public func generate(_ request: ColonyInferenceRequest) async throws -> ColonyInferenceResponse {
-        ColonyInferenceResponse(try await complete(request.hiveChatRequest))
+        ColonyInferenceResponse(try await complete(request.swarmChatRequest))
     }
 
     public func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
-        let stream = stream(request.hiveChatRequest)
+        let stream = stream(request.swarmChatRequest)
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -133,7 +132,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         }
     }
 
-    package func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    package func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         let sanitizedMessages = sanitizeMessages(request.messages)
         let payload = OpenAIChatCompletionRequest(
             model: request.model.isEmpty ? configuration.model : request.model,
@@ -172,7 +171,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         throw lastError ?? ColonyMiniMaxClientError.invalidResponse(body: "<missing error>")
     }
 
-    package func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    package func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -193,7 +192,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         }
     }
 
-    private func decodeResponse(data: Data, response: URLResponse) throws -> HiveChatResponse {
+    private func decodeResponse(data: Data, response: URLResponse) throws -> SwarmChatResponse {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ColonyMiniMaxClientError.invalidResponse(body: "<non-http response>")
         }
@@ -218,8 +217,8 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
             throw ColonyMiniMaxClientError.invalidResponse(body: body)
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(
+        return SwarmChatResponse(
+            message: SwarmChatMessage(
                 id: message.id ?? completion.id ?? UUID().uuidString,
                 role: .assistant,
                 content: message.content ?? "",
@@ -359,7 +358,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         return (body, response)
     }
 
-    private func convertMessage(_ message: HiveChatMessage) throws -> OpenAIChatMessage? {
+    private func convertMessage(_ message: SwarmChatMessage) throws -> OpenAIChatMessage? {
         guard message.op == nil else {
             return nil
         }
@@ -385,7 +384,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         }
     }
 
-    private func sanitizeMessages(_ messages: [HiveChatMessage]) -> [HiveChatMessage] {
+    private func sanitizeMessages(_ messages: [SwarmChatMessage]) -> [SwarmChatMessage] {
         guard messages.isEmpty == false else {
             return messages
         }
@@ -398,7 +397,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         )
 
         var announcedToolCallIDs: Set<String> = []
-        var sanitized: [HiveChatMessage] = []
+        var sanitized: [SwarmChatMessage] = []
         sanitized.reserveCapacity(messages.count)
 
         for message in messages {
@@ -417,7 +416,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
                 }
 
                 sanitized.append(
-                    HiveChatMessage(
+                    SwarmChatMessage(
                         id: message.id,
                         role: message.role,
                         content: message.content,
@@ -441,7 +440,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         return sanitized
     }
 
-    private func convertTool(_ tool: HiveToolDefinition) -> OpenAIChatTool {
+    private func convertTool(_ tool: SwarmToolDefinition) -> OpenAIChatTool {
         OpenAIChatTool(
             function: OpenAIChatTool.FunctionDescriptor(
                 name: tool.name,
@@ -451,7 +450,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         )
     }
 
-    private func convertOutgoingToolCall(_ toolCall: HiveToolCall) throws -> OpenAIChatToolCall {
+    private func convertOutgoingToolCall(_ toolCall: SwarmToolCall) throws -> OpenAIChatToolCall {
         let argumentsData = Data(toolCall.argumentsJSON.utf8)
         let arguments = try JSONDecoder().decode(JSONValue.self, from: argumentsData)
         return OpenAIChatToolCall(
@@ -460,8 +459,8 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
         )
     }
 
-    private func convertToolCall(_ toolCall: OpenAIChatToolCall) -> HiveToolCall {
-        HiveToolCall(
+    private func convertToolCall(_ toolCall: OpenAIChatToolCall) -> SwarmToolCall {
+        SwarmToolCall(
             id: toolCall.id,
             name: toolCall.function.name,
             argumentsJSON: toolCall.function.arguments

@@ -3,79 +3,79 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct GitLSPNoopClock: HiveClock {
+private struct GitLSPNoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct GitLSPNoopLogger: HiveLogger {
+private struct GitLSPNoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class GitLSPToolChainModel: HiveModelClient, @unchecked Sendable {
+private final class GitLSPToolChainModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callIndex: Int = 0
 
-    private static let toolCalls: [HiveToolCall] = [
-        HiveToolCall(
+    private static let toolCalls: [SwarmToolCall] = [
+        SwarmToolCall(
             id: "git-status-1",
             name: ColonyBuiltInToolDefinitions.gitStatus.name,
             argumentsJSON: #"{"repo_path":"/repo","include_untracked":false}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "git-diff-1",
             name: ColonyBuiltInToolDefinitions.gitDiff.name,
             argumentsJSON: #"{"repo_path":"/repo","base_ref":"origin/main","head_ref":"HEAD","pathspec":"Sources/App.swift","staged":true}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "git-commit-1",
             name: ColonyBuiltInToolDefinitions.gitCommit.name,
             argumentsJSON: #"{"repo_path":"/repo","message":"Ship backend wiring","include_all":false,"amend":true,"signoff":true}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "git-branch-1",
             name: ColonyBuiltInToolDefinitions.gitBranch.name,
             argumentsJSON: #"{"repo_path":"/repo","operation":"checkout","name":"feature/task-d","start_point":"origin/feature/task-d","force":true}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "git-push-1",
             name: ColonyBuiltInToolDefinitions.gitPush.name,
             argumentsJSON: #"{"repo_path":"/repo","remote":"upstream","branch":"feature/task-d","set_upstream":true,"force_with_lease":true}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "git-pr-1",
             name: ColonyBuiltInToolDefinitions.gitPreparePR.name,
             argumentsJSON: #"{"repo_path":"/repo","base_branch":"main","head_branch":"feature/task-d","title":"Task D: Git/LSP backends","body":"Implements typed backends and tool wiring.","draft":true}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "lsp-symbols-1",
             name: ColonyBuiltInToolDefinitions.lspSymbols.name,
             argumentsJSON: #"{"path":"/Sources/App.swift","query":"Colony"}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "lsp-diagnostics-1",
             name: ColonyBuiltInToolDefinitions.lspDiagnostics.name,
             argumentsJSON: #"{"path":"/Sources/App.swift"}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "lsp-references-1",
             name: ColonyBuiltInToolDefinitions.lspReferences.name,
             argumentsJSON: #"{"path":"/Sources/App.swift","line":14,"character":7,"include_declaration":false}"#
         ),
-        HiveToolCall(
+        SwarmToolCall(
             id: "lsp-edit-1",
             name: ColonyBuiltInToolDefinitions.lspApplyEdit.name,
             argumentsJSON: #"{"edits":[{"path":"/Sources/App.swift","start_line":1,"start_character":0,"end_line":1,"end_character":5,"new_text":"final"},{"path":"/Sources/App.swift","start_line":6,"start_character":4,"end_line":6,"end_character":10,"new_text":"runtime"}]}"#
         ),
     ]
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 continuation.yield(.final(self.respond()))
@@ -84,7 +84,7 @@ private final class GitLSPToolChainModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let index: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -94,14 +94,14 @@ private final class GitLSPToolChainModel: HiveModelClient, @unchecked Sendable {
         }()
 
         guard index < Self.toolCalls.count else {
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant-final", role: .assistant, content: "done")
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant-final", role: .assistant, content: "done")
             )
         }
 
         let call = Self.toolCalls[index]
-        return HiveChatResponse(
-            message: HiveChatMessage(
+        return SwarmChatResponse(
+            message: SwarmChatMessage(
                 id: "assistant-\(index)",
                 role: .assistant,
                 content: "run \(call.name)",
@@ -111,30 +111,30 @@ private final class GitLSPToolChainModel: HiveModelClient, @unchecked Sendable {
     }
 }
 
-private final class ToolListRecordingModel: HiveModelClient, @unchecked Sendable {
+private final class ToolListRecordingModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 self.lock.withLock {
                     self.requests.append(request)
                 }
 
-                continuation.yield(.final(HiveChatResponse(
-                    message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+                continuation.yield(.final(SwarmChatResponse(
+                    message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
                 )))
                 continuation.finish()
             }
         }
     }
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.withLock { requests }
     }
 }
@@ -292,18 +292,18 @@ func gitAndLspToolsDispatchToTypedBackends() async throws {
         lsp: lsp
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: GitLSPNoopClock(),
         logger: GitLSPNoopLogger(),
-        model: AnyHiveModelClient(GitLSPToolChainModel())
+        model: SwarmAnyModelClient(GitLSPToolChainModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-git-lsp-dispatch"),
+        threadID: SwarmThreadID("thread-git-lsp-dispatch"),
         input: "Run all git/lsp tools",
-        options: HiveRunOptions(maxSteps: 500, checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(maxSteps: 500, checkpointPolicy: .disabled)
     )
     let outcome = try await handle.outcome.value
 
@@ -391,18 +391,18 @@ func gitAndLspToolsAdvertisedWithBackendWiring() async throws {
         lsp: RecordingLSPBackend()
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: GitLSPNoopClock(),
         logger: GitLSPNoopLogger(),
-        model: AnyHiveModelClient(model)
+        model: SwarmAnyModelClient(model)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-git-lsp-advertised"),
+        threadID: SwarmThreadID("thread-git-lsp-advertised"),
         input: "hello",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -429,18 +429,18 @@ func gitAndLspToolsNotAdvertisedWithoutBackends() async throws {
         filesystem: nil
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: GitLSPNoopClock(),
         logger: GitLSPNoopLogger(),
-        model: AnyHiveModelClient(model)
+        model: SwarmAnyModelClient(model)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-git-lsp-not-advertised"),
+        threadID: SwarmThreadID("thread-git-lsp-not-advertised"),
         input: "hello",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 

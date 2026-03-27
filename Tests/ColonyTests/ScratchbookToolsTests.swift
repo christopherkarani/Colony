@@ -3,41 +3,41 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class ToolCallSequenceModel: HiveModelClient, @unchecked Sendable {
+private final class ToolCallSequenceModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callIndex: Int = 0
-    private let toolCalls: [HiveToolCall]
+    private let toolCalls: [SwarmToolCall]
     private let finalContent: String
 
-    init(toolCalls: [HiveToolCall], finalContent: String = "done") {
+    init(toolCalls: [SwarmToolCall], finalContent: String = "done") {
         self.toolCalls = toolCalls
         self.finalContent = finalContent
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
-        let response: HiveChatResponse = {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
+        let response: SwarmChatResponse = {
             lock.lock()
             defer { lock.unlock() }
             callIndex += 1
             if callIndex <= toolCalls.count {
                 let call = toolCalls[callIndex - 1]
-                return HiveChatResponse(
-                    message: HiveChatMessage(
+                return SwarmChatResponse(
+                    message: SwarmChatMessage(
                         id: "assistant",
                         role: .assistant,
                         content: "tool:\(call.name)",
@@ -45,8 +45,8 @@ private final class ToolCallSequenceModel: HiveModelClient, @unchecked Sendable 
                     )
                 )
             }
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: finalContent)
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: finalContent)
             )
         }()
 
@@ -57,27 +57,27 @@ private final class ToolCallSequenceModel: HiveModelClient, @unchecked Sendable 
     }
 }
 
-private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return requests
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         requests.append(request)
         lock.unlock()
 
-        let response = HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")
+        let response = SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")
         )
         return AsyncThrowingStream { continuation in
             continuation.yield(.final(response))
@@ -150,7 +150,7 @@ private actor RecordingFileSystemBackend: ColonyFileSystemBackend {
 
 private func scratchbookFilePath(
     prefix: ColonyVirtualPath,
-    threadID: HiveThreadID
+    threadID: SwarmThreadID
 ) throws -> ColonyVirtualPath {
     let policy = ColonyScratchbookPolicy(pathPrefix: prefix)
     return try ColonyScratchbookStore.path(threadID: threadID.rawValue, policy: policy)
@@ -194,18 +194,18 @@ func scratchbookTools_notAdvertisedWithoutCapability() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-scratchbook-gating-off"),
+        threadID: SwarmThreadID("thread-scratchbook-gating-off"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -243,18 +243,18 @@ func scratchbookTools_advertisedWhenCapabilityEnabled() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-scratchbook-gating-on"),
+        threadID: SwarmThreadID("thread-scratchbook-gating-on"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -291,23 +291,23 @@ func scratchbookTools_rejectExecutionWhenCapabilityDisabled() async throws {
         autoCompact: false
     )
 
-    let call = HiveToolCall(id: "scratch-1", name: "scratch_read", argumentsJSON: #"{}"#)
+    let call = SwarmToolCall(id: "scratch-1", name: "scratch_read", argumentsJSON: #"{}"#)
     let model = ToolCallSequenceModel(toolCalls: [call], finalContent: "ok")
 
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model)
+        model: SwarmAnyModelClient(model)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-scratchbook-exec-gate")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-scratchbook-exec-gate")
 
     let handle = await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
@@ -352,7 +352,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let baseFS = ColonyInMemoryFileSystemBackend()
 
     let prefix = try ColonyVirtualPath("/scratchbook")
-    let threadID = HiveThreadID("thread-scratchbook-crud")
+    let threadID = SwarmThreadID("thread-scratchbook-crud")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
     var configuration = ColonyConfiguration(
@@ -369,7 +369,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     )
 
     // 1) Add an item (with a malicious path parameter that must be ignored).
-    let add = HiveToolCall(
+    let add = SwarmToolCall(
         id: "scratch-add",
         name: "scratch_add",
         argumentsJSON: #"{"kind":"note","title":"Alpha","body":"hello","tags":["t1"],"path":"/evil.json"}"#
@@ -377,17 +377,17 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     let fs1 = RecordingFileSystemBackend(base: baseFS)
     let model1 = ToolCallSequenceModel(toolCalls: [add], finalContent: "ok")
     let context1 = ColonyContext(configuration: configuration, filesystem: fs1)
-    let env1 = HiveEnvironment<ColonySchema>(
+    let env1 = SwarmGraphEnvironment<ColonySchema>(
         context: context1,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model1)
+        model: SwarmAnyModelClient(model1)
     )
-    let runtime1 = try HiveRuntime(graph: graph, environment: env1)
+    let runtime1 = try SwarmGraphRuntime(graph: graph, environment: env1)
     _ = try await (await runtime1.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     let scratchbookText = try await baseFS.read(at: scratchbookPath)
@@ -396,21 +396,21 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     #expect(id != nil)
 
     // 2) Pin the item.
-    let pin = HiveToolCall(id: "scratch-pin", name: "scratch_pin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let pin = SwarmToolCall(id: "scratch-pin", name: "scratch_pin", argumentsJSON: #"{"id":"\#(id!)"}"#)
     let fs2 = RecordingFileSystemBackend(base: baseFS)
     let model2 = ToolCallSequenceModel(toolCalls: [pin], finalContent: "ok")
     let context2 = ColonyContext(configuration: configuration, filesystem: fs2)
-    let env2 = HiveEnvironment<ColonySchema>(
+    let env2 = SwarmGraphEnvironment<ColonySchema>(
         context: context2,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model2)
+        model: SwarmAnyModelClient(model2)
     )
-    let runtime2 = try HiveRuntime(graph: graph, environment: env2)
+    let runtime2 = try SwarmGraphRuntime(graph: graph, environment: env2)
     _ = try await (await runtime2.run(
         threadID: threadID,
         input: "pin",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     let pinnedText = try await baseFS.read(at: scratchbookPath)
@@ -419,25 +419,25 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
     #expect(pinnedIDs.contains(id!))
 
     // 3) Mutate: update → complete → unpin → read.
-    let update = HiveToolCall(id: "scratch-update", name: "scratch_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
-    let complete = HiveToolCall(id: "scratch-complete", name: "scratch_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let unpin = HiveToolCall(id: "scratch-unpin", name: "scratch_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let read = HiveToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
+    let update = SwarmToolCall(id: "scratch-update", name: "scratch_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
+    let complete = SwarmToolCall(id: "scratch-complete", name: "scratch_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let unpin = SwarmToolCall(id: "scratch-unpin", name: "scratch_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let read = SwarmToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
 
     let fs3 = RecordingFileSystemBackend(base: baseFS)
     let model3 = ToolCallSequenceModel(toolCalls: [update, complete, unpin, read], finalContent: "done")
     let context3 = ColonyContext(configuration: configuration, filesystem: fs3)
-    let env3 = HiveEnvironment<ColonySchema>(
+    let env3 = SwarmGraphEnvironment<ColonySchema>(
         context: context3,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model3)
+        model: SwarmAnyModelClient(model3)
     )
-    let runtime3 = try HiveRuntime(graph: graph, environment: env3)
+    let runtime3 = try SwarmGraphRuntime(graph: graph, environment: env3)
     let handle3 = await runtime3.run(
         threadID: threadID,
         input: "mutate",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     let outcome3 = try await handle3.outcome.value
     guard case let .finished(output3, _) = outcome3, case let .fullStore(store3) = output3 else {
@@ -458,7 +458,7 @@ func scratchbookTools_persistAndAreThreadScoped() async throws {
 
     // `scratch_read` uses the shared renderView logic; completed/archived items are omitted.
     let messages3 = try store3.get(ColonySchema.Channels.messages)
-    let scratchReadTool = messages3.last { $0.role == HiveChatRole.tool && $0.name == "scratch_read" }
+    let scratchReadTool = messages3.last { $0.role == SwarmChatRole.tool && $0.name == "scratch_read" }
     #expect(scratchReadTool != nil)
     #expect(scratchReadTool?.content == "(Scratchbook empty)")
     #expect(scratchReadTool?.content.contains("Alpha (updated)") == false)
@@ -487,7 +487,7 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
     let baseFS = ColonyInMemoryFileSystemBackend()
 
     let prefix = try ColonyVirtualPath("/scratchbook")
-    let threadID = HiveThreadID("thread-scratchbook-read-render")
+    let threadID = SwarmThreadID("thread-scratchbook-read-render")
     let policy = ColonyScratchbookPolicy(
         pathPrefix: prefix,
         viewTokenLimit: 200,
@@ -556,20 +556,20 @@ func scratchbookTools_readUsesSharedRenderView() async throws {
     )
     configuration.scratchbookPolicy = policy
 
-    let read = HiveToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
+    let read = SwarmToolCall(id: "scratch-read", name: "scratch_read", argumentsJSON: #"{}"#)
     let model = ToolCallSequenceModel(toolCalls: [read], finalContent: "done")
     let context = ColonyContext(configuration: configuration, filesystem: baseFS)
-    let env = HiveEnvironment<ColonySchema>(
+    let env = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model)
+        model: SwarmAnyModelClient(model)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: env)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: env)
     let handle = await runtime.run(
         threadID: threadID,
         input: "read scratchbook",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     let outcome = try await handle.outcome.value
     guard case let .finished(output, _) = outcome, case let .fullStore(store) = output else {
@@ -637,18 +637,18 @@ func workspaceTools_advertisedWhenCapabilityEnabled() async throws {
 
     let recordingModel = RecordingRequestModel()
     let context = ColonyContext(configuration: configuration, filesystem: fs)
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(recordingModel)
+        model: SwarmAnyModelClient(recordingModel)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-workspace-gating-on"),
+        threadID: SwarmThreadID("thread-workspace-gating-on"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -672,7 +672,7 @@ func workspaceTools_persistAndAreThreadScoped() async throws {
     let baseFS = ColonyInMemoryFileSystemBackend()
 
     let prefix = try ColonyVirtualPath("/scratchbook")
-    let threadID = HiveThreadID("thread-workspace-crud")
+    let threadID = SwarmThreadID("thread-workspace-crud")
     let scratchbookPath = try scratchbookFilePath(prefix: prefix, threadID: threadID)
 
     var configuration = ColonyConfiguration(
@@ -689,7 +689,7 @@ func workspaceTools_persistAndAreThreadScoped() async throws {
     )
 
     // 1) Add an item
-    let add = HiveToolCall(
+    let add = SwarmToolCall(
         id: "workspace-add",
         name: "workspace_add",
         argumentsJSON: #"{"kind":"note","title":"Alpha","body":"hello","tags":["t1"]}"#
@@ -697,17 +697,17 @@ func workspaceTools_persistAndAreThreadScoped() async throws {
     let fs1 = RecordingFileSystemBackend(base: baseFS)
     let model1 = ToolCallSequenceModel(toolCalls: [add], finalContent: "ok")
     let context1 = ColonyContext(configuration: configuration, filesystem: fs1)
-    let env1 = HiveEnvironment<ColonySchema>(
+    let env1 = SwarmGraphEnvironment<ColonySchema>(
         context: context1,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model1)
+        model: SwarmAnyModelClient(model1)
     )
-    let runtime1 = try HiveRuntime(graph: graph, environment: env1)
+    let runtime1 = try SwarmGraphRuntime(graph: graph, environment: env1)
     _ = try await (await runtime1.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     let scratchbookText = try await baseFS.read(at: scratchbookPath)
@@ -716,21 +716,21 @@ func workspaceTools_persistAndAreThreadScoped() async throws {
     #expect(id != nil)
 
     // 2) Pin the item
-    let pin = HiveToolCall(id: "workspace-pin", name: "workspace_pin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let pin = SwarmToolCall(id: "workspace-pin", name: "workspace_pin", argumentsJSON: #"{"id":"\#(id!)"}"#)
     let fs2 = RecordingFileSystemBackend(base: baseFS)
     let model2 = ToolCallSequenceModel(toolCalls: [pin], finalContent: "ok")
     let context2 = ColonyContext(configuration: configuration, filesystem: fs2)
-    let env2 = HiveEnvironment<ColonySchema>(
+    let env2 = SwarmGraphEnvironment<ColonySchema>(
         context: context2,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model2)
+        model: SwarmAnyModelClient(model2)
     )
-    let runtime2 = try HiveRuntime(graph: graph, environment: env2)
+    let runtime2 = try SwarmGraphRuntime(graph: graph, environment: env2)
     _ = try await (await runtime2.run(
         threadID: threadID,
         input: "pin",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )).outcome.value
 
     let pinnedText = try await baseFS.read(at: scratchbookPath)
@@ -739,25 +739,25 @@ func workspaceTools_persistAndAreThreadScoped() async throws {
     #expect(pinnedIDs.contains(id!))
 
     // 3) Mutate: update → complete → unpin → read
-    let update = HiveToolCall(id: "workspace-update", name: "workspace_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
-    let complete = HiveToolCall(id: "workspace-complete", name: "workspace_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let unpin = HiveToolCall(id: "workspace-unpin", name: "workspace_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
-    let read = HiveToolCall(id: "workspace-read", name: "workspace_read", argumentsJSON: #"{}"#)
+    let update = SwarmToolCall(id: "workspace-update", name: "workspace_update", argumentsJSON: #"{"id":"\#(id!)","title":"Alpha (updated)"}"#)
+    let complete = SwarmToolCall(id: "workspace-complete", name: "workspace_complete", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let unpin = SwarmToolCall(id: "workspace-unpin", name: "workspace_unpin", argumentsJSON: #"{"id":"\#(id!)"}"#)
+    let read = SwarmToolCall(id: "workspace-read", name: "workspace_read", argumentsJSON: #"{}"#)
 
     let fs3 = RecordingFileSystemBackend(base: baseFS)
     let model3 = ToolCallSequenceModel(toolCalls: [update, complete, unpin, read], finalContent: "done")
     let context3 = ColonyContext(configuration: configuration, filesystem: fs3)
-    let env3 = HiveEnvironment<ColonySchema>(
+    let env3 = SwarmGraphEnvironment<ColonySchema>(
         context: context3,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model3)
+        model: SwarmAnyModelClient(model3)
     )
-    let runtime3 = try HiveRuntime(graph: graph, environment: env3)
+    let runtime3 = try SwarmGraphRuntime(graph: graph, environment: env3)
     let handle3 = await runtime3.run(
         threadID: threadID,
         input: "mutate",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     let outcome3 = try await handle3.outcome.value
     guard case let .finished(output3, _) = outcome3, case let .fullStore(store3) = output3 else {
@@ -778,7 +778,7 @@ func workspaceTools_persistAndAreThreadScoped() async throws {
 
     // `workspace_read` uses the shared renderView logic; completed/archived items are omitted
     let messages3 = try store3.get(ColonySchema.Channels.messages)
-    let workspaceReadTool = messages3.last { $0.role == HiveChatRole.tool && $0.name == "workspace_read" }
+    let workspaceReadTool = messages3.last { $0.role == SwarmChatRole.tool && $0.name == "workspace_read" }
     #expect(workspaceReadTool != nil)
     #expect(workspaceReadTool?.content == "(Scratchbook empty)")
     #expect(workspaceReadTool?.content.contains("Alpha (updated)") == false)

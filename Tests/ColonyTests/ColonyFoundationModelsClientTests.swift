@@ -2,13 +2,13 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private let sampleTools: [HiveToolDefinition] = [
-    HiveToolDefinition(
+private let sampleTools: [SwarmToolDefinition] = [
+    SwarmToolDefinition(
         name: "tool_alpha",
         description: "Alpha tool description.",
         parametersJSONSchema: #"{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}"#
     ),
-    HiveToolDefinition(
+    SwarmToolDefinition(
         name: "tool_beta",
         description: "Beta tool description.",
         parametersJSONSchema: #"{"type":"object","properties":{"count":{"type":"integer"}}}"#

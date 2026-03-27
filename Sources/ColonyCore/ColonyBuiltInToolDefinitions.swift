@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Collection of built-in tool definitions for Colony agents.
 ///
 /// `ColonyBuiltInToolDefinitions` provides pre-configured `ColonyToolDefinition` instances

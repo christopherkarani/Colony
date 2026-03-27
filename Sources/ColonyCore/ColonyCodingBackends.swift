@@ -1,5 +1,3 @@
-@_spi(ColonyInternal) import Swarm
-
 /// Result of applying a unified patch.
 public struct ColonyApplyPatchResult: Sendable, Codable, Equatable {
     /// Whether the patch was applied successfully.

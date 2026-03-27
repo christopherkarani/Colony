@@ -3,25 +3,25 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
-    private var checkpoints: [HiveCheckpoint<Schema>] = []
+private actor InMemoryCheckpointStore<Schema: SwarmGraphSchema>: SwarmCheckpointStore {
+    private var checkpoints: [SwarmCheckpoint<Schema>] = []
 
-    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+    func save(_ checkpoint: SwarmCheckpoint<Schema>) async throws {
         checkpoints.append(checkpoint)
     }
 
-    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+    func loadLatest(threadID: SwarmThreadID) async throws -> SwarmCheckpoint<Schema>? {
         checkpoints
             .filter { $0.threadID == threadID }
             .max { lhs, rhs in
@@ -31,15 +31,15 @@ private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
     }
 }
 
-private final class ScriptedModel: HiveModelClient, @unchecked Sendable {
+private final class ScriptedModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -53,7 +53,7 @@ private final class ScriptedModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func respond(to request: HiveChatRequest) throws -> HiveChatResponse {
+    private func respond(to request: SwarmChatRequest) throws -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -66,24 +66,24 @@ private final class ScriptedModel: HiveModelClient, @unchecked Sendable {
         }
 
         if sawRejectionSystemMessage {
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok")
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok")
             )
         }
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "call-1",
                 name: "write_file",
                 argumentsJSON: #"{"path":"/note.md","content":"hello"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "writing", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "writing", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
@@ -126,15 +126,15 @@ private actor RecordingSubagentRegistry: ColonySubagentRegistry {
     }
 }
 
-private final class ExecuteToolModel: HiveModelClient, @unchecked Sendable {
+private final class ExecuteToolModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -144,7 +144,7 @@ private final class ExecuteToolModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -153,31 +153,31 @@ private final class ExecuteToolModel: HiveModelClient, @unchecked Sendable {
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "exec-1",
                 name: "execute",
                 argumentsJSON: #"{"command":"echo hi","timeout_ms":1500}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "running", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "running", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
 
-private final class TaskToolModel: HiveModelClient, @unchecked Sendable {
+private final class TaskToolModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -187,7 +187,7 @@ private final class TaskToolModel: HiveModelClient, @unchecked Sendable {
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -196,31 +196,31 @@ private final class TaskToolModel: HiveModelClient, @unchecked Sendable {
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "task-1",
                 name: ColonyBuiltInToolDefinitions.taskName,
                 argumentsJSON: #"{"prompt":"Collect three iOS benchmark ideas.","subagent_type":"research"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
 
-private final class TaskToolStructuredContextModel: HiveModelClient, @unchecked Sendable {
+private final class TaskToolStructuredContextModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -230,7 +230,7 @@ private final class TaskToolStructuredContextModel: HiveModelClient, @unchecked 
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -239,44 +239,44 @@ private final class TaskToolStructuredContextModel: HiveModelClient, @unchecked 
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "task-structured-1",
                 name: ColonyBuiltInToolDefinitions.taskName,
                 argumentsJSON: #"{"prompt":"Draft migration approach.","subagent_type":"research","context":{"objective":"Plan migration safely.","constraints":["Use only local code context.","Do not change public API semantics."],"acceptance_criteria":["Return exactly three migration checkpoints."],"notes":["Prioritize correctness before performance."]},"file_references":[{"path":"/Sources/Feature.swift","offset":4,"limit":20},{"path":"/README.md"}]}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
 
-private final class RecordingRequestModel: HiveModelClient, @unchecked Sendable {
+private final class RecordingRequestModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var requests: [HiveChatRequest] = []
-    private let responder: @Sendable (HiveChatRequest) -> HiveChatResponse
+    private var requests: [SwarmChatRequest] = []
+    private let responder: @Sendable (SwarmChatRequest) -> SwarmChatResponse
 
-    init(responder: @escaping @Sendable (HiveChatRequest) -> HiveChatResponse = { _ in
-        HiveChatResponse(message: HiveChatMessage(id: "assistant", role: .assistant, content: "ok"))
+    init(responder: @escaping @Sendable (SwarmChatRequest) -> SwarmChatResponse = { _ in
+        SwarmChatResponse(message: SwarmChatMessage(id: "assistant", role: .assistant, content: "ok"))
     }) {
         self.responder = responder
     }
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return requests
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         requests.append(request)
         lock.unlock()
@@ -302,21 +302,21 @@ func colonyInterruptsAndResumesApproved() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
     let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
-    let environment = HiveEnvironment(
+    let environment = SwarmGraphEnvironment(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ScriptedModel()),
-        checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        model: SwarmAnyModelClient(ScriptedModel()),
+        checkpointStore: SwarmAnyCheckpointStore(checkpointStore)
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-approved")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-approved")
 
     let handle = await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let outcome = try await handle.outcome.value
@@ -336,7 +336,7 @@ func colonyInterruptsAndResumesApproved() async throws {
         threadID: threadID,
         interruptID: interruption.interrupt.id,
         payload: .toolApproval(decision: .approved),
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let resumedOutcome = try await resumed.outcome.value
@@ -369,21 +369,21 @@ func colonyResumesRejected() async throws {
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
     let checkpointStore = InMemoryCheckpointStore<ColonySchema>()
-    let environment = HiveEnvironment(
+    let environment = SwarmGraphEnvironment(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ScriptedModel()),
-        checkpointStore: AnyHiveCheckpointStore(checkpointStore)
+        model: SwarmAnyModelClient(ScriptedModel()),
+        checkpointStore: SwarmAnyCheckpointStore(checkpointStore)
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
-    let threadID = HiveThreadID("thread-rejected")
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
+    let threadID = SwarmThreadID("thread-rejected")
 
     let handle = await runtime.run(
         threadID: threadID,
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let outcome = try await handle.outcome.value
@@ -396,7 +396,7 @@ func colonyResumesRejected() async throws {
         threadID: threadID,
         interruptID: interruption.interrupt.id,
         payload: .toolApproval(decision: .rejected),
-        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+        options: SwarmGraphRunOptions(checkpointPolicy: .onInterrupt)
     )
 
     let resumedOutcome = try await resumed.outcome.value
@@ -430,31 +430,31 @@ func colonyResumesRejected() async throws {
 
 @Test("Colony messages reducer supports removeAll markers and delete-by-id")
 func colonyMessagesReducerSemantics() throws {
-    let a = HiveChatMessage(id: "a", role: .user, content: "a")
-    let b = HiveChatMessage(id: "b", role: .assistant, content: "b")
+    let a = SwarmChatMessage(id: "a", role: .user, content: "a")
+    let b = SwarmChatMessage(id: "b", role: .assistant, content: "b")
 
-    let removeAll = HiveChatMessage(
+    let removeAll = SwarmChatMessage(
         id: ColonySchema.removeAllMessagesID,
         role: .system,
         content: "",
         op: .removeAll
     )
-    let c = HiveChatMessage(id: "c", role: .user, content: "c")
+    let c = SwarmChatMessage(id: "c", role: .user, content: "c")
 
     let merged = try ColonyMessages.reduceMessages(left: [a, b], right: [removeAll, c])
     #expect(merged.map(\.id) == ["c"])
 
-    let removeB = HiveChatMessage(id: "b", role: .system, content: "", op: .remove)
+    let removeB = SwarmChatMessage(id: "b", role: .system, content: "", op: .remove)
     let merged2 = try ColonyMessages.reduceMessages(left: [a, b], right: [removeB])
     #expect(merged2.map(\.id) == ["a"])
 
     do {
         _ = try ColonyMessages.reduceMessages(
             left: [a],
-            right: [HiveChatMessage(id: "missing", role: .system, content: "", op: .remove)]
+            right: [SwarmChatMessage(id: "missing", role: .system, content: "", op: .remove)]
         )
         #expect(Bool(false))
-    } catch let error as HiveRuntimeError {
+    } catch let error as SwarmRuntimeError {
         switch error {
         case .invalidMessagesUpdate:
             #expect(Bool(true))
@@ -481,18 +481,18 @@ func colonyExecuteToolUsesShellBackend() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: shell)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ExecuteToolModel())
+        model: SwarmAnyModelClient(ExecuteToolModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-execute"),
+        threadID: SwarmThreadID("thread-execute"),
         input: "run execute",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -508,7 +508,7 @@ func colonyExecuteToolUsesShellBackend() async throws {
     #expect(requests.first?.command == "echo hi")
 
     let messages = try store.get(ColonySchema.Channels.messages)
-    let toolMessage = messages.first { $0.role == HiveChatRole.tool }
+    let toolMessage = messages.first { $0.role == SwarmChatRole.tool }
     #expect(toolMessage?.content.contains("exit_code: 0") == true)
 }
 
@@ -529,18 +529,18 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
         subagents: subagents
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(TaskToolModel())
+        model: SwarmAnyModelClient(TaskToolModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-task"),
+        threadID: SwarmThreadID("thread-task"),
         input: "delegate task",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -557,7 +557,7 @@ func colonyTaskToolDelegatesToSubagentRegistry() async throws {
     #expect(requests.first?.prompt == "Collect three iOS benchmark ideas.")
 
     let messages = try store.get(ColonySchema.Channels.messages)
-    let toolMessage = messages.first { $0.role == HiveChatRole.tool }
+    let toolMessage = messages.first { $0.role == SwarmChatRole.tool }
     #expect(toolMessage?.content == "subagent[research] completed")
 }
 
@@ -578,18 +578,18 @@ func colonyTaskToolPassesStructuredContextAndFileReferences() async throws {
         subagents: subagents
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(TaskToolStructuredContextModel())
+        model: SwarmAnyModelClient(TaskToolStructuredContextModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-task-structured-context"),
+        threadID: SwarmThreadID("thread-task-structured-context"),
         input: "delegate task",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -640,18 +640,18 @@ func systemPromptInjectsAgentsMemory() async throws {
     ]
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model)
+        model: SwarmAnyModelClient(model)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-memory"),
+        threadID: SwarmThreadID("thread-memory"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 
@@ -692,18 +692,18 @@ BODY_SENTINEL_SHOULD_NOT_BE_DISCLOSED
     ]
     let context = ColonyContext(configuration: configuration, filesystem: fs)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(model)
+        model: SwarmAnyModelClient(model)
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-skills"),
+        threadID: SwarmThreadID("thread-skills"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
     _ = try await handle.outcome.value
 

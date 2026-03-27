@@ -3,21 +3,21 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private struct FixedOutputToolRegistry: HiveToolRegistry, Sendable {
-    func listTools() -> [HiveToolDefinition] {
+private struct FixedOutputToolRegistry: SwarmToolRegistry, Sendable {
+    func listTools() -> [SwarmToolDefinition] {
         [
-            HiveToolDefinition(
+            SwarmToolDefinition(
                 name: "big_tool",
                 description: "Returns output.",
                 parametersJSONSchema: #"{"type":"object","properties":{}}"#
@@ -25,8 +25,8 @@ private struct FixedOutputToolRegistry: HiveToolRegistry, Sendable {
         ]
     }
 
-    func invoke(_ call: HiveToolCall) async throws -> HiveToolResult {
-        HiveToolResult(toolCallID: call.id, content: "ok")
+    func invoke(_ call: SwarmToolCall) async throws -> SwarmToolResult {
+        SwarmToolResult(toolCallID: call.id, content: "ok")
     }
 }
 
@@ -34,15 +34,15 @@ private enum CompactionValidationError: Error, Sendable {
     case expectedUserMessageToBeCompactedAway
 }
 
-private final class ToolThenValidateCompactionModel: HiveModelClient, @unchecked Sendable {
+private final class ToolThenValidateCompactionModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -56,7 +56,7 @@ private final class ToolThenValidateCompactionModel: HiveModelClient, @unchecked
         }
     }
 
-    private func respond(to request: HiveChatRequest) throws -> HiveChatResponse {
+    private func respond(to request: SwarmChatRequest) throws -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -65,13 +65,13 @@ private final class ToolThenValidateCompactionModel: HiveModelClient, @unchecked
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "compact-1",
                 name: "big_tool",
                 argumentsJSON: #"{}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "running", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "running", toolCalls: [call])
             )
         }
 
@@ -83,8 +83,8 @@ private final class ToolThenValidateCompactionModel: HiveModelClient, @unchecked
             throw CompactionValidationError.expectedUserMessageToBeCompactedAway
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
@@ -101,19 +101,19 @@ func colonyCompactsBeforeSecondModelTurnAfterTools() async throws {
     )
     let context = ColonyContext(configuration: configuration, filesystem: nil, shell: nil, subagents: nil)
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(ToolThenValidateCompactionModel()),
-        tools: AnyHiveToolRegistry(FixedOutputToolRegistry())
+        model: SwarmAnyModelClient(ToolThenValidateCompactionModel()),
+        tools: SwarmAnyToolRegistry(FixedOutputToolRegistry())
     )
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-compact-after-tool"),
+        threadID: SwarmThreadID("thread-compact-after-tool"),
         input: "hi",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value

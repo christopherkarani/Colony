@@ -3,26 +3,26 @@ import Testing
 @_spi(ColonyInternal) import Swarm
 @testable import Colony
 
-private struct NoopClock: HiveClock {
+private struct NoopClock: SwarmClock {
     func nowNanoseconds() -> UInt64 { 0 }
     func sleep(nanoseconds: UInt64) async throws { try await Task.sleep(nanoseconds: nanoseconds) }
 }
 
-private struct NoopLogger: HiveLogger {
+private struct NoopLogger: SwarmLogger {
     func debug(_ message: String, metadata: [String: String]) {}
     func info(_ message: String, metadata: [String: String]) {}
     func error(_ message: String, metadata: [String: String]) {}
 }
 
-private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked Sendable {
+private final class GeneralPurposeDelegatingModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -32,7 +32,7 @@ private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked S
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -41,32 +41,32 @@ private final class GeneralPurposeDelegatingModel: HiveModelClient, @unchecked S
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "task-1",
                 name: ColonyBuiltInToolDefinitions.taskName,
                 argumentsJSON: #"{"prompt":"Read /from-subagent.txt and summarize it.","subagent_type":"general-purpose"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "delegating", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
 
-private final class SubagentWriteFileModel: HiveModelClient, @unchecked Sendable {
+private final class SubagentWriteFileModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
-    private var lastRequest: HiveChatRequest?
+    private var lastRequest: SwarmChatRequest?
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 self.record(request)
@@ -77,19 +77,19 @@ private final class SubagentWriteFileModel: HiveModelClient, @unchecked Sendable
         }
     }
 
-    func recordedRequest() -> HiveChatRequest? {
+    func recordedRequest() -> SwarmChatRequest? {
         lock.lock()
         defer { lock.unlock() }
         return lastRequest
     }
 
-    private func record(_ request: HiveChatRequest) {
+    private func record(_ request: SwarmChatRequest) {
         lock.lock()
         defer { lock.unlock() }
         lastRequest = request
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -98,31 +98,31 @@ private final class SubagentWriteFileModel: HiveModelClient, @unchecked Sendable
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "sub-read-1",
                 name: ColonyBuiltInToolDefinitions.readFile.name,
                 argumentsJSON: #"{"path":"/from-subagent.txt"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "reading", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "reading", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "subagent finished")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "subagent finished")
         )
     }
 }
 
-private final class RecursiveTaskCallModel: HiveModelClient, @unchecked Sendable {
+private final class RecursiveTaskCallModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 let response = self.respond()
@@ -132,7 +132,7 @@ private final class RecursiveTaskCallModel: HiveModelClient, @unchecked Sendable
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -141,38 +141,38 @@ private final class RecursiveTaskCallModel: HiveModelClient, @unchecked Sendable
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "recursive-1",
                 name: ColonyBuiltInToolDefinitions.taskName,
                 argumentsJSON: #"{"prompt":"Should not run.","subagent_type":"general-purpose"}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "attempt recursion", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "attempt recursion", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
 
-private final class SubagentLargeToolResultModel: HiveModelClient, @unchecked Sendable {
+private final class SubagentLargeToolResultModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var callCount: Int = 0
-    private var requests: [HiveChatRequest] = []
+    private var requests: [SwarmChatRequest] = []
 
-    func recordedRequests() -> [HiveChatRequest] {
+    func recordedRequests() -> [SwarmChatRequest] {
         lock.lock()
         defer { lock.unlock() }
         return requests
     }
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         requests.append(request)
         lock.unlock()
@@ -186,7 +186,7 @@ private final class SubagentLargeToolResultModel: HiveModelClient, @unchecked Se
         }
     }
 
-    private func respond() -> HiveChatResponse {
+    private func respond() -> SwarmChatResponse {
         let currentCall: Int = {
             lock.lock()
             defer { lock.unlock() }
@@ -195,44 +195,44 @@ private final class SubagentLargeToolResultModel: HiveModelClient, @unchecked Se
         }()
 
         if currentCall == 1 {
-            let call = HiveToolCall(
+            let call = SwarmToolCall(
                 id: "sub-read-1",
                 name: ColonyBuiltInToolDefinitions.readFile.name,
                 argumentsJSON: #"{"path":"/big.txt","offset":0,"limit":400}"#
             )
-            return HiveChatResponse(
-                message: HiveChatMessage(id: "assistant", role: .assistant, content: "reading", toolCalls: [call])
+            return SwarmChatResponse(
+                message: SwarmChatMessage(id: "assistant", role: .assistant, content: "reading", toolCalls: [call])
             )
         }
 
-        return HiveChatResponse(
-            message: HiveChatMessage(id: "assistant", role: .assistant, content: "done")
+        return SwarmChatResponse(
+            message: SwarmChatMessage(id: "assistant", role: .assistant, content: "done")
         )
     }
 }
 
-private final class SubagentPromptCaptureModel: HiveModelClient, @unchecked Sendable {
+private final class SubagentPromptCaptureModel: SwarmModelClient, @unchecked Sendable {
     private let lock = NSLock()
-    private var request: HiveChatRequest?
+    private var request: SwarmChatRequest?
 
-    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
         try await streamFinal(request)
     }
 
-    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         lock.lock()
         self.request = request
         lock.unlock()
 
         return AsyncThrowingStream { continuation in
             continuation.yield(
-                .final(HiveChatResponse(message: HiveChatMessage(id: "assistant", role: .assistant, content: "captured")))
+                .final(SwarmChatResponse(message: SwarmChatMessage(id: "assistant", role: .assistant, content: "captured")))
             )
             continuation.finish()
         }
     }
 
-    func recordedRequest() -> HiveChatRequest? {
+    func recordedRequest() -> SwarmChatRequest? {
         lock.lock()
         defer { lock.unlock() }
         return request
@@ -241,6 +241,18 @@ private final class SubagentPromptCaptureModel: HiveModelClient, @unchecked Send
 
 private enum FailingGraphProviderError: Error, Equatable {
     case compileFailure
+}
+
+private final class FailingSubagentModel: SwarmModelClient, @unchecked Sendable {
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
+        throw FailingGraphProviderError.compileFailure
+    }
+
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: FailingGraphProviderError.compileFailure)
+        }
+    }
 }
 
 @Test("Default subagent registry runs general-purpose in an isolated runtime (single tool result + shared filesystem access only)")
@@ -253,7 +265,7 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
 
     let registry = ColonyDefaultSubagentRegistry(
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(subagentModel),
+        model: SwarmAnyModelClient(subagentModel),
         clock: NoopClock(),
         logger: NoopLogger(),
         filesystem: fs
@@ -271,18 +283,18 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
         subagents: registry
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
+        model: SwarmAnyModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-default-subagent-registry"),
+        threadID: SwarmThreadID("thread-default-subagent-registry"),
         input: "parent secret: 123",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -294,7 +306,7 @@ func defaultSubagentRegistry_generalPurpose_runsIsolated_andSharesFileSystemOnly
     #expect((try store.get(ColonySchema.Channels.finalAnswer)) == "done")
 
     let messages = try store.get(ColonySchema.Channels.messages)
-    let toolMessages = messages.filter { $0.role == HiveChatRole.tool }
+    let toolMessages = messages.filter { $0.role == SwarmChatRole.tool }
     #expect(toolMessages.count == 1)
     #expect(toolMessages.first?.toolCallID == "task-1")
 
@@ -316,7 +328,7 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
 
     let registry = ColonyDefaultSubagentRegistry(
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(RecursiveTaskCallModel()),
+        model: SwarmAnyModelClient(RecursiveTaskCallModel()),
         clock: NoopClock(),
         logger: NoopLogger(),
         filesystem: nil
@@ -334,18 +346,18 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
         subagents: registry
     )
 
-    let environment = HiveEnvironment<ColonySchema>(
+    let environment = SwarmGraphEnvironment<ColonySchema>(
         context: context,
         clock: NoopClock(),
         logger: NoopLogger(),
-        model: AnyHiveModelClient(GeneralPurposeDelegatingModel())
+        model: SwarmAnyModelClient(GeneralPurposeDelegatingModel())
     )
 
-    let runtime = try HiveRuntime(graph: graph, environment: environment)
+    let runtime = try SwarmGraphRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(
-        threadID: HiveThreadID("thread-default-subagent-registry-recursion"),
+        threadID: SwarmThreadID("thread-default-subagent-registry-recursion"),
         input: "trigger",
-        options: HiveRunOptions(checkpointPolicy: .disabled)
+        options: SwarmGraphRunOptions(checkpointPolicy: .disabled)
     )
 
     let outcome = try await handle.outcome.value
@@ -355,7 +367,7 @@ func defaultSubagentRegistry_disablesRecursiveSubagentsByDefault() async throws 
     }
 
     let messages = try store.get(ColonySchema.Channels.messages)
-    let toolMessage = messages.first { $0.role == HiveChatRole.tool }
+    let toolMessage = messages.first { $0.role == SwarmChatRole.tool }
     let toolMessageContent = toolMessage?.content ?? ""
     #expect(toolMessageContent.contains("Error:") == true)
     #expect(toolMessageContent.contains("subagent[general-purpose] completed") == false)
@@ -372,7 +384,7 @@ func defaultSubagentRegistry_inheritsOnDeviceBudgetPosture() async throws {
     let registry = ColonyDefaultSubagentRegistry(
         profile: .onDevice4k,
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(model),
+        model: SwarmAnyModelClient(model),
         clock: NoopClock(),
         logger: NoopLogger(),
         filesystem: fs
@@ -408,7 +420,7 @@ func defaultSubagentRegistry_includesStructuredAndFileBackedContextSnippets() as
     let registry = ColonyDefaultSubagentRegistry(
         profile: .onDevice4k,
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(model),
+        model: SwarmAnyModelClient(model),
         clock: NoopClock(),
         logger: NoopLogger(),
         filesystem: fs
@@ -458,7 +470,7 @@ func defaultSubagentRegistry_advertisesCompactorSubagentType() async throws {
     let registry = ColonyDefaultSubagentRegistry(
         profile: .onDevice4k,
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(GeneralPurposeDelegatingModel()),
+        model: SwarmAnyModelClient(GeneralPurposeDelegatingModel()),
         clock: NoopClock(),
         logger: NoopLogger(),
         filesystem: nil
@@ -473,11 +485,10 @@ func defaultSubagentRegistry_surfacesGraphCompilationFailure() async throws {
     let registry = ColonyDefaultSubagentRegistry(
         profile: .onDevice4k,
         modelName: "test-subagent-model",
-        model: AnyHiveModelClient(GeneralPurposeDelegatingModel()),
+        model: SwarmAnyModelClient(FailingSubagentModel()),
         clock: NoopClock(),
         logger: NoopLogger(),
-        filesystem: nil,
-        graphProvider: { throw FailingGraphProviderError.compileFailure }
+        filesystem: nil
     )
 
     await #expect(throws: FailingGraphProviderError.compileFailure) {
@@ -490,7 +501,7 @@ func defaultSubagentRegistry_surfacesGraphCompilationFailure() async throws {
     }
 }
 
-private func approximateToolTokens(_ tools: [HiveToolDefinition]) -> Int {
+private func approximateToolTokens(_ tools: [SwarmToolDefinition]) -> Int {
     guard tools.isEmpty == false else { return 0 }
     let chars = tools.reduce(into: 0) { partial, tool in
         partial += tool.name.count
