@@ -114,7 +114,7 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
     public func stream(_ request: ColonyInferenceRequest) -> AsyncThrowingStream<ColonyInferenceStreamChunk, Error> {
         let stream = stream(request.swarmChatRequest)
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     for try await chunk in stream {
                         switch chunk {
@@ -128,6 +128,10 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
@@ -155,6 +159,9 @@ public struct ColonyMiniMaxOpenAIClient: ColonyModelClient, Sendable {
                 let (data, response) = try await performRequest(urlRequest, attempt: attempt)
                 return try decodeResponse(data: data, response: response)
             } catch {
+                if error is CancellationError {
+                    throw error
+                }
                 lastError = error
                 guard shouldRetry(error: error, attempt: attempt) else {
                     throw error

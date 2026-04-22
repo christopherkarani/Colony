@@ -119,6 +119,25 @@ private final class DelayedFixedModelClient: SwarmModelClient, @unchecked Sendab
     }
 }
 
+private final class CancellationModelClient: SwarmModelClient, @unchecked Sendable {
+    private let counter = RequestCounter()
+
+    func complete(_ request: SwarmChatRequest) async throws -> SwarmChatResponse {
+        await counter.increment()
+        throw CancellationError()
+    }
+
+    func snapshotRequestCount() async -> Int {
+        await counter.value()
+    }
+
+    func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: CancellationError())
+        }
+    }
+}
+
 private struct TestColonyModelClientBridge: ColonyModelClient, Sendable {
     let client: SwarmAnyModelClient
 
@@ -622,6 +641,62 @@ func taskE_providerRouterConcurrentRateCeilingReservation() async throws {
     #expect(responseContents.contains("ok"))
     #expect(responseContents.contains("rate-limited"))
     #expect(await provider.snapshotRequestCount() == 1)
+}
+
+@Test("Task E provider router propagates cancellation without falling through to lower-priority providers")
+func taskE_providerRouterCancellationDoesNotFallThrough() async throws {
+    let cancellableProvider = CancellationModelClient()
+    let fallbackProvider = FixedModelClient(content: "fallback-should-not-run")
+
+    let router = ColonyProviderRouter(
+        providers: [
+            ColonyProviderRouter.Provider(
+                id: "cancel-first",
+                client: TestColonyModelClientBridge(cancellableProvider),
+                priority: 0,
+                maxRequestsPerMinute: nil,
+                usdPer1KTokens: nil
+            ),
+            ColonyProviderRouter.Provider(
+                id: "fallback",
+                client: TestColonyModelClientBridge(fallbackProvider),
+                priority: 1,
+                maxRequestsPerMinute: nil,
+                usdPer1KTokens: nil
+            ),
+        ],
+        policy: ColonyProviderRouter.Policy(
+            maxAttemptsPerProvider: 2,
+            initialBackoffNanoseconds: 1,
+            maxBackoffNanoseconds: 1,
+            globalMaxRequestsPerMinute: nil,
+            costCeilingUSD: nil,
+            estimatedOutputToInputRatio: 0,
+            gracefulDegradation: .syntheticResponse("degraded")
+        ),
+        now: Date.init,
+        sleep: { _ in }
+    )
+
+    let request = ColonyInferenceRequest(
+        SwarmChatRequest(
+            model: "router-model",
+            messages: [SwarmChatMessage(id: "m1", role: .user, content: "hello")],
+            tools: []
+        )
+    )
+
+    do {
+        _ = try await router.generate(request)
+        Issue.record("Expected CancellationError to propagate, but request completed.")
+    } catch is CancellationError {
+        // expected
+    } catch {
+        Issue.record("Expected CancellationError, got \(String(describing: error)).")
+    }
+
+    #expect(await cancellableProvider.snapshotRequestCount() == 1)
+    #expect(await fallbackProvider.snapshotRequestCount() == 0)
 }
 
 @Test("Task E durable run-state store rebuilds snapshot from event log when state file is missing")
