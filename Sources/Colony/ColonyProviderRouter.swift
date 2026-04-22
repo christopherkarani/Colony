@@ -218,6 +218,10 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
                 await state.finalizeReservation(token, success: true, now: clock.now())
                 return response
             } catch {
+                if error is CancellationError {
+                    await state.finalizeReservation(token, success: false, now: clock.now())
+                    throw error
+                }
                 await state.finalizeReservation(token, success: false, now: clock.now())
                 failures.append("\(provider.id):\(String(describing: error))")
             }
@@ -246,6 +250,9 @@ public struct ColonyProviderRouter: ColonyModelClient, Sendable {
             do {
                 return try await ColonyModelClientBridge(client: provider.client).complete(request)
             } catch {
+                if error is CancellationError {
+                    throw error
+                }
                 lastError = error
                 guard attempt < maxAttempts else { break }
                 try await clock.sleep(currentBackoff)
@@ -290,7 +297,7 @@ private struct ColonyProviderRoutingClient: SwarmModelClient, Sendable {
 
     func stream(_ request: SwarmChatRequest) -> AsyncThrowingStream<SwarmChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let response = try await complete(request)
                     continuation.yield(.final(response))
@@ -298,6 +305,10 @@ private struct ColonyProviderRoutingClient: SwarmModelClient, Sendable {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
